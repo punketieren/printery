@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>IIIF Коллаж - OpenSeadragon</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: #1a1a1a;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            height: 100vh;
+        }
+        
+        #viewer-container {
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+        
+        #viewer {
+            width: 100%;
+            height: 100%;
+            background: #111;
+        }
+        
+        /* Контрольная панель */
+        .controls {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+            background: rgba(0,0,0,0.7);
+            backdrop-filter: blur(10px);
+            border-radius: 8px;
+            padding: 10px 15px;
+            display: flex;
+            gap: 10px;
+            font-family: monospace;
+            font-size: 12px;
+            color: #fff;
+            border: 1px solid #444;
+            pointer-events: none;
+        }
+        
+        .controls button {
+            pointer-events: auto;
+            background: #00aa00;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .controls button:hover {
+            background: #00cc00;
+        }
+        
+        .info {
+            background: rgba(0,0,0,0.6);
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+        }
+        
+        /* Загрузка */
+        .loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            background: rgba(0,0,0,0.8);
+            padding: 20px 30px;
+            border-radius: 8px;
+            z-index: 2000;
+            font-family: monospace;
+            text-align: center;
+            pointer-events: none;
+        }
+        
+        /* Адаптация для мобильных */
+        @media (max-width: 768px) {
+            .controls { font-size: 10px; padding: 6px 10px; }
+            .controls button { padding: 4px 8px; font-size: 10px; }
+        }
+    </style>
+</head>
+<body>
+    <div id="viewer-container">
+        <div id="viewer"></div>
+    </div>
+    
+    <div class="controls">
+        <div class="info" id="zoom-info">⚡ Загрузка...</div>
+        <button id="fullscreen-btn">🖥️ Полный экран</button>
+        <button id="reset-btn">🔄 Сброс</button>
+    </div>
+    
+    <div class="loading" id="loading-message">
+        📡 Загрузка IIIF манифеста...<br>
+        <span style="font-size: 10px; color: #aaa;">Подождите, идёт подгрузка тайлов</span>
+    </div>
+
+    <!-- OpenSeadragon из CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/openseadragon@3.1.0/build/openseadragon/openseadragon.min.js"></script>
+    
+    <script>
+        // === НАСТРОЙКИ (измените под свои данные) ===
+        // Путь к info.json вашего IIIF-изображения
+        // Это может быть:
+        // 1. Локальная папка: "./iiif/info.json"
+        // 2. GitHub Pages: "https://username.github.io/repo/info.json"
+        // 3. Прямая ссылка на манифест: "https://example.com/manifest.json"
+        
+        const IIIF_URL = "./iiif/info.json";  // <--- ПУТЬ К ВАШЕМУ INFO.JSON
+        
+        // Дополнительные настройки вьювера
+        const VIEWER_CONFIG = {
+            // Базовая настройка
+            id: "viewer",
+            prefixUrl: "https://cdn.jsdelivr.net/npm/openseadragon@3.1.0/build/openseadragon/images/",
+            
+            // Источник IIIF
+            tileSources: IIIF_URL,
+            
+            // Навигация и управление
+            showNavigationControl: true,
+            showZoomControl: true,
+            showHomeControl: true,
+            showFullPageControl: false,  // сделаем свою кнопку
+            
+            // Поведение
+            gestureSettingsMouse: {
+                clickToZoom: true,
+                dblClickToZoom: true,
+                pinchToZoom: true,
+                scrollToZoom: true
+            },
+            
+            // Внешний вид
+            defaultZoomLevel: 0.5,
+            minZoomImageRatio: 0.5,
+            maxZoomPixelRatio: 10,
+            
+            // Производительность
+            animationTime: 0.5,
+            blendTime: 0.1,
+            preload: true,
+            imageLoaderLimit: 10,
+            
+            // CORS и загрузка
+            crossOriginPolicy: "Anonymous",
+            ajaxWithCredentials: false,
+            loadTilesWithAjax: false,
+            
+            // Отладка (если нужно — включите)
+            debugMode: false
+        };
+        
+        // === ИНИЦИАЛИЗАЦИЯ ===
+        let viewer = null;
+        let loadingTimeout = null;
+        
+        // Функция скрытия сообщения о загрузке
+        function hideLoading() {
+            const loadingEl = document.getElementById('loading-message');
+            if (loadingEl) {
+                loadingEl.style.opacity = '0';
+                setTimeout(() => {
+                    loadingEl.style.display = 'none';
+                }, 500);
+            }
+            clearTimeout(loadingTimeout);
+        }
+        
+        // Функция показа ошибки
+        function showError(message) {
+            const loadingEl = document.getElementById('loading-message');
+            if (loadingEl) {
+                loadingEl.innerHTML = `❌ Ошибка загрузки<br><span style="font-size: 11px;">${message}</span><br><button onclick="location.reload()" style="margin-top:10px;padding:5px 10px;background:#00aa00;border:none;border-radius:4px;color:white;cursor:pointer;">⟳ Перезагрузить</button>`;
+                loadingEl.style.opacity = '1';
+                loadingEl.style.display = 'block';
+                loadingEl.style.background = 'rgba(0,0,0,0.9)';
+            }
+            console.error('OSD Error:', message);
+        }
+        
+        // Инициализация вьювера
+        try {
+            viewer = OpenSeadragon(VIEWER_CONFIG);
+            
+            // Обработчики событий OpenSeadragon
+            viewer.addHandler('open', function() {
+                console.log('✅ IIIF манифест загружен, изображение открыто');
+                hideLoading();
+                
+                // Обновляем информацию о зуме
+                const zoomInfo = document.getElementById('zoom-info');
+                if (zoomInfo) {
+                    const updateZoomInfo = function() {
+                        const zoom = viewer.viewport.getZoom();
+                        const maxZoom = viewer.viewport.getMaxZoom();
+                        const percent = Math.round((zoom / maxZoom) * 100);
+                        zoomInfo.innerHTML = `🔍 ${percent}% | 🖼️ ${viewer.world.getItemAt(0)?.source?.width || '?'}×${viewer.world.getItemAt(0)?.source?.height || '?'}`;
+                    };
+                    viewer.addHandler('zoom', updateZoomInfo);
+                    viewer.addHandler('open', updateZoomInfo);
+                    setTimeout(updateZoomInfo, 100);
+                }
+            });
+            
+            viewer.addHandler('open-failed', function(event) {
+                console.error('❌ Не удалось загрузить IIIF манифест:', event);
+                showError(`Не удалось загрузить ${IIIF_URL}\n\nПроверьте:\n1. Файл info.json существует\n2. Путь указан верно\n3. Если файл на GitHub — включены ли GitHub Pages?`);
+            });
+            
+            viewer.addHandler('tile-load-failed', function(event) {
+                console.warn('⚠️ Не загрузился тайл:', event);
+                // Не показываем ошибку пользователю, чтобы не спамить
+            });
+            
+            // Таймаут загрузки (если слишком долго)
+            loadingTimeout = setTimeout(() => {
+                if (document.getElementById('loading-message') && document.getElementById('loading-message').style.display !== 'none') {
+                    showError('Долгая загрузка. Проверьте интернет или путь к info.json');
+                }
+            }, 15000);
+            
+        } catch (e) {
+            console.error('Критическая ошибка при создании OpenSeadragon:', e);
+            showError('Ошибка инициализации: ' + e.message);
+        }
+        
+        // === ДОПОЛНИТЕЛЬНЫЕ КНОПКИ ===
+        
+        // Полный экран
+        document.getElementById('fullscreen-btn').addEventListener('click', function() {
+            const elem = document.getElementById('viewer-container');
+            if (elem.requestFullscreen) {
+                elem.requestFullscreen();
+            } else if (elem.webkitRequestFullscreen) {
+                elem.webkitRequestFullscreen();
+            } else if (elem.msRequestFullscreen) {
+                elem.msRequestFullscreen();
+            }
+        });
+        
+        // Сброс вида
+        document.getElementById('reset-btn').addEventListener('click', function() {
+            if (viewer && viewer.viewport) {
+                viewer.viewport.goHome();
+            }
+        });
+        
+        // Информация о готовности
+        console.log('📄 OpenSeadragon инициализирован');
+        console.log('🎯 IIIF URL:', IIIF_URL);
+        console.log('💡 Совет: разместите папку с тайлами рядом с этим HTML');
+    </script>
+</body>
+</html>
