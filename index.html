@@ -14,6 +14,11 @@
     <div id="viewer"></div>
     
 <script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/openseadragon.min.js"></script>
+
+<!-- Подключаем плагин SVG Overlay -->
+<script src="https://openseadragon.github.io/svg-overlay/openseadragon-svg-overlay.js"></script>
+
+
 <script>
     const viewer = OpenSeadragon({
         id: "viewer",
@@ -74,5 +79,101 @@
         viewer.viewport.zoomBy(1 / window.zoomStep, viewportPoint);
         return false;
     });
+	
+	    // --- СОЗДАЕМ ОВЕРЛЕЙ ---
+    const svgOverlay = viewer.svgOverlay();
+    
+    // Создаем контейнер для модального окна (всплывающего окошка)
+    const modal = document.createElement('div');
+    modal.style.position = 'fixed';
+    modal.style.top = '50%';
+    modal.style.left = '50%';
+    modal.style.transform = 'translate(-50%, -50%)';
+    modal.style.backgroundColor = 'white';
+    modal.style.border = '1px solid #ccc';
+    modal.style.borderRadius = '8px';
+    modal.style.boxShadow = '0 4px 20px rgba(0,0,0,0.3)';
+    modal.style.padding = '20px';
+    modal.style.zIndex = '2000';
+    modal.style.display = 'none';
+    modal.style.minWidth = '300px';
+    modal.style.maxWidth = '500px';
+    modal.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <h3 id="modal-title" style="margin: 0;">Заголовок</h3>
+            <button id="modal-close" style="background: none; border: none; font-size: 24px; cursor: pointer;">&times;</button>
+        </div>
+        <p id="modal-info">Информация</p>
+        <a id="modal-link" href="#" target="_blank" style="display: inline-block; margin-top: 10px; color: #007bff; text-decoration: none;">Перейти по ссылке</a>
+    `;
+    document.body.appendChild(modal);
+    
+    // Закрытие по крестику
+    document.getElementById('modal-close').onclick = () => {
+        modal.style.display = 'none';
+    };
+    
+    // Закрытие по клику вне окна
+    modal.addEventListener('click', (e) => {
+        e.stopPropagation();
+    });
+    
+    // Функция показа модального окна
+    function showModal(title, info, link) {
+        document.getElementById('modal-title').textContent = title;
+        document.getElementById('modal-info').textContent = info;
+        const linkEl = document.getElementById('modal-link');
+        linkEl.href = link;
+        linkEl.textContent = link;
+        modal.style.display = 'block';
+    }
+    
+    // --- СОЗДАЕМ СЕТКУ ПРЯМОУГОЛЬНИКОВ 17x18 ---
+    const rows = 18;
+    const cols = 17;
+    
+    for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+            // Создаем прямоугольник
+            const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+            
+            // Координаты в относительной системе (0-1)
+            const x = col / cols;
+            const y = row / rows;
+            const width = 1 / cols;
+            const height = 1 / rows;
+            
+            rect.setAttribute("x", x);
+            rect.setAttribute("y", y);
+            rect.setAttribute("width", width);
+            rect.setAttribute("height", height);
+            
+            // Стили (полупрозрачный, видно для отладки)
+            rect.setAttribute("fill", "rgba(0, 100, 255, 0.2)");
+            rect.setAttribute("stroke", "blue");
+            rect.setAttribute("stroke-width", "0.002");
+            rect.setAttribute("cursor", "pointer");
+            
+            // Сохраняем данные в атрибуты
+            rect.setAttribute("data-row", row);
+            rect.setAttribute("data-col", col);
+            rect.setAttribute("data-title", `Ячейка ${row+1}-${col+1}`);
+            rect.setAttribute("data-info", `Информация о ячейке в строке ${row+1}, столбце ${col+1}`);
+            rect.setAttribute("data-link", `https://example.com/${row+1}/${col+1}`);
+            
+            // Добавляем на слой
+            svgOverlay.node().appendChild(rect);
+            
+            // Добавляем обработчик клика
+            svgOverlay.onClick(rect, function(event) {
+                const title = this.getAttribute("data-title");
+                const info = this.getAttribute("data-info");
+                const link = this.getAttribute("data-link");
+                showModal(title, info, link);
+            });
+        }
+    }
+    
+    console.log(`Создано ${rows * cols} прямоугольников`);
 </script></body>
 </html>
