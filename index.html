@@ -17,7 +17,6 @@
     <script src="https://openseadragon.github.io/svg-overlay/openseadragon-svg-overlay.js"></script>
     
     <script>
-        // --- СОЗДАЕМ ПРОСМОТРЩИК ---
         const viewer = OpenSeadragon({
             id: "viewer",
             prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/images/",
@@ -31,57 +30,37 @@
                 clickToZoom: false,
                 dblClickToZoom: false
             },
-            gestureSettingsPen: {
-                clickToZoom: false,
-                dblClickToZoom: false
-            },
             
             smoothTileEdges: false,
             imageSmoothingEnabled: false,
-            
             preloadCount: 20,
             imageLoaderLimit: 10,
             maxImageCacheCount: 500,
-            timeout: 15000,
-            
-            constrainDuringPan: true,
-            visibilityRatio: 1,
-            minZoomImageRatio: 0.9
+            timeout: 15000
         });
 
-        // --- НАСТРОЙКА ЗУМА ---
+        // Настройка зума
         viewer.addHandler('open', function() {
             const homeZoom = viewer.viewport.getHomeZoom();
             const fullZoom = viewer.viewport.imageToViewportZoom(1);
             const zoomStep = Math.pow(fullZoom / homeZoom, 1 / 7);
-            
             viewer.zoomPerClick = zoomStep;
             viewer.zoomPerScroll = zoomStep;
             window.zoomStep = zoomStep;
         });
 
-        // Одиночный клик (зарезервировано)
-        viewer.addHandler('canvas-click', function(event) {
-            if (event.quick === true) {
-                event.preventDefaultAction = true;
-            }
-        });
-
         // Правый клик = зум-аут
         viewer.canvas.addEventListener('contextmenu', function(e) {
             e.preventDefault();
-            
             const currentZoom = viewer.viewport.getZoom();
             const minZoom = viewer.viewport.getHomeZoom();
-            
             if (currentZoom <= minZoom) return false;
-            
             const viewportPoint = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(e.clientX, e.clientY));
             viewer.viewport.zoomBy(1 / window.zoomStep, viewportPoint);
             return false;
         });
 
-        // --- МОДАЛЬНОЕ ОКНО ---
+        // Модальное окно
         const modal = document.createElement('div');
         modal.style.position = 'fixed';
         modal.style.top = '50%';
@@ -95,44 +74,33 @@
         modal.style.zIndex = '2000';
         modal.style.display = 'none';
         modal.style.minWidth = '300px';
-        modal.style.maxWidth = '500px';
         modal.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                 <h3 id="modal-title" style="margin: 0;">Заголовок</h3>
                 <button id="modal-close" style="background: none; border: none; font-size: 24px; cursor: pointer;">&times;</button>
             </div>
             <p id="modal-info">Информация</p>
-            <a id="modal-link" href="#" target="_blank" style="display: inline-block; margin-top: 10px; color: #007bff; text-decoration: none;">Перейти по ссылке</a>
+            <a id="modal-link" href="#" target="_blank">Перейти по ссылке</a>
         `;
         document.body.appendChild(modal);
         
-        document.getElementById('modal-close').onclick = () => {
-            modal.style.display = 'none';
-        };
-        
-        modal.addEventListener('click', (e) => {
-            e.stopPropagation();
-        });
+        document.getElementById('modal-close').onclick = () => modal.style.display = 'none';
         
         function showModal(title, info, link) {
             document.getElementById('modal-title').textContent = title;
             document.getElementById('modal-info').textContent = info;
-            const linkEl = document.getElementById('modal-link');
-            linkEl.href = link;
-            linkEl.textContent = link;
+            document.getElementById('modal-link').href = link;
+            document.getElementById('modal-link').textContent = link;
             modal.style.display = 'block';
         }
 
-        // --- ОВЕРЛЕЙ: СЕТКА 18x17 ---
+        // Оверлей
         let svgOverlay = null;
         
         viewer.addHandler('open', function() {
             svgOverlay = viewer.svgOverlay();
             
-            const imageWidth = viewer.source.dimensions.x;
-            const imageHeight = viewer.source.dimensions.y;
-            const imageAspect = imageHeight / imageWidth;
-            
+            const imageAspect = viewer.source.dimensions.y / viewer.source.dimensions.x;
             const cols = 18;
             const rows = 17;
             
@@ -140,37 +108,32 @@
                 for (let col = 0; col < cols; col++) {
                     const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
                     
-                    const x = col / cols;
-                    const y = (row / rows) * imageAspect;
-                    const width = 1 / cols;
-                    const height = (1 / rows) * imageAspect;
-                    
-                    rect.setAttribute("x", x);
-                    rect.setAttribute("y", y);
-                    rect.setAttribute("width", width);
-                    rect.setAttribute("height", height);
-                    rect.setAttribute("fill", "rgba(0, 100, 255, 0)");
+                    rect.setAttribute("x", col / cols);
+                    rect.setAttribute("y", (row / rows) * imageAspect);
+                    rect.setAttribute("width", 1 / cols);
+                    rect.setAttribute("height", (1 / rows) * imageAspect);
+                    rect.setAttribute("fill", "rgba(0, 100, 255, 0)"); // прозрачный
                     rect.setAttribute("stroke", "none");
                     rect.setAttribute("cursor", "pointer");
                     
-                    rect.setAttribute("data-row", row);
-                    rect.setAttribute("data-col", col);
                     rect.setAttribute("data-title", `Ячейка ${row+1}-${col+1}`);
                     rect.setAttribute("data-info", `Строка ${row+1}, столбец ${col+1}`);
                     rect.setAttribute("data-link", `https://example.com/${row+1}/${col+1}`);
                     
                     svgOverlay.node().appendChild(rect);
                     
-                    rect.addEventListener('click', function(e) {
-                        e.stopPropagation();
-                        const title = this.getAttribute("data-title");
-                        const info = this.getAttribute("data-info");
-                        const link = this.getAttribute("data-link");
-                        showModal(title, info, link);
+                    // Используем svgOverlay.onClick вместо addEventListener
+                    svgOverlay.onClick(rect, function(event) {
+                        showModal(
+                            this.getAttribute("data-title"),
+                            this.getAttribute("data-info"),
+                            this.getAttribute("data-link")
+                        );
                     });
                 }
             }
             
+            // Двойной клик для зума
             svgOverlay.node().addEventListener('dblclick', function(e) {
                 e.stopPropagation();
                 const viewportPoint = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(e.clientX, e.clientY));
