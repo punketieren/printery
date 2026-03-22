@@ -22,6 +22,20 @@ const viewer = OpenSeadragon({
     maxZoomLevel: 5
 });
 
+// Запрещаем контекстное меню на canvas
+viewer.canvas.addEventListener('contextmenu', function(e) {
+    e.preventDefault();
+    return false;
+});
+
+// Обрабатываем правый клик для zoom out
+viewer.addHandler('canvas-nonprimary-press', function(event) {
+    // Отключаем стандартное поведение
+    event.preventDefaultAction = true;
+    // Уменьшаем зум на 30% (0.7 = zoom out)
+    viewer.viewport.zoomBy(0.7, event.position);
+});
+
 
     </script>    
 </body>
