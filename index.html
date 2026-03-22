@@ -12,51 +12,54 @@
 <body>
     <div id="viewer"></div>
     
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/openseadragon.min.js"></script>
-    <script>
-        // --- 1. СОЗДАЕМ ПРОСМОТРЩИК ---
-        const viewer = OpenSeadragon({
-            id: "viewer",
-            prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/images/",
-            tileSources: "output.dzi"
-        });
-viewer.canvas.addEventListener('contextmenu', function(e) {
-    e.preventDefault();
-    
-    // Получаем текущий уровень зума
-    const currentZoom = viewer.viewport.getZoom();
-    // Получаем минимально допустимый уровень зума (тот, при котором изображение помещается на экране)
-    const minZoom = viewer.viewport.getHomeZoom();
-    
-    // Если текущий зум уже равен минимальному, не делаем ничего
-    if (currentZoom <= minZoom) {
-        return false;
-    }
-    
-    // Иначе делаем зум-аут
-    var viewportPoint = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(e.clientX, e.clientY));
-    viewer.viewport.zoomBy(0.7, viewportPoint);
-    return false;
-});
-        // --- 2. НАСТРАИВАЕМ ЛЕВЫЙ КЛИК: 1 КЛИК = 1 УРОВЕНЬ ПАПКИ ---
-        // Этот код сработает, когда изображение загрузится
-        viewer.addHandler('open', function() {
-            const homeZoom = viewer.viewport.getHomeZoom();
-            const fullZoom = viewer.viewport.imageToViewportZoom(1);
-            // Рассчитываем шаг, чтобы пройти от начального до максимального уровня
-            // ровно за maxZoomLevel (11) кликов
-            viewer.zoomPerClick = Math.pow(fullZoom / homeZoom, 1 / 11);
-        });
+ 
+ <script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/openseadragon.min.js"></script>
+<script>
+    // Создаем просмотрщик
+    const viewer = OpenSeadragon({
+        id: "viewer",
+        prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/images/",
+        tileSources: "output.dzi",
+        maxZoomLevel: 11,
+        // Отключаем одиночный клик для зума
+        clickToZoom: false,
+        // Оставляем двойной клик для зума
+        dblClickToZoom: true
+    });
 
-        // --- 3. НАСТРАИВАЕМ ПРАВЫЙ КЛИК: ОТКЛЮЧАЕМ МЕНЮ И ДЕЛАЕМ ZOOM OUT ---
-        viewer.canvas.addEventListener('contextmenu', function(e) {
-            e.preventDefault(); // Убираем контекстное меню
-            // Переводим координаты мыши в координаты изображения
-            var viewportPoint = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(e.clientX, e.clientY));
-            // Делаем зум аут (zoom out) на 30%
-            viewer.viewport.zoomBy(0.7, viewportPoint);
+    // Настраиваем левый клик: 1 клик = 1 уровень папки (только для двойного)
+    viewer.addHandler('open', function() {
+        const homeZoom = viewer.viewport.getHomeZoom();
+        const fullZoom = viewer.viewport.imageToViewportZoom(1);
+        // Настраиваем шаг для двойного клика
+        viewer.zoomPerClick = Math.pow(fullZoom / homeZoom, 1 / 11);
+    });
+
+    // Резервируем одиночный клик для будущего оверлея
+    viewer.addHandler('canvas-click', function(event) {
+        // Здесь будет логика для кликов по оверлею
+        // Пока просто выводим в консоль
+        console.log("Одиночный клик по координатам:", event.position);
+        console.log("Сюда потом добавим проверку кликов по областям");
+    });
+
+    // Настраиваем правый клик: зум-аут с ограничением
+    viewer.canvas.addEventListener('contextmenu', function(e) {
+        e.preventDefault();
+        
+        const currentZoom = viewer.viewport.getZoom();
+        const minZoom = viewer.viewport.getHomeZoom();
+        
+        if (currentZoom <= minZoom) {
             return false;
-        });
-    </script>
+        }
+        
+        const viewportPoint = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(e.clientX, e.clientY));
+        viewer.viewport.zoomBy(0.7, viewportPoint);
+        return false;
+    });
+</script>
+ 
+ 
 </body>
 </html>
