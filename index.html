@@ -13,21 +13,13 @@
     <div id="viewer"></div>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/openseadragon.min.js"></script>
-    <script>
-        OpenSeadragon({
-            id: "viewer",
-            prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/images/",
-            tileSources: "output.dzi",
-            maxZoomLevel: 13
-        });
-    </script>
-
+  
     <script>
 const viewer = OpenSeadragon({
     id: "viewer",
     prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/images/",
     tileSources: "output.dzi",
-    maxZoomLevel: 11,
+    maxZoomLevel: 13,
     
     // Отключаем контекстное меню
     gestureSettingsMouse: {
