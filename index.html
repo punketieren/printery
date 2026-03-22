@@ -20,49 +20,47 @@
         prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/images/",
         tileSources: "output.dzi",
         
-        // Правильное отключение зума по одиночному клику [citation:3][citation:8]
         gestureSettingsMouse: {
-            clickToZoom: false,      // для мыши
-            dblClickToZoom: true     // двойной клик оставляем
+            clickToZoom: false,
+            dblClickToZoom: true
         },
         gestureSettingsTouch: {
-            clickToZoom: false,      // для тач-экранов
+            clickToZoom: false,
             dblClickToZoom: true
         },
         gestureSettingsPen: {
-            clickToZoom: false,      // для стилуса
+            clickToZoom: false,
             dblClickToZoom: true
         },
         
-        // Настройки четкости (оставляем)
         smoothTileEdges: false,
         imageSmoothingEnabled: false,
         
-        // Настройки загрузки
         preloadCount: 20,
         imageLoaderLimit: 10,
         maxImageCacheCount: 500,
         timeout: 15000
     });
 
-    // Настройка зума для двойного клика: 1 клик = 1 уровень папки
+    // Настройка зума: вычисляем шаг
     viewer.addHandler('open', function() {
         const homeZoom = viewer.viewport.getHomeZoom();
         const fullZoom = viewer.viewport.imageToViewportZoom(1);
-        viewer.zoomPerClick = Math.pow(fullZoom / homeZoom, 1 / 15); // 15 уровней
+        const zoomStep = Math.pow(fullZoom / homeZoom, 1 / 15);
+        
+        viewer.zoomPerClick = zoomStep;
+        window.zoomStep = zoomStep;
     });
 
-    // Обработчик одиночного клика (для будущего оверлея)
-    // Если вдруг зум все еще срабатывает — страхуемся preventDefaultAction [citation:1]
+    // Обработчик одиночного клика
     viewer.addHandler('canvas-click', function(event) {
-        if (event.quick === true) {  // только клик, не drag [citation:3]
-            event.preventDefaultAction = true;  // отключаем зум [citation:1][citation:2]
+        if (event.quick === true) {
+            event.preventDefaultAction = true;
             console.log("Клик по координатам:", event.position);
-            // Здесь потом будет проверка клика по областям оверлея
         }
     });
 
-    // Правый клик = зум-аут с ограничением
+    // Правый клик = зум-аут с тем же шагом
     viewer.canvas.addEventListener('contextmenu', function(e) {
         e.preventDefault();
         
@@ -72,9 +70,8 @@
         if (currentZoom <= minZoom) return false;
         
         const viewportPoint = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(e.clientX, e.clientY));
-        viewer.viewport.zoomBy(0.7, viewportPoint);
+        viewer.viewport.zoomBy(1 / window.zoomStep, viewportPoint);
         return false;
     });
-</script>
-</body>
+</script></body>
 </html>
