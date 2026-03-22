@@ -80,10 +80,15 @@
         return false;
     });
 	
-	    // --- СОЗДАЕМ ОВЕРЛЕЙ ---
+
+
+
+
+
+    // --- СОЗДАЕМ ОВЕРЛЕЙ ---
     const svgOverlay = viewer.svgOverlay();
     
-    // Создаем контейнер для модального окна (всплывающего окошка)
+    // Создаем модальное окно
     const modal = document.createElement('div');
     modal.style.position = 'fixed';
     modal.style.top = '50%';
@@ -108,17 +113,14 @@
     `;
     document.body.appendChild(modal);
     
-    // Закрытие по крестику
     document.getElementById('modal-close').onclick = () => {
         modal.style.display = 'none';
     };
     
-    // Закрытие по клику вне окна
     modal.addEventListener('click', (e) => {
         e.stopPropagation();
     });
     
-    // Функция показа модального окна
     function showModal(title, info, link) {
         document.getElementById('modal-title').textContent = title;
         document.getElementById('modal-info').textContent = info;
@@ -128,13 +130,12 @@
         modal.style.display = 'block';
     }
     
-    // --- СОЗДАЕМ СЕТКУ ПРЯМОУГОЛЬНИКОВ 17x18 ---
-    const rows = 18;
-    const cols = 17;
+    // --- СОЗДАЕМ СЕТКУ 17x18 ---
+    const cols = 17;   // по горизонтали (короткая сторона, так как 5:7 альбомное)
+    const rows = 18;   // по вертикали (длинная сторона)
     
     for (let row = 0; row < rows; row++) {
         for (let col = 0; col < cols; col++) {
-            // Создаем прямоугольник
             const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
             
             // Координаты в относительной системе (0-1)
@@ -148,23 +149,21 @@
             rect.setAttribute("width", width);
             rect.setAttribute("height", height);
             
-            // Стили (полупрозрачный, видно для отладки)
+            // Стили (полупрозрачный для отладки)
             rect.setAttribute("fill", "rgba(0, 100, 255, 0.2)");
             rect.setAttribute("stroke", "blue");
             rect.setAttribute("stroke-width", "0.002");
             rect.setAttribute("cursor", "pointer");
             
-            // Сохраняем данные в атрибуты
-            rect.setAttribute("data-row", row);
-            rect.setAttribute("data-col", col);
-            rect.setAttribute("data-title", `Ячейка ${row+1}-${col+1}`);
-            rect.setAttribute("data-info", `Информация о ячейке в строке ${row+1}, столбце ${col+1}`);
-            rect.setAttribute("data-link", `https://example.com/${row+1}/${col+1}`);
+            // Сохраняем данные
+            rect.setAttribute("data-row", row + 1);
+            rect.setAttribute("data-col", col + 1);
+            rect.setAttribute("data-title", `Ячейка ${row + 1}-${col + 1}`);
+            rect.setAttribute("data-info", `Строка ${row + 1}, столбец ${col + 1}`);
+            rect.setAttribute("data-link", `https://example.com/${row + 1}/${col + 1}`);
             
-            // Добавляем на слой
             svgOverlay.node().appendChild(rect);
             
-            // Добавляем обработчик клика
             svgOverlay.onClick(rect, function(event) {
                 const title = this.getAttribute("data-title");
                 const info = this.getAttribute("data-info");
@@ -174,6 +173,6 @@
         }
     }
     
-    console.log(`Создано ${rows * cols} прямоугольников`);
+    console.log(`Создано ${rows} строк × ${cols} столбцов = ${rows * cols} ячеек`);
 </script></body>
 </html>
