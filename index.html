@@ -23,7 +23,6 @@
             prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/images/",
             tileSources: "output.dzi",
             
-            // Отключаем зум по клику
             gestureSettingsMouse: {
                 clickToZoom: false,
                 dblClickToZoom: false
@@ -37,15 +36,17 @@
                 dblClickToZoom: false
             },
             
-            // Четкость изображения
             smoothTileEdges: false,
             imageSmoothingEnabled: false,
             
-            // Загрузка тайлов
             preloadCount: 20,
             imageLoaderLimit: 10,
             maxImageCacheCount: 500,
-            timeout: 15000
+            timeout: 15000,
+            
+            constrainDuringPan: true,
+            visibilityRatio: 1,
+            minZoomImageRatio: 0.9
         });
 
         // --- НАСТРОЙКА ЗУМА ---
@@ -80,10 +81,7 @@
             return false;
         });
 
-        // --- ОВЕРЛЕЙ: СЕТКА 18x17 ---
-        const svgOverlay = viewer.svgOverlay();
-        
-        // Модальное окно
+        // --- МОДАЛЬНОЕ ОКНО ---
         const modal = document.createElement('div');
         modal.style.position = 'fixed';
         modal.style.top = '50%';
@@ -124,48 +122,71 @@
             linkEl.textContent = link;
             modal.style.display = 'block';
         }
+
+        // --- ОВЕРЛЕЙ: СЕТКА 18x17 С УЧЕТОМ ПРОПОРЦИЙ ---
+        let svgOverlay = null;
         
-        // Создаем сетку 18 столбцов × 17 строк
-        const cols = 18;
-        const rows = 17;
-        
-        for (let row = 0; row < rows; row++) {
-            for (let col = 0; col < cols; col++) {
-                const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-                
-                rect.setAttribute("x", col / cols);
-                rect.setAttribute("y", row / rows);
-                rect.setAttribute("width", 1 / cols);
-                rect.setAttribute("height", 1 / rows);
-                rect.setAttribute("fill", "rgba(0, 100, 255, 0.2)");
-                rect.setAttribute("stroke", "blue");
-                rect.setAttribute("stroke-width", "0.002");
-                rect.setAttribute("cursor", "pointer");
-                
-                rect.setAttribute("data-title", `Ячейка ${row+1}-${col+1}`);
-                rect.setAttribute("data-info", `Строка ${row+1}, столбец ${col+1}`);
-                rect.setAttribute("data-link", `https://example.com/${row+1}/${col+1}`);
-                
-                svgOverlay.node().appendChild(rect);
-                
-                svgOverlay.onClick(rect, function(event) {
-                    showModal(
-                        this.getAttribute("data-title"),
-                        this.getAttribute("data-info"),
-                        this.getAttribute("data-link")
-                    );
-                });
+        viewer.addHandler('open', function() {
+            // Создаем оверлей
+            svgOverlay = viewer.svgOverlay();
+            
+            // Получаем пропорции изображения
+            const imageWidth = viewer.source.dimensions.x;
+            const imageHeight = viewer.source.dimensions.y;
+            const imageAspect = imageHeight / imageWidth; // высота в viewport координатах
+            
+            const cols = 18;
+            const rows = 17;
+            
+            console.log(`Изображение: ${imageWidth}×${imageHeight}, пропорция: ${imageAspect}`);
+            console.log(`Создаем сетку ${cols}×${rows}, ячейка будет ${(1/cols)/((1/rows)*imageAspect)}`);
+            
+            for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < cols; col++) {
+                    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                    
+                    // Координаты с учетом пропорций изображения
+                    const x = col / cols;
+                    const y = (row / rows) * imageAspect;
+                    const width = 1 / cols;
+                    const height = (1 / rows) * imageAspect;
+                    
+                    rect.setAttribute("x", x);
+                    rect.setAttribute("y", y);
+                    rect.setAttribute("width", width);
+                    rect.setAttribute("height", height);
+                    rect.setAttribute("fill", "rgba(0, 100, 255, 0.2)");
+                    rect.setAttribute("stroke", "blue");
+                    rect.setAttribute("stroke-width", "0.002");
+                    rect.setAttribute("cursor", "pointer");
+                    
+                    rect.setAttribute("data-row", row);
+                    rect.setAttribute("data-col", col);
+                    rect.setAttribute("data-title", `Ячейка ${row+1}-${col+1}`);
+                    rect.setAttribute("data-info", `Строка ${row+1}, столбец ${col+1}`);
+                    rect.setAttribute("data-link", `https://example.com/${row+1}/${col+1}`);
+                    
+                    svgOverlay.node().appendChild(rect);
+                    
+                    svgOverlay.onClick(rect, function(event) {
+                        showModal(
+                            this.getAttribute("data-title"),
+                            this.getAttribute("data-info"),
+                            this.getAttribute("data-link")
+                        );
+                    });
+                }
             }
-        }
-        
-        // Двойной клик для зума ин (поверх оверлея)
-        svgOverlay.node().addEventListener('dblclick', function(e) {
-            e.stopPropagation();
-            const viewportPoint = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(e.clientX, e.clientY));
-            viewer.viewport.zoomBy(viewer.zoomPerClick, viewportPoint);
+            
+            // Двойной клик для зума
+            svgOverlay.node().addEventListener('dblclick', function(e) {
+                e.stopPropagation();
+                const viewportPoint = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(e.clientX, e.clientY));
+                viewer.viewport.zoomBy(viewer.zoomPerClick, viewportPoint);
+            });
+            
+            console.log(`Создано ${cols * rows} ячеек`);
         });
-        
-        console.log(`Создано ${cols} столбцов × ${rows} строк = ${rows * cols} ячеек`);
     </script>
 </body>
 </html>
