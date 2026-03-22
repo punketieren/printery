@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Deep Zoom Viewer</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/openseadragon.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/openseadragon@3.1.0/build/openseadragon/openseadragon.min.css">
     <style>
         body { margin: 0; padding: 0; }
         #viewer { width: 100%; height: 100vh; }
@@ -13,13 +13,13 @@
 <body>
     <div id="viewer"></div>
     
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/openseadragon.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/openseadragon@3.1.0/build/openseadragon.min.js"></script>
     <script src="https://openseadragon.github.io/svg-overlay/openseadragon-svg-overlay.js"></script>
     
     <script>
         const viewer = OpenSeadragon({
             id: "viewer",
-            prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/images/",
+            prefixUrl: "https://cdn.jsdelivr.net/npm/openseadragon@3.1.0/build/openseadragon/images/",
             tileSources: "output.dzi",
             
             gestureSettingsMouse: {
@@ -35,7 +35,6 @@
             timeout: 15000
         });
 
-        // Настройка зума
         let zoomStep = 2;
         viewer.addHandler('open', function() {
             const homeZoom = viewer.viewport.getHomeZoom();
@@ -45,7 +44,6 @@
             viewer.zoomPerScroll = zoomStep;
         });
 
-        // Правый клик = зум-аут
         viewer.canvas.addEventListener('contextmenu', function(e) {
             e.preventDefault();
             const currentZoom = viewer.viewport.getZoom();
@@ -56,14 +54,12 @@
             return false;
         });
 
-        // Двойной клик на canvas = зум ин
         viewer.canvas.addEventListener('dblclick', function(e) {
             e.preventDefault();
             const viewportPoint = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(e.clientX, e.clientY));
             viewer.viewport.zoomBy(zoomStep, viewportPoint);
         });
 
-        // Модальное окно
         const modal = document.createElement('div');
         modal.style.position = 'fixed';
         modal.style.top = '50%';
@@ -74,7 +70,7 @@
         modal.style.borderRadius = '8px';
         modal.style.boxShadow = '0 4px 20px rgba(0,0,0,0.3)';
         modal.style.padding = '20px';
-        modal.style.zIndex = '2000';
+        modal.style.zIndex = '10000';
         modal.style.display = 'none';
         modal.style.minWidth = '300px';
         modal.innerHTML = `
@@ -90,6 +86,7 @@
         document.getElementById('modal-close').onclick = () => modal.style.display = 'none';
         
         function showModal(title, info, link) {
+            console.log("showModal:", title);
             document.getElementById('modal-title').textContent = title;
             document.getElementById('modal-info').textContent = info;
             document.getElementById('modal-link').href = link;
@@ -97,12 +94,10 @@
             modal.style.display = 'block';
         }
 
-        // Оверлей
         let svgOverlay = null;
         
         viewer.addHandler('open', function() {
             svgOverlay = viewer.svgOverlay();
-            
             const imageAspect = viewer.source.dimensions.y / viewer.source.dimensions.x;
             const cols = 18;
             const rows = 17;
@@ -110,7 +105,6 @@
             for (let row = 0; row < rows; row++) {
                 for (let col = 0; col < cols; col++) {
                     const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-                    
                     rect.setAttribute("x", col / cols);
                     rect.setAttribute("y", (row / rows) * imageAspect);
                     rect.setAttribute("width", 1 / cols);
@@ -118,29 +112,23 @@
                     rect.setAttribute("fill", "rgba(0, 100, 255, 0)");
                     rect.setAttribute("stroke", "none");
                     rect.setAttribute("cursor", "pointer");
-                    
                     rect.setAttribute("data-title", `Ячейка ${row+1}-${col+1}`);
                     rect.setAttribute("data-info", `Строка ${row+1}, столбец ${col+1}`);
                     rect.setAttribute("data-link", `https://example.com/${row+1}/${col+1}`);
-                    
                     svgOverlay.node().appendChild(rect);
                     
-                    // Обработчик с защитой от драга
                     rect.addEventListener('mousedown', function(e) {
                         this.dragging = false;
                         const startX = e.clientX;
                         const startY = e.clientY;
-                        
                         const onMouseMove = function(e) {
                             if (Math.abs(e.clientX - startX) > 5 || Math.abs(e.clientY - startY) > 5) {
                                 rect.dragging = true;
                             }
                         };
-                        
                         const onMouseUp = function(e) {
                             document.removeEventListener('mousemove', onMouseMove);
                             document.removeEventListener('mouseup', onMouseUp);
-                            
                             if (!rect.dragging) {
                                 e.stopPropagation();
                                 showModal(
@@ -151,7 +139,6 @@
                             }
                             rect.dragging = false;
                         };
-                        
                         document.addEventListener('mousemove', onMouseMove);
                         document.addEventListener('mouseup', onMouseUp);
                     });
