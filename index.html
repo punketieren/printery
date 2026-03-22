@@ -49,6 +49,7 @@
         const zoomStep = Math.pow(fullZoom / homeZoom, 1 / 7);
         
         viewer.zoomPerClick = zoomStep;
+		viewer.zoomPerScroll = zoomStep;   // колесико работает с тем же шагом
         window.zoomStep = zoomStep;
     });
 
