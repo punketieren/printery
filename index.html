@@ -4,8 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Deep Zoom Viewer</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/openseadragon@3.1.0/build/openseadragon/openseadragon.min.css">
     <style>
+        /* Минимальный CSS для OpenSeadragon */
+        .openseadragon-container {
+            overflow: hidden;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            position: relative;
+        }
         body { margin: 0; padding: 0; }
         #viewer { width: 100%; height: 100vh; }
     </style>
@@ -86,7 +94,6 @@
         document.getElementById('modal-close').onclick = () => modal.style.display = 'none';
         
         function showModal(title, info, link) {
-            console.log("showModal:", title);
             document.getElementById('modal-title').textContent = title;
             document.getElementById('modal-info').textContent = info;
             document.getElementById('modal-link').href = link;
@@ -117,30 +124,13 @@
                     rect.setAttribute("data-link", `https://example.com/${row+1}/${col+1}`);
                     svgOverlay.node().appendChild(rect);
                     
-                    rect.addEventListener('mousedown', function(e) {
-                        this.dragging = false;
-                        const startX = e.clientX;
-                        const startY = e.clientY;
-                        const onMouseMove = function(e) {
-                            if (Math.abs(e.clientX - startX) > 5 || Math.abs(e.clientY - startY) > 5) {
-                                rect.dragging = true;
-                            }
-                        };
-                        const onMouseUp = function(e) {
-                            document.removeEventListener('mousemove', onMouseMove);
-                            document.removeEventListener('mouseup', onMouseUp);
-                            if (!rect.dragging) {
-                                e.stopPropagation();
-                                showModal(
-                                    rect.getAttribute("data-title"),
-                                    rect.getAttribute("data-info"),
-                                    rect.getAttribute("data-link")
-                                );
-                            }
-                            rect.dragging = false;
-                        };
-                        document.addEventListener('mousemove', onMouseMove);
-                        document.addEventListener('mouseup', onMouseUp);
+                    rect.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        showModal(
+                            this.getAttribute("data-title"),
+                            this.getAttribute("data-info"),
+                            this.getAttribute("data-link")
+                        );
                     });
                 }
             }
