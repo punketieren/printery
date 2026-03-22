@@ -2,6 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Deep Zoom Viewer</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/openseadragon.min.css">
     <style>
@@ -12,54 +13,53 @@
 <body>
     <div id="viewer"></div>
     
- 
- <script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/openseadragon.min.js"></script>
-<script>
-    // Создаем просмотрщик
-    const viewer = OpenSeadragon({
-        id: "viewer",
-        prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/images/",
-        tileSources: "output.dzi",
-        maxZoomLevel: 11,
-        // Отключаем одиночный клик для зума
-        clickToZoom: false,
-        // Оставляем двойной клик для зума
-        dblClickToZoom: true
-    });
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/openseadragon.min.js"></script>
+    <script>
+        const viewer = OpenSeadragon({
+            id: "viewer",
+            prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/images/",
+            tileSources: "output.dzi",
+            maxZoomLevel: 11,
+            dblClickToZoom: true,
+            
+            // Настройки четкости изображения
+            smoothTileEdges: false,
+            imageSmoothingEnabled: false,
+            
+            // Настройки загрузки
+            preloadCount: 20,
+            imageLoaderLimit: 10,
+            maxImageCacheCount: 500,
+            timeout: 15000
+        });
 
-    // Настраиваем левый клик: 1 клик = 1 уровень папки (только для двойного)
-    viewer.addHandler('open', function() {
-        const homeZoom = viewer.viewport.getHomeZoom();
-        const fullZoom = viewer.viewport.imageToViewportZoom(1);
-        // Настраиваем шаг для двойного клика
-        viewer.zoomPerClick = Math.pow(fullZoom / homeZoom, 1 / 11);
-    });
+        // Отключаем зум по одиночному клику
+        viewer.addHandler('canvas-click', function(event) {
+            event.preventDefaultAction = true;
+        });
 
-    // Резервируем одиночный клик для будущего оверлея
-    viewer.addHandler('canvas-click', function(event) {
-        // Здесь будет логика для кликов по оверлею
-        // Пока просто выводим в консоль
-        console.log("Одиночный клик по координатам:", event.position);
-        console.log("Сюда потом добавим проверку кликов по областям");
-    });
+        // Настройка зума: двойной клик = 1 уровень папки
+        viewer.addHandler('open', function() {
+            const homeZoom = viewer.viewport.getHomeZoom();
+            const fullZoom = viewer.viewport.imageToViewportZoom(1);
+            viewer.zoomPerClick = Math.pow(fullZoom / homeZoom, 1 / 11);
+        });
 
-    // Настраиваем правый клик: зум-аут с ограничением
-    viewer.canvas.addEventListener('contextmenu', function(e) {
-        e.preventDefault();
-        
-        const currentZoom = viewer.viewport.getZoom();
-        const minZoom = viewer.viewport.getHomeZoom();
-        
-        if (currentZoom <= minZoom) {
+        // Правый клик = зум-аут с ограничением
+        viewer.canvas.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+            
+            const currentZoom = viewer.viewport.getZoom();
+            const minZoom = viewer.viewport.getHomeZoom();
+            
+            if (currentZoom <= minZoom) {
+                return false;
+            }
+            
+            const viewportPoint = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(e.clientX, e.clientY));
+            viewer.viewport.zoomBy(0.7, viewportPoint);
             return false;
-        }
-        
-        const viewportPoint = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(e.clientX, e.clientY));
-        viewer.viewport.zoomBy(0.7, viewportPoint);
-        return false;
-    });
-</script>
- 
- 
+        });
+    </script>
 </body>
 </html>
