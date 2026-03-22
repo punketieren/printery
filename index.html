@@ -46,7 +46,7 @@
     viewer.addHandler('open', function() {
         const homeZoom = viewer.viewport.getHomeZoom();
         const fullZoom = viewer.viewport.imageToViewportZoom(1);
-        const zoomStep = Math.pow(fullZoom / homeZoom, 1 / 15);
+        const zoomStep = Math.pow(fullZoom / homeZoom, 1 / 7);
         
         viewer.zoomPerClick = zoomStep;
         window.zoomStep = zoomStep;
