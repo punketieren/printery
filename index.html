@@ -4,24 +4,31 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Deep Zoom Viewer</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/openseadragon.min.css">
+    <!-- Использую актуальную версию 4.1.0, которая точно есть на CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/openseadragon.min.css">
     <style>
-        body { margin: 0; padding: 0; }
-        #viewer { width: 100%; height: 100vh; }
+        body { margin: 0; padding: 0; background: #000; }
+        #viewer { width: 100%; height: 100vh; background: #000; }
+        /* Небольшой фикс для корректной работы z-index оверлея */
+        .openseadragon-canvas { z-index: 1; }
+        svg { z-index: 2; pointer-events: bounding-box; }
     </style>
 </head>
 <body>
     <div id="viewer"></div>
     
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/openseadragon.min.js"></script>
+    <!-- Библиотека и плагин -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/openseadragon.min.js"></script>
     <script src="https://openseadragon.github.io/svg-overlay/openseadragon-svg-overlay.js"></script>
     
     <script>
+        // --- ИНИЦИАЛИЗАЦИЯ ПРОСМОТРЩИКА ---
         const viewer = OpenSeadragon({
             id: "viewer",
-            prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/images/",
+            prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/images/", // путь к иконкам новой версии
             tileSources: "output.dzi",
             
+            // Отключаем стандартные жесты
             gestureSettingsMouse: {
                 clickToZoom: false,
                 dblClickToZoom: false
@@ -31,36 +38,46 @@
                 dblClickToZoom: false
             },
             
+            // Настройки четкости
             smoothTileEdges: false,
             imageSmoothingEnabled: false,
+            
+            // Настройки производительности
             preloadCount: 20,
             imageLoaderLimit: 10,
             maxImageCacheCount: 500,
-            timeout: 15000
+            timeout: 15000,
+            
+            // Дополнительные настройки для стабильности оверлея
+            constrainDuringPan: true,
+            visibilityRatio: 1
         });
 
-        // Настройка зума
+        // --- НАСТРОЙКА ШАГА ЗУМА (7 шагов от минимума до максимума) ---
         viewer.addHandler('open', function() {
-            const homeZoom = viewer.viewport.getHomeZoom();
-            const fullZoom = viewer.viewport.imageToViewportZoom(1);
-            const zoomStep = Math.pow(fullZoom / homeZoom, 1 / 7);
+            const homeZoom = viewer.viewport.getHomeZoom();      // минимальный зум (изображение вписано в экран)
+            const fullZoom = viewer.viewport.imageToViewportZoom(1); // зум для 100% масштаба (1 пиксель = 1 пиксель)
+            const zoomStep = Math.pow(fullZoom / homeZoom, 1 / 7);     // 7 кликов от минимума до 100%
+            
             viewer.zoomPerClick = zoomStep;
             viewer.zoomPerScroll = zoomStep;
             window.zoomStep = zoomStep;
         });
 
-        // Правый клик = зум-аут
+        // --- ПРАВЫЙ КЛИК: ЗУМ-АУТ ---
         viewer.canvas.addEventListener('contextmenu', function(e) {
             e.preventDefault();
             const currentZoom = viewer.viewport.getZoom();
             const minZoom = viewer.viewport.getHomeZoom();
+            
             if (currentZoom <= minZoom) return false;
+            
             const viewportPoint = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(e.clientX, e.clientY));
             viewer.viewport.zoomBy(1 / window.zoomStep, viewportPoint);
             return false;
         });
 
-        // Модальное окно
+        // --- МОДАЛЬНОЕ ОКНО (всплывашка) ---
         const modal = document.createElement('div');
         modal.style.position = 'fixed';
         modal.style.top = '50%';
@@ -71,28 +88,27 @@
         modal.style.borderRadius = '8px';
         modal.style.boxShadow = '0 4px 20px rgba(0,0,0,0.3)';
         modal.style.padding = '20px';
-        modal.style.zIndex = '2000';
+        modal.style.zIndex = '3000';          // высокий z-index, чтобы быть поверх всего
         modal.style.display = 'none';
         modal.style.minWidth = '300px';
         modal.style.maxWidth = '500px';
+        modal.style.fontFamily = 'sans-serif';
         modal.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                <h3 id="modal-title" style="margin: 0;">Заголовок</h3>
-                <button id="modal-close" style="background: none; border: none; font-size: 24px; cursor: pointer;">&times;</button>
+                <h3 id="modal-title" style="margin: 0; font-size: 1.2em;">Заголовок</h3>
+                <button id="modal-close" style="background: none; border: none; font-size: 28px; cursor: pointer; line-height: 1;">&times;</button>
             </div>
-            <p id="modal-info">Информация</p>
+            <p id="modal-info" style="margin: 10px 0;">Информация</p>
             <a id="modal-link" href="#" target="_blank" style="display: inline-block; margin-top: 10px; color: #007bff; text-decoration: none;">Перейти по ссылке</a>
         `;
         document.body.appendChild(modal);
         
+        // Закрытие по крестику
         document.getElementById('modal-close').onclick = () => {
             modal.style.display = 'none';
         };
         
-        modal.addEventListener('click', (e) => {
-            e.stopPropagation();
-        });
-        
+        // Функция показа окна
         function showModal(title, info, link) {
             document.getElementById('modal-title').textContent = title;
             document.getElementById('modal-info').textContent = info;
@@ -102,54 +118,68 @@
             modal.style.display = 'block';
         }
 
-        // Оверлей
+        // --- СОЗДАНИЕ СЕТКИ 18x17 (оверлей) ---
         let svgOverlay = null;
         
         viewer.addHandler('open', function() {
+            // Инициализируем оверлей
             svgOverlay = viewer.svgOverlay();
             
+            // Получаем пропорции изображения (в viewport-координатах высота = imageHeight/imageWidth)
             const imageAspect = viewer.source.dimensions.y / viewer.source.dimensions.x;
+            
             const cols = 18;
             const rows = 17;
             
+            // Создаем прямоугольники
             for (let row = 0; row < rows; row++) {
                 for (let col = 0; col < cols; col++) {
                     const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
                     
-                    rect.setAttribute("x", col / cols);
-                    rect.setAttribute("y", (row / rows) * imageAspect);
-                    rect.setAttribute("width", 1 / cols);
-                    rect.setAttribute("height", (1 / rows) * imageAspect);
+                    // Координаты в системе изображения (0..1) с поправкой на пропорции
+                    const x = col / cols;
+                    const y = (row / rows) * imageAspect;
+                    const width = 1 / cols;
+                    const height = (1 / rows) * imageAspect;
+                    
+                    rect.setAttribute("x", x);
+                    rect.setAttribute("y", y);
+                    rect.setAttribute("width", width);
+                    rect.setAttribute("height", height);
+                    
+                    // Делаем прозрачным (кликабельным, но невидимым)
                     rect.setAttribute("fill", "rgba(0, 100, 255, 0)");
                     rect.setAttribute("stroke", "none");
                     rect.setAttribute("cursor", "pointer");
                     
+                    // Сохраняем данные в атрибутах
                     rect.setAttribute("data-title", `Ячейка ${row+1}-${col+1}`);
                     rect.setAttribute("data-info", `Строка ${row+1}, столбец ${col+1}`);
                     rect.setAttribute("data-link", `https://example.com/${row+1}/${col+1}`);
                     
+                    // Добавляем в слой
                     svgOverlay.node().appendChild(rect);
                     
-                    // Используем addEventListener вместо svgOverlay.onClick
+                    // Обработчик клика (нативный для SVG, работает поверх оверлея)
                     rect.addEventListener('click', function(e) {
-                        e.stopPropagation();
+                        e.stopPropagation(); // не даем событию уйти на viewer
                         const title = this.getAttribute("data-title");
                         const info = this.getAttribute("data-info");
                         const link = this.getAttribute("data-link");
                         showModal(title, info, link);
-                        console.log("Клик по ячейке:", title);
                     });
                 }
             }
             
-            // Двойной клик для зума
+            // Глобальный обработчик двойного клика на всем оверлее (зум-ин)
             svgOverlay.node().addEventListener('dblclick', function(e) {
                 e.stopPropagation();
+                // Получаем координаты клика в системе изображения
                 const viewportPoint = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(e.clientX, e.clientY));
                 viewer.viewport.zoomBy(viewer.zoomPerClick, viewportPoint);
             });
             
-            console.log(`Создано ${cols * rows} ячеек`);
+            console.log(`Сетка загружена: ${cols}×${rows} = ${cols*rows} ячеек`);
         });
     </script>
 </body>
