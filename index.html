@@ -18,23 +18,39 @@
 const viewer = OpenSeadragon({
     id: "viewer",
     prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/images/",
-    tileSources: "output.dzi"
+    tileSources: "output.dzi",
+    maxZoomLevel: 11,
+    showZoomControl: false  // Отключаем стандартные кнопки
 });
 
-// Запрещаем контекстное меню на canvas
-viewer.canvas.addEventListener('contextmenu', function(e) {
-    e.preventDefault();
-    return false;
-});
+// Создаем свои кнопки
+const controls = document.createElement('div');
+controls.style.position = 'fixed';
+controls.style.bottom = '20px';
+controls.style.right = '20px';
+controls.style.zIndex = '1000';
+controls.innerHTML = `
+    <button id="custom-zoom-in" style="width:40px;height:40px;margin:5px;font-size:20px;">+</button>
+    <button id="custom-zoom-out" style="width:40px;height:40px;margin:5px;font-size:20px;">-</button>
+`;
+document.body.appendChild(controls);
 
-// Обрабатываем правый клик для zoom out
-viewer.addHandler('canvas-nonprimary-press', function(event) {
-    // Отключаем стандартное поведение
-    event.preventDefaultAction = true;
-    // Уменьшаем зум на 30% (0.7 = zoom out)
-    viewer.viewport.zoomBy(0.7, event.position);
-});
+// Настраиваем свои кнопки
+document.getElementById('custom-zoom-in').onclick = () => {
+    const currentZoom = viewer.viewport.getZoom();
+    const nextLevel = currentZoom * 2;
+    if (nextLevel <= viewer.source.maxLevel) {
+        viewer.viewport.zoomTo(nextLevel);
+    }
+};
 
+document.getElementById('custom-zoom-out').onclick = () => {
+    const currentZoom = viewer.viewport.getZoom();
+    const prevLevel = currentZoom / 2;
+    if (prevLevel >= viewer.source.minLevel) {
+        viewer.viewport.zoomTo(prevLevel);
+    }
+};
 
     </script>    
 </body>
