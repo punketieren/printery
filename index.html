@@ -49,28 +49,18 @@
             window.zoomStep = zoomStep;
         });
 
-        // Одиночный клик (зарезервировано)
-        viewer.addHandler('canvas-click', function(event) {
-            if (event.quick === true) {
-                event.preventDefaultAction = true;
-            }
-        });
-
         // Правый клик = зум-аут
         viewer.canvas.addEventListener('contextmenu', function(e) {
             e.preventDefault();
-            
             const currentZoom = viewer.viewport.getZoom();
             const minZoom = viewer.viewport.getHomeZoom();
-            
             if (currentZoom <= minZoom) return false;
-            
             const viewportPoint = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(e.clientX, e.clientY));
             viewer.viewport.zoomBy(1 / window.zoomStep, viewportPoint);
             return false;
         });
 
-        // --- ОВЕРЛЕЙ: СЕТКА 18x17 (прозрачная, без модального окна) ---
+        // Оверлей
         let svgOverlay = null;
         
         viewer.addHandler('open', function() {
@@ -88,18 +78,14 @@
                     rect.setAttribute("y", (row / rows) * imageAspect);
                     rect.setAttribute("width", 1 / cols);
                     rect.setAttribute("height", (1 / rows) * imageAspect);
-                    rect.setAttribute("fill", "rgba(0, 100, 255, 0.2)"); // полупрозрачный, видно для отладки
-                    rect.setAttribute("stroke", "blue");
-                    rect.setAttribute("stroke-width", "0.002");
+                    rect.setAttribute("fill", "rgba(0, 100, 255, 0)");
+                    rect.setAttribute("stroke", "none");
                     rect.setAttribute("cursor", "pointer");
                     
                     rect.setAttribute("data-title", `Ячейка ${row+1}-${col+1}`);
-                    rect.setAttribute("data-info", `Строка ${row+1}, столбец ${col+1}`);
-                    rect.setAttribute("data-link", `https://example.com/${row+1}/${col+1}`);
                     
                     svgOverlay.node().appendChild(rect);
                     
-                    // Просто выводим в консоль при клике
                     rect.addEventListener('click', function(e) {
                         e.stopPropagation();
                         console.log("Клик по ячейке:", this.getAttribute("data-title"));
