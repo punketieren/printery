@@ -21,7 +21,24 @@
             tileSources: "output.dzi",
             maxZoomLevel: 11 // Ваш максимальный уровень
         });
-
+viewer.canvas.addEventListener('contextmenu', function(e) {
+    e.preventDefault();
+    
+    // Получаем текущий уровень зума
+    const currentZoom = viewer.viewport.getZoom();
+    // Получаем минимально допустимый уровень зума (тот, при котором изображение помещается на экране)
+    const minZoom = viewer.viewport.getHomeZoom();
+    
+    // Если текущий зум уже равен минимальному, не делаем ничего
+    if (currentZoom <= minZoom) {
+        return false;
+    }
+    
+    // Иначе делаем зум-аут
+    var viewportPoint = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(e.clientX, e.clientY));
+    viewer.viewport.zoomBy(0.7, viewportPoint);
+    return false;
+});
         // --- 2. НАСТРАИВАЕМ ЛЕВЫЙ КЛИК: 1 КЛИК = 1 УРОВЕНЬ ПАПКИ ---
         // Этот код сработает, когда изображение загрузится
         viewer.addHandler('open', function() {
