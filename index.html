@@ -24,7 +24,7 @@
             
             gestureSettingsMouse: {
                 clickToZoom: false,
-                dblClickToZoom: false  // отключаем встроенный
+                dblClickToZoom: false
             },
             
             smoothTileEdges: false,
@@ -63,6 +63,40 @@
             viewer.viewport.zoomBy(zoomStep, viewportPoint);
         });
 
+        // Модальное окно
+        const modal = document.createElement('div');
+        modal.style.position = 'fixed';
+        modal.style.top = '50%';
+        modal.style.left = '50%';
+        modal.style.transform = 'translate(-50%, -50%)';
+        modal.style.backgroundColor = 'white';
+        modal.style.border = '1px solid #ccc';
+        modal.style.borderRadius = '8px';
+        modal.style.boxShadow = '0 4px 20px rgba(0,0,0,0.3)';
+        modal.style.padding = '20px';
+        modal.style.zIndex = '2000';
+        modal.style.display = 'none';
+        modal.style.minWidth = '300px';
+        modal.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h3 id="modal-title" style="margin: 0;">Заголовок</h3>
+                <button id="modal-close" style="background: none; border: none; font-size: 24px; cursor: pointer;">&times;</button>
+            </div>
+            <p id="modal-info">Информация</p>
+            <a id="modal-link" href="#" target="_blank">Перейти по ссылке</a>
+        `;
+        document.body.appendChild(modal);
+        
+        document.getElementById('modal-close').onclick = () => modal.style.display = 'none';
+        
+        function showModal(title, info, link) {
+            document.getElementById('modal-title').textContent = title;
+            document.getElementById('modal-info').textContent = info;
+            document.getElementById('modal-link').href = link;
+            document.getElementById('modal-link').textContent = link;
+            modal.style.display = 'block';
+        }
+
         // Оверлей
         let svgOverlay = null;
         
@@ -86,12 +120,40 @@
                     rect.setAttribute("cursor", "pointer");
                     
                     rect.setAttribute("data-title", `Ячейка ${row+1}-${col+1}`);
+                    rect.setAttribute("data-info", `Строка ${row+1}, столбец ${col+1}`);
+                    rect.setAttribute("data-link", `https://example.com/${row+1}/${col+1}`);
                     
                     svgOverlay.node().appendChild(rect);
                     
-                    rect.addEventListener('click', function(e) {
-                        e.stopPropagation();
-                        console.log("Клик по ячейке:", this.getAttribute("data-title"));
+                    // Обработчик с защитой от драга
+                    rect.addEventListener('mousedown', function(e) {
+                        this.dragging = false;
+                        const startX = e.clientX;
+                        const startY = e.clientY;
+                        
+                        const onMouseMove = function(e) {
+                            if (Math.abs(e.clientX - startX) > 5 || Math.abs(e.clientY - startY) > 5) {
+                                rect.dragging = true;
+                            }
+                        };
+                        
+                        const onMouseUp = function(e) {
+                            document.removeEventListener('mousemove', onMouseMove);
+                            document.removeEventListener('mouseup', onMouseUp);
+                            
+                            if (!rect.dragging) {
+                                e.stopPropagation();
+                                showModal(
+                                    rect.getAttribute("data-title"),
+                                    rect.getAttribute("data-info"),
+                                    rect.getAttribute("data-link")
+                                );
+                            }
+                            rect.dragging = false;
+                        };
+                        
+                        document.addEventListener('mousemove', onMouseMove);
+                        document.addEventListener('mouseup', onMouseUp);
                     });
                 }
             }
