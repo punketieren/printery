@@ -24,11 +24,7 @@
             
             gestureSettingsMouse: {
                 clickToZoom: false,
-                dblClickToZoom: false
-            },
-            gestureSettingsTouch: {
-                clickToZoom: false,
-                dblClickToZoom: false
+                dblClickToZoom: false  // отключаем встроенный
             },
             
             smoothTileEdges: false,
@@ -40,13 +36,13 @@
         });
 
         // Настройка зума
+        let zoomStep = 2;
         viewer.addHandler('open', function() {
             const homeZoom = viewer.viewport.getHomeZoom();
             const fullZoom = viewer.viewport.imageToViewportZoom(1);
-            const zoomStep = Math.pow(fullZoom / homeZoom, 1 / 7);
+            zoomStep = Math.pow(fullZoom / homeZoom, 1 / 7);
             viewer.zoomPerClick = zoomStep;
             viewer.zoomPerScroll = zoomStep;
-            window.zoomStep = zoomStep;
         });
 
         // Правый клик = зум-аут
@@ -56,8 +52,15 @@
             const minZoom = viewer.viewport.getHomeZoom();
             if (currentZoom <= minZoom) return false;
             const viewportPoint = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(e.clientX, e.clientY));
-            viewer.viewport.zoomBy(1 / window.zoomStep, viewportPoint);
+            viewer.viewport.zoomBy(1 / zoomStep, viewportPoint);
             return false;
+        });
+
+        // Двойной клик на canvas = зум ин
+        viewer.canvas.addEventListener('dblclick', function(e) {
+            e.preventDefault();
+            const viewportPoint = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(e.clientX, e.clientY));
+            viewer.viewport.zoomBy(zoomStep, viewportPoint);
         });
 
         // Оверлей
@@ -92,13 +95,6 @@
                     });
                 }
             }
-            
-            // Двойной клик для зума
-            svgOverlay.node().addEventListener('dblclick', function(e) {
-                e.stopPropagation();
-                const viewportPoint = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(e.clientX, e.clientY));
-                viewer.viewport.zoomBy(viewer.zoomPerClick, viewportPoint);
-            });
         });
     </script>
 </body>
