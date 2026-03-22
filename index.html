@@ -18,8 +18,33 @@
             id: "viewer",
             prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/images/",
             tileSources: "output.dzi",
-            maxZoomLevel: 11
+            maxZoomLevel: 12
         });
     </script>
+
+    <script>
+const viewer = OpenSeadragon({
+    id: "viewer",
+    prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/images/",
+    tileSources: "output.dzi",
+    maxZoomLevel: 11,
+    
+    // Отключаем контекстное меню
+    gestureSettingsMouse: {
+        clickToZoom: false,
+        dblClickToZoom: true,
+        pinchToZoom: true,
+        flickEnabled: true,
+        // Отключаем правый клик
+        rightClickToZoom: true  // Правый клик = зум аут
+    }
+});
+
+// Дополнительная защита от контекстного меню на элементе
+document.getElementById('viewer').addEventListener('contextmenu', function(e) {
+    e.preventDefault();
+    return false;
+});
+    </script>    
 </body>
 </html>
