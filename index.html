@@ -53,7 +53,7 @@
         viewer.addHandler('open', function() {
             const homeZoom = viewer.viewport.getHomeZoom();
             const fullZoom = viewer.viewport.imageToViewportZoom(1);
-            const zoomStep = Math.pow(fullZoom / homeZoom, 1 / 15);
+            const zoomStep = Math.pow(fullZoom / homeZoom, 1 / 7);
             
             viewer.zoomPerClick = zoomStep;
             viewer.zoomPerScroll = zoomStep;
@@ -123,29 +123,23 @@
             modal.style.display = 'block';
         }
 
-        // --- ОВЕРЛЕЙ: СЕТКА 18x17 С УЧЕТОМ ПРОПОРЦИЙ ---
+        // --- ОВЕРЛЕЙ: СЕТКА 18x17 ---
         let svgOverlay = null;
         
         viewer.addHandler('open', function() {
-            // Создаем оверлей
             svgOverlay = viewer.svgOverlay();
             
-            // Получаем пропорции изображения
             const imageWidth = viewer.source.dimensions.x;
             const imageHeight = viewer.source.dimensions.y;
-            const imageAspect = imageHeight / imageWidth; // высота в viewport координатах
+            const imageAspect = imageHeight / imageWidth;
             
             const cols = 18;
             const rows = 17;
-            
-            console.log(`Изображение: ${imageWidth}×${imageHeight}, пропорция: ${imageAspect}`);
-            console.log(`Создаем сетку ${cols}×${rows}, ячейка будет ${(1/cols)/((1/rows)*imageAspect)}`);
             
             for (let row = 0; row < rows; row++) {
                 for (let col = 0; col < cols; col++) {
                     const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
                     
-                    // Координаты с учетом пропорций изображения
                     const x = col / cols;
                     const y = (row / rows) * imageAspect;
                     const width = 1 / cols;
@@ -155,9 +149,8 @@
                     rect.setAttribute("y", y);
                     rect.setAttribute("width", width);
                     rect.setAttribute("height", height);
-                    rect.setAttribute("fill", "rgba(0, 100, 255, 0.2)");
-                    rect.setAttribute("stroke", "blue");
-                    rect.setAttribute("stroke-width", "0.002");
+                    rect.setAttribute("fill", "rgba(0, 100, 255, 0)");
+                    rect.setAttribute("stroke", "none");
                     rect.setAttribute("cursor", "pointer");
                     
                     rect.setAttribute("data-row", row);
@@ -168,24 +161,21 @@
                     
                     svgOverlay.node().appendChild(rect);
                     
-                    svgOverlay.onClick(rect, function(event) {
-                        showModal(
-                            this.getAttribute("data-title"),
-                            this.getAttribute("data-info"),
-                            this.getAttribute("data-link")
-                        );
+                    rect.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        const title = this.getAttribute("data-title");
+                        const info = this.getAttribute("data-info");
+                        const link = this.getAttribute("data-link");
+                        showModal(title, info, link);
                     });
                 }
             }
             
-            // Двойной клик для зума
             svgOverlay.node().addEventListener('dblclick', function(e) {
                 e.stopPropagation();
                 const viewportPoint = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(e.clientX, e.clientY));
                 viewer.viewport.zoomBy(viewer.zoomPerClick, viewportPoint);
             });
-            
-            console.log(`Создано ${cols * rows} ячеек`);
         });
     </script>
 </body>
