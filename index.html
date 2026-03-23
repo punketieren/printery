@@ -37,13 +37,51 @@
         });
 
         let zoomStep = 2;
-        viewer.addHandler('open', function() {
-            const homeZoom = viewer.viewport.getHomeZoom();
-            const fullZoom = viewer.viewport.imageToViewportZoom(1);
-            zoomStep = Math.pow(fullZoom / homeZoom, 1 / 7);
-            viewer.zoomPerClick = zoomStep;
-            viewer.zoomPerScroll = zoomStep;
-        });
+
+viewer.addHandler('open', function() {
+    console.log("=== ОБРАБОТЧИК СРАБОТАЛ ===");
+    
+    // 1. Настройка зума (была в первом обработчике)
+    const homeZoom = viewer.viewport.getHomeZoom();
+    const fullZoom = viewer.viewport.imageToViewportZoom(1);
+    const zoomStep = Math.pow(fullZoom / homeZoom, 1 / 7);
+    viewer.zoomPerClick = zoomStep;
+    viewer.zoomPerScroll = zoomStep;
+    window.zoomStep = zoomStep;
+    
+    // 2. Фикс для 8 уровней (был во втором)
+    const tiledImage = viewer.world.getItemAt(0);
+    tiledImage.source.minLevel = 0;
+    viewer.viewport._minZoomImageRatio = tiledImage.source.getZoomForLevel(0);
+    
+    // 3. Создание сетки (было в третьем)
+    svgOverlay = viewer.svgOverlay();
+    const imageAspect = viewer.source.dimensions.y / viewer.source.dimensions.x;
+    const cols = 21;
+    const rows = 20;
+    
+    for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+            const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+            rect.setAttribute("x", col / cols);
+            rect.setAttribute("y", (row / rows) * imageAspect);
+            rect.setAttribute("width", 1 / cols);
+            rect.setAttribute("height", (1 / rows) * imageAspect);
+            rect.setAttribute("fill", "rgba(0, 100, 255, 1)");
+            rect.setAttribute("stroke", "red");
+            rect.setAttribute("cursor", "pointer");
+            rect.setAttribute("data-title", `Ячейка ${row+1}-${col+1}`);
+            svgOverlay.node().appendChild(rect);
+            
+            rect.addEventListener('click', function(e) {
+                e.stopPropagation();
+                console.log("Клик по ячейке:", this.getAttribute("data-title"));
+            });
+        }
+    }
+    
+    console.log("Сетка создана, прямоугольников:", document.querySelectorAll('svg rect').length);
+});
 
         viewer.canvas.addEventListener('contextmenu', function(e) {
             e.preventDefault();
@@ -60,40 +98,10 @@
             const viewportPoint = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(e.clientX, e.clientY));
             viewer.viewport.zoomBy(zoomStep, viewportPoint);
         });
-        // Фикс для 8 уровней (0-7)
-        viewer.addHandler('open', function() {
-            var tiledImage = viewer.world.getItemAt(0);
-            tiledImage.source.minLevel = 0;
-            viewer.viewport._minZoomImageRatio = tiledImage.source.getZoomForLevel(0);
-        });
+
         let svgOverlay = null;
         
-        viewer.addHandler('open', function() {
-            svgOverlay = viewer.svgOverlay();
-            const imageAspect = viewer.source.dimensions.y / viewer.source.dimensions.x;
-            const cols = 21;
-            const rows = 20;
-            
-            for (let row = 0; row < rows; row++) {
-                for (let col = 0; col < cols; col++) {
-                    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-                    rect.setAttribute("x", col / cols);
-                    rect.setAttribute("y", (row / rows) * imageAspect);
-                    rect.setAttribute("width", 1 / cols);
-                    rect.setAttribute("height", (1 / rows) * imageAspect);
-                    rect.setAttribute("fill", "rgba(0, 100, 255, 1)");
-                    rect.setAttribute("stroke", "red");
-                    rect.setAttribute("cursor", "pointer");
-                    rect.setAttribute("data-title", `Ячейка ${row+1}-${col+1}`);
-                    svgOverlay.node().appendChild(rect);
-                    
-                    rect.addEventListener('click', function(e) {
-                        e.stopPropagation();
-                        console.log("Клик по ячейке:", this.getAttribute("data-title"));
-                    });
-                }
-            }
-        });
+
     </script>
 	
 	
