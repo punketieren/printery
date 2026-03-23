@@ -71,8 +71,8 @@
         viewer.addHandler('open', function() {
             svgOverlay = viewer.svgOverlay();
             const imageAspect = viewer.source.dimensions.y / viewer.source.dimensions.x;
-            const cols = 18;
-            const rows = 17;
+            const cols = 21;
+            const rows = 20;
             
             for (let row = 0; row < rows; row++) {
                 for (let col = 0; col < cols; col++) {
@@ -81,7 +81,7 @@
                     rect.setAttribute("y", (row / rows) * imageAspect);
                     rect.setAttribute("width", 1 / cols);
                     rect.setAttribute("height", (1 / rows) * imageAspect);
-                    rect.setAttribute("fill", "rgba(0, 100, 255, 0)");
+                    rect.setAttribute("fill", "rgba(0, 100, 255, 0.5)");
                     rect.setAttribute("stroke", "none");
                     rect.setAttribute("cursor", "pointer");
                     rect.setAttribute("data-title", `Ячейка ${row+1}-${col+1}`);
