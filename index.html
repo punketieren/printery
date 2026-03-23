@@ -39,27 +39,36 @@
         let zoomStep = 2;
 
 viewer.addHandler('open', function() {
-    console.log("=== ОБРАБОТЧИК СРАБОТАЛ ===");
+    console.log("1. Обработчик начал работу");
     
-    // 1. Настройка зума (была в первом обработчике)
+    // Настройка зума
     const homeZoom = viewer.viewport.getHomeZoom();
     const fullZoom = viewer.viewport.imageToViewportZoom(1);
     const zoomStep = Math.pow(fullZoom / homeZoom, 1 / 7);
     viewer.zoomPerClick = zoomStep;
     viewer.zoomPerScroll = zoomStep;
     window.zoomStep = zoomStep;
+    console.log("2. Зум настроен");
     
-    // 2. Фикс для 8 уровней (был во втором)
+    // Фикс для 8 уровней
     const tiledImage = viewer.world.getItemAt(0);
     tiledImage.source.minLevel = 0;
     viewer.viewport._minZoomImageRatio = tiledImage.source.getZoomForLevel(0);
+    console.log("3. Фикс применен");
     
-    // 3. Создание сетки (было в третьем)
+    // Создание сетки
+    console.log("4. Начинаю создавать сетку");
     svgOverlay = viewer.svgOverlay();
+    console.log("5. svgOverlay создан:", svgOverlay);
+    
     const imageAspect = viewer.source.dimensions.y / viewer.source.dimensions.x;
+    console.log("6. imageAspect =", imageAspect);
+    
     const cols = 21;
     const rows = 20;
+    console.log("7. Сетка", cols, "x", rows);
     
+    let rectCount = 0;
     for (let row = 0; row < rows; row++) {
         for (let col = 0; col < cols; col++) {
             const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
@@ -72,6 +81,7 @@ viewer.addHandler('open', function() {
             rect.setAttribute("cursor", "pointer");
             rect.setAttribute("data-title", `Ячейка ${row+1}-${col+1}`);
             svgOverlay.node().appendChild(rect);
+            rectCount++;
             
             rect.addEventListener('click', function(e) {
                 e.stopPropagation();
@@ -79,9 +89,10 @@ viewer.addHandler('open', function() {
             });
         }
     }
-    
-    console.log("Сетка создана, прямоугольников:", document.querySelectorAll('svg rect').length);
+    console.log("8. Создано прямоугольников:", rectCount);
+    console.log("9. Всего в SVG:", document.querySelectorAll('svg rect').length);
 });
+
 
         viewer.canvas.addEventListener('contextmenu', function(e) {
             e.preventDefault();
