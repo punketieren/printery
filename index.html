@@ -60,7 +60,12 @@
             const viewportPoint = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(e.clientX, e.clientY));
             viewer.viewport.zoomBy(zoomStep, viewportPoint);
         });
-
+        // Фикс для 8 уровней (0-7)
+        viewer.addHandler('open', function() {
+            var tiledImage = viewer.world.getItemAt(0);
+            tiledImage.source.minLevel = 0;
+            viewer.viewport._minZoomImageRatio = tiledImage.source.getZoomForLevel(0);
+        });
         let svgOverlay = null;
         
         viewer.addHandler('open', function() {
