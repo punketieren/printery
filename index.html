@@ -9,6 +9,7 @@
         body { margin: 0; padding: 0; }
         #viewer { width: 100%; height: 100vh; }
     </style>
+	<link rel="icon" href="favicon.ico">
 </head>
 <body>
 
@@ -78,6 +79,7 @@ viewer.addHandler('open', function() {
             rect.setAttribute("height", (1 / rows) * imageAspect);
             rect.setAttribute("fill", "rgba(0, 100, 255, 0.5)");
             rect.setAttribute("stroke", "null");
+            rect.setAttribute("stroke-width", "1");
             rect.setAttribute("cursor", "pointer");
             rect.setAttribute("data-title", `Ячейка ${row+1}-${col+1}`);
             svgOverlay.node().appendChild(rect);
