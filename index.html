@@ -51,9 +51,9 @@ viewer.addHandler('open', function() {
     console.log("2. Зум настроен");
     
     // Фикс для 8 уровней
-    const tiledImage = viewer.world.getItemAt(0);
-    tiledImage.source.minLevel = 0;
-    viewer.viewport._minZoomImageRatio = tiledImage.source.getZoomForLevel(0);
+  //  const tiledImage = viewer.world.getItemAt(0);
+  //  tiledImage.source.minLevel = 0;
+  //  viewer.viewport._minZoomImageRatio = tiledImage.source.getZoomForLevel(0);
     console.log("3. Фикс применен");
     
     // Создание сетки
