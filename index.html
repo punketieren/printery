@@ -99,10 +99,9 @@ viewer.addHandler('open', function() {
             rect.setAttribute("data-title", `Ячейка ${row+1}-${col+1}`);
             svgOverlay.node().appendChild(rect);
             rectCount++;
-            rect.addEventListener('click', function(e) {
-                e.stopPropagation();
-                console.log("Клик по ячейке:", this.getAttribute("data-title"));
-            });
+            svgOverlay.onClick(rect, function(e) {
+    console.log("Клик по ячейке:", this.getAttribute("data-title"));
+});
         }
     }
     console.log("8. Создано прямоугольников:", rectCount);
