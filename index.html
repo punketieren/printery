@@ -47,23 +47,17 @@
     <div id="viewer"></div>
         </div>
     </div>
-   
-
-   
     <script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/openseadragon.min.js"></script>
     <script src="https://openseadragon.github.io/svg-overlay/openseadragon-svg-overlay.js"></script>
-    
     <script>
         const viewer = OpenSeadragon({
             id: "viewer",
             prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/images/",
             tileSources: "output.dzi",
-            
             gestureSettingsMouse: {
                 clickToZoom: false,
                 dblClickToZoom: false
             },
-            
             smoothTileEdges: false,
             imageSmoothingEnabled: false,
             preloadCount: 20,
@@ -71,39 +65,24 @@
             maxImageCacheCount: 500,
             timeout: 15000
         });
-
         let zoomStep = 2;
-
 viewer.addHandler('open', function() {
     console.log("1. Обработчик начал работу");
-    
-    // Настройка зума
-    const homeZoom = viewer.viewport.getHomeZoom();
+    const homeZoom = viewer.viewport.getHomeZoom();    // Настройка зума
     const fullZoom = viewer.viewport.imageToViewportZoom(1);
     const zoomStep = Math.pow(fullZoom / homeZoom, 1 / 7);
     viewer.zoomPerClick = zoomStep;
     viewer.zoomPerScroll = zoomStep;
     window.zoomStep = zoomStep;
     console.log("2. Зум настроен");
-    
-    // Фикс для 8 уровней
-  //  const tiledImage = viewer.world.getItemAt(0);
-  //  tiledImage.source.minLevel = 0;
-  //  viewer.viewport._minZoomImageRatio = tiledImage.source.getZoomForLevel(0);
-    console.log("3. Фикс применен");
-    
-    // Создание сетки
-    console.log("4. Начинаю создавать сетку");
+    console.log("4. Начинаю создавать сетку");    // Создание сетки
     svgOverlay = viewer.svgOverlay();
     console.log("5. svgOverlay создан:", svgOverlay);
-    
     const imageAspect = viewer.source.dimensions.y / viewer.source.dimensions.x;
     console.log("6. imageAspect =", imageAspect);
-    
     const cols = 21;
     const rows = 20;
     console.log("7. Сетка", cols, "x", rows);
-    
     let rectCount = 0;
     for (let row = 0; row < rows; row++) {
         for (let col = 0; col < cols; col++) {
@@ -112,7 +91,7 @@ viewer.addHandler('open', function() {
             rect.setAttribute("y", (row / rows) * imageAspect);
             rect.setAttribute("width", 1 / cols);
             rect.setAttribute("height", (1 / rows) * imageAspect);
-            rect.setAttribute("fill", "rgba(0, 100, 255, 0)");
+            rect.setAttribute("fill", "rgba(255, 255, 255, 0.01)");
             rect.setAttribute("stroke", "black");
             rect.setAttribute("stroke-width", "0.0005");
             rect.setAttribute("stroke-opacity", "1");
@@ -120,7 +99,6 @@ viewer.addHandler('open', function() {
             rect.setAttribute("data-title", `Ячейка ${row+1}-${col+1}`);
             svgOverlay.node().appendChild(rect);
             rectCount++;
-            
             rect.addEventListener('click', function(e) {
                 e.stopPropagation();
                 console.log("Клик по ячейке:", this.getAttribute("data-title"));
@@ -130,8 +108,6 @@ viewer.addHandler('open', function() {
     console.log("8. Создано прямоугольников:", rectCount);
     console.log("9. Всего в SVG:", document.querySelectorAll('svg rect').length);
 });
-
-
         viewer.canvas.addEventListener('contextmenu', function(e) {
             e.preventDefault();
             const currentZoom = viewer.viewport.getZoom();
@@ -141,19 +117,12 @@ viewer.addHandler('open', function() {
             viewer.viewport.zoomBy(1 / zoomStep, viewportPoint);
             return false;
         });
-
         viewer.canvas.addEventListener('dblclick', function(e) {
             e.preventDefault();
             const viewportPoint = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(e.clientX, e.clientY));
             viewer.viewport.zoomBy(zoomStep, viewportPoint);
         });
-
         let svgOverlay = null;
-        
-
     </script>
-	
-	
-	
 </body>
 </html>
