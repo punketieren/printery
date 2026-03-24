@@ -6,53 +6,39 @@
     <title>...testing OpenSeeDragon</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/openseadragon.min.css">
     <style>
-* {
-    margin: 0;
+* { margin: 0;
     padding: 0;
-    box-sizing: border-box;
-}
-.container {
-    display: flex;
-    width: 100%;
-    height: 100vh;
-}
-.sidebar {
-        width: 20%;  /* 20% от ширины родителя */
-    min-width: 200px;  /* минимальная ширина, чтобы не сжималась слишком сильно */
-    max-width: 400px;  /* максимальная ширина */
-    background: #2d2d2d;
-    border-right: 1px solid #444;
-    padding: 20px;
-    overflow-y: auto;
-    color: white;
-}
-.viewer-container {
-    flex: 1;
-    position: relative;
-    background: #000;
-}
-#viewer {
-    width: 100%;
-    height: 100%;
-}
-    .viewer-container {
-    position: relative;
-}
-
-.viewer-container::after {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-    background-image: url('noise.png');
-    background-repeat: repeat;
-    background-size: 256px 256px;
-    opacity: 0.15;
-    z-index: 10;
-}</style>
+    box-sizing: border-box;}
+.container {    display: flex;
+				width: 100%;
+				height: 100vh;}
+.sidebar {      width: 20%;  /* 20% от ширины родителя */
+				min-width: 200px;  /* минимальная ширина, чтобы не сжималась слишком сильно */
+				max-width: 400px;  /* максимальная ширина */
+				background: #2d2d2d;
+				border-right: 1px solid #444;
+				padding: 20px;
+				overflow-y: auto;
+				color: white;}
+.viewer-container {    flex: 1;
+				position: relative;
+				background: #000;}
+#viewer {	    width: 100%;
+				height: 100%;}
+.viewer-container {    position: relative;}
+.viewer-container::after {    content: "";
+				position: absolute;
+				top: 0;
+				left: 0;
+				width: 100%;
+				height: 100%;
+				pointer-events: none;
+				background-image: url('noise.png');
+				background-repeat: repeat;
+				background-size: 256px 256px;
+				opacity: 0.15;
+				z-index: 10;}
+				</style>
 	<link rel="icon" type="image/x-icon" href="favicon.ico">
 </head>
 <body>
@@ -71,17 +57,14 @@
             id: "viewer",
             prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/images/",
             tileSources: "output.dzi",
-            gestureSettingsMouse: {
-                clickToZoom: false,
-                dblClickToZoom: false
-            },
+            gestureSettingsMouse: {	clickToZoom: false,
+									dblClickToZoom: false    },
             smoothTileEdges: false,
             imageSmoothingEnabled: false,
             preloadCount: 20,
             imageLoaderLimit: 10,
             maxImageCacheCount: 500,
-            timeout: 15000
-        });
+            timeout: 15000        });
         let zoomStep = 2;
 viewer.addHandler('open', function() {
     console.log("1. Обработчик начал работу");
@@ -117,20 +100,15 @@ viewer.addHandler('open', function() {
         svgOverlay.node().appendChild(rect);
         rectCount++;
         
-        new OpenSeadragon.MouseTracker({
-            element: rect,
-            clickHandler: function(event) {
-                if (event.quick) {
-                    const title = rect.getAttribute("data-title");
-updateSidebar(title, "Информация о ячейке", "https://example.com");
-                }
+        new OpenSeadragon.MouseTracker({	element: rect,
+											clickHandler: function(event) {
+                if (event.quick) {	const title = rect.getAttribute("data-title");
+updateSidebar(title, "Информация о ячейке", "https://example.com");     }
                 return false;
             }
         }).setTracking(true);
     }
 }
-    console.log("8. Создано прямоугольников:", rectCount);
-    console.log("9. Всего в SVG:", document.querySelectorAll('svg rect').length);
 });
 function updateSidebar(title, info, link) {               //обработка клика
     const sidebar = document.querySelector('.sidebar');
