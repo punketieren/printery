@@ -85,26 +85,32 @@ viewer.addHandler('open', function() {
     console.log("7. Сетка", cols, "x", rows);
     let rectCount = 0;
     for (let row = 0; row < rows; row++) {
-        for (let col = 0; col < cols; col++) {
-            const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-            rect.setAttribute("x", col / cols);
-            rect.setAttribute("y", (row / rows) * imageAspect);
-            rect.setAttribute("width", 1 / cols);
-            rect.setAttribute("height", (1 / rows) * imageAspect);
-            rect.setAttribute("fill", "rgba(255, 255, 255, 0.2)");
-            rect.setAttribute("stroke", "black");
-            rect.setAttribute("stroke-width", "0.0005");
-            rect.setAttribute("stroke-opacity", "1");
-            rect.setAttribute("cursor", "pointer");
-            rect.setAttribute("data-title", `Ячейка ${row+1}-${col+1}`);
-            svgOverlay.node().appendChild(rect);
-            rectCount++;
-            svgOverlay.onClick(rect, function(event, position, originalEvent) {
-    const title = event.target.getAttribute("data-title");
-    console.log("Клик по ячейке:", title);
-});
-        }
+    for (let col = 0; col < cols; col++) {
+        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        rect.setAttribute("x", col / cols);
+        rect.setAttribute("y", (row / rows) * imageAspect);
+        rect.setAttribute("width", 1 / cols);
+        rect.setAttribute("height", (1 / rows) * imageAspect);
+        rect.setAttribute("fill", "rgba(255, 255, 255, 0.3)");
+        rect.setAttribute("stroke", "black");
+        rect.setAttribute("stroke-width", "0.0005");
+        rect.setAttribute("stroke-opacity", "1");
+        rect.setAttribute("cursor", "pointer");
+        rect.setAttribute("data-title", `Ячейка ${row+1}-${col+1}`);
+        svgOverlay.node().appendChild(rect);
+        rectCount++;
+        
+        new OpenSeadragon.MouseTracker({
+            element: rect,
+            clickHandler: function(event) {
+                if (event.quick) {
+                    console.log("Клик по ячейке:", rect.getAttribute("data-title"));
+                }
+                return false;
+            }
+        }).setTracking(true);
     }
+}
     console.log("8. Создано прямоугольников:", rectCount);
     console.log("9. Всего в SVG:", document.querySelectorAll('svg rect').length);
 });
