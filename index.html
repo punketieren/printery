@@ -91,7 +91,7 @@ viewer.addHandler('open', function() {
             rect.setAttribute("y", (row / rows) * imageAspect);
             rect.setAttribute("width", 1 / cols);
             rect.setAttribute("height", (1 / rows) * imageAspect);
-            rect.setAttribute("fill", "rgba(255, 255, 255, 0.5)");
+            rect.setAttribute("fill", "rgba(255, 255, 255, 0.2)");
             rect.setAttribute("stroke", "black");
             rect.setAttribute("stroke-width", "0.0005");
             rect.setAttribute("stroke-opacity", "1");
@@ -99,8 +99,9 @@ viewer.addHandler('open', function() {
             rect.setAttribute("data-title", `Ячейка ${row+1}-${col+1}`);
             svgOverlay.node().appendChild(rect);
             rectCount++;
-            svgOverlay.onClick(rect, function(e) {
-    console.log("Клик по ячейке:", this.getAttribute("data-title"));
+            svgOverlay.onClick(rect, function(event, position, originalEvent) {
+    const title = this.getAttribute("data-title");
+    console.log("Клик по ячейке:", title);
 });
         }
     }
