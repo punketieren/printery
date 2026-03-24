@@ -91,7 +91,7 @@ viewer.addHandler('open', function() {
             rect.setAttribute("y", (row / rows) * imageAspect);
             rect.setAttribute("width", 1 / cols);
             rect.setAttribute("height", (1 / rows) * imageAspect);
-            rect.setAttribute("fill", "rgba(255, 255, 255, 0.01)");
+            rect.setAttribute("fill", "rgba(255, 255, 255, 0.5)");
             rect.setAttribute("stroke", "black");
             rect.setAttribute("stroke-width", "0.0005");
             rect.setAttribute("stroke-opacity", "1");
@@ -108,6 +108,16 @@ viewer.addHandler('open', function() {
     console.log("8. Создано прямоугольников:", rectCount);
     console.log("9. Всего в SVG:", document.querySelectorAll('svg rect').length);
 });
+function updateSidebar(title, info, link) {               //обработка клика
+    const sidebar = document.querySelector('.sidebar');
+    sidebar.innerHTML = `
+        <div style="background: #3a3a3a; border-radius: 8px; padding: 20px;">
+            <h3 style="margin-bottom: 15px; color: #ffaa00;">${title}</h3>
+            <p style="margin: 10px 0;">${info}</p>
+            <a href="${link}" target="_blank" style="color: #66ccff;">${link}</a>
+        </div>
+    `;
+}
         viewer.canvas.addEventListener('contextmenu', function(e) {
             e.preventDefault();
             const currentZoom = viewer.viewport.getZoom();
