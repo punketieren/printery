@@ -100,7 +100,7 @@ viewer.addHandler('open', function() {
             svgOverlay.node().appendChild(rect);
             rectCount++;
             svgOverlay.onClick(rect, function(event, position, originalEvent) {
-    const title = this.getAttribute("data-title");
+    const title = event.target.getAttribute("data-title");
     console.log("Клик по ячейке:", title);
 });
         }
