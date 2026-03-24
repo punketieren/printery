@@ -104,7 +104,8 @@ viewer.addHandler('open', function() {
             element: rect,
             clickHandler: function(event) {
                 if (event.quick) {
-                    console.log("Клик по ячейке:", rect.getAttribute("data-title"));
+                    const title = rect.getAttribute("data-title");
+updateSidebar(title, "Информация о ячейке", "https://example.com");
                 }
                 return false;
             }
