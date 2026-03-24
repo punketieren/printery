@@ -49,8 +49,8 @@
     pointer-events: none;
     background-image: url('noise.png');
     background-repeat: repeat;
-    background-size: 110px 110px;
-    opacity: 0.4;
+    background-size: 256px 256px;
+    opacity: 0.3;
     z-index: 10;
 }</style>
 	<link rel="icon" type="image/x-icon" href="favicon.ico">
@@ -108,7 +108,7 @@ viewer.addHandler('open', function() {
         rect.setAttribute("y", (row / rows) * imageAspect);
         rect.setAttribute("width", 1 / cols);
         rect.setAttribute("height", (1 / rows) * imageAspect);
-        rect.setAttribute("fill", "rgba(255, 255, 255, 0.2)");
+        rect.setAttribute("fill", "rgba(255, 255, 255, 0.1)");
         rect.setAttribute("stroke", "black");
         rect.setAttribute("stroke-width", "0.0005");
         rect.setAttribute("stroke-opacity", "1");
