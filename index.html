@@ -39,7 +39,14 @@
 				opacity: 0.15;
 				z-index: 10;}
 
+svg rect {
+    mix-blend-mode: soft-light;
+    transition: fill 0.2s, opacity 0.2s;
+}
 
+svg rect:hover {
+    fill: rgba(0, 0, 0, 0.1);
+}
 				</style>
 	<link rel="icon" type="image/x-icon" href="favicon.ico">
 </head>
