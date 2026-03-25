@@ -39,7 +39,10 @@
 				opacity: 0.15;
 				z-index: 10;}
 
-
+svg rect:hover {
+    fill: rgba(0, 0, 0, 0.1);
+    transition: fill 0.2s;
+}
 				</style>
 	<link rel="icon" type="image/x-icon" href="favicon.ico">
 </head>
@@ -67,6 +70,71 @@
         let zoomStep = 2;
 viewer.addHandler('open', function() {
     console.log("1. Обработчик начал работу");
+    
+    // Очищаем старый оверлей, если был
+    if (svgOverlay) {
+        svgOverlay.node().innerHTML = '';
+    } else {
+        svgOverlay = viewer.svgOverlay();
+    }
+    
+    // Настройка зума
+    const homeZoom = viewer.viewport.getHomeZoom();
+    const fullZoom = viewer.viewport.imageToViewportZoom(1);
+    const zoomStep = Math.pow(fullZoom / homeZoom, 1 / 7);
+    viewer.zoomPerClick = zoomStep;
+    viewer.zoomPerScroll = zoomStep;
+    window.zoomStep = zoomStep;
+    const images = {
+    1: {
+        dzi: "output.dzi",
+        cols: 21,
+        rows: 20
+    },
+    2: {
+        dzi: "output2.dzi",
+        cols: 10,  // например, для второго изображения другая сетка
+        rows: 9
+    }
+};
+let currentId = 1;
+    // Создание сетки с параметрами из images[currentId]
+    const imageAspect = viewer.source.dimensions.y / viewer.source.dimensions.x;
+    const cols = images[currentId].cols;
+    const rows = images[currentId].rows;
+    
+    for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+            const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+            rect.setAttribute("x", col / cols);
+            rect.setAttribute("y", (row / rows) * imageAspect);
+            rect.setAttribute("width", 1 / cols);
+            rect.setAttribute("height", (1 / rows) * imageAspect);
+            rect.setAttribute("fill", "rgba(0, 0, 0, 0.05)")");
+            rect.setAttribute("stroke", "black");
+            rect.setAttribute("stroke-width", "0.0005");
+            rect.setAttribute("stroke-opacity", "1");
+            rect.setAttribute("cursor", "pointer");
+            rect.setAttribute("data-title", `Ячейка ${row+1}-${col+1}`);
+            svgOverlay.node().appendChild(rect);
+            
+            new OpenSeadragon.MouseTracker({
+                element: rect,
+                clickHandler: function(event) {
+                    if (event.quick) {
+                        const title = this.getAttribute("data-title");
+                        updateSidebar(title, "Информация о ячейке", "https://example.com");
+                    }
+                    return false;
+                }
+            }).setTracking(true);
+        }
+    }
+    
+    console.log(`Сетка создана: ${cols}×${rows}`);
+});
+
+    console.log("1. Обработчик начал работу");
     const homeZoom = viewer.viewport.getHomeZoom();    // Настройка зума
     const fullZoom = viewer.viewport.imageToViewportZoom(1);
     const zoomStep = Math.pow(fullZoom / homeZoom, 1 / 7);
@@ -79,8 +147,8 @@ viewer.addHandler('open', function() {
     console.log("5. svgOverlay создан:", svgOverlay);
     const imageAspect = viewer.source.dimensions.y / viewer.source.dimensions.x;
     console.log("6. imageAspect =", imageAspect);
-    const cols = 21;
-    const rows = 20;
+    const cols = images[currentId].cols;
+	const rows = images[currentId].rows;
     console.log("7. Сетка", cols, "x", rows);
     let rectCount = 0;
     for (let row = 0; row < rows; row++) {
