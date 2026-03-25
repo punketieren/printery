@@ -48,7 +48,9 @@ svg rect:hover {
 </head>
 <body>
     <div class="container">
-        <div class="sidebar"> <!-- здесь позже добавите информацию --> </div>
+        <div class="sidebar"> <button id="switchImageBtn" style="margin-top: 20px; padding: 10px; width: 100%;">
+    Переключить изображение
+</button><!-- здесь позже добавите информацию --> </div>
         <div class="viewer-container">
 			<div id="viewer"></div>
         </div>
@@ -70,7 +72,23 @@ svg rect:hover {
         let zoomStep = 2;
 viewer.addHandler('open', function() {
     console.log("1. Обработчик начал работу");
+    let currentImage = 1;
+const imageSources = {
+    1: "output.dzi",
+    2: "output2.dzi"
+};
+
+document.getElementById('switchImageBtn').addEventListener('click', function() {
+    currentImage = currentImage === 1 ? 2 : 1;
+    const newSource = imageSources[currentImage];
     
+    // Закрываем текущее изображение и открываем новое
+    viewer.close();
+    viewer.open(newSource);
+    
+    // Сетка пересоздастся автоматически в обработчике 'open'
+    console.log("Переключено на:", newSource);
+});
     // Очищаем старый оверлей, если был
     if (svgOverlay) {
         svgOverlay.node().innerHTML = '';
