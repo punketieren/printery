@@ -55,7 +55,7 @@
         const viewer = OpenSeadragon({
             id: "viewer",
             prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/images/",
-            tileSources: "output.dzi",
+            tileSources: "output2.dzi",
             gestureSettingsMouse: {	clickToZoom: false,
 									dblClickToZoom: false    },
             smoothTileEdges: false,
@@ -79,8 +79,8 @@ viewer.addHandler('open', function() {
     console.log("5. svgOverlay создан:", svgOverlay);
     const imageAspect = viewer.source.dimensions.y / viewer.source.dimensions.x;
     console.log("6. imageAspect =", imageAspect);
-    const cols = 21;
-    const rows = 20;
+    const cols = 10;
+    const rows = 9;
     console.log("7. Сетка", cols, "x", rows);
     let rectCount = 0;
     for (let row = 0; row < rows; row++) {
