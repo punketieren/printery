@@ -127,19 +127,11 @@ svg rect:hover {
         // console.log("8. Создано прямоугольников:", rectCount);
         // console.log("9. Всего в SVG:", document.querySelectorAll('svg rect').length);
 
-        // --- ДОБАВЛЕНИЕ КНОПКИ РЯДОМ СО СТАНДАРТНЫМИ КНОПКАМИ ЗУМА ---
-        function waitForZoomButtons() {
-            const buttons = document.querySelectorAll('.openseadragon-container > div');
-            let zoomContainer = null;
-            for (let btn of buttons) {
-                const img = btn.querySelector('img');
-                if (img && (img.src.includes('zoom_in') || img.src.includes('zoom_out'))) {
-                    zoomContainer = btn.parentElement;
-                    break;
-                }
-            }
-            if (zoomContainer) {
-                if (zoomContainer.querySelector('.custom-home-button')) return;
+        // --- ДОБАВЛЕНИЕ КНОПКИ В .openseadragon-container ---
+        function addCustomButton() {
+            const container = document.querySelector('.openseadragon-container');
+            if (container) {
+                if (container.querySelector('.custom-home-button')) return;
                 const myButton = document.createElement('div');
                 myButton.className = 'custom-home-button';
                 myButton.title = 'Сброс вида';
@@ -159,14 +151,14 @@ svg rect:hover {
                 `;
                 myButton.innerHTML = '⚡';
                 myButton.onclick = () => viewer.viewport.goHome();
-                zoomContainer.appendChild(myButton);
-                console.log('✅ Кнопка добавлена');
+                container.appendChild(myButton);
+                console.log('✅ Кнопка добавлена в .openseadragon-container');
             } else {
-                console.log('⏳ Контейнер с кнопками зума не найден, жду...');
-                setTimeout(waitForZoomButtons, 200);
+                console.log('⏳ .openseadragon-container не найден, жду...');
+                setTimeout(addCustomButton, 200);
             }
         }
-        setTimeout(waitForZoomButtons, 500);
+        setTimeout(addCustomButton, 500);
     });
 
     viewer.canvas.addEventListener('contextmenu', function(e) {
@@ -185,6 +177,5 @@ svg rect:hover {
         viewer.viewport.zoomBy(zoomStep, viewportPoint);
     });
 </script>
-
 </body>
 </html>
