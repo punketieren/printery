@@ -82,7 +82,7 @@ svg rect:hover {
         console.log("1. Обработчик начал работу");
         const homeZoom = viewer.viewport.getHomeZoom();
         const fullZoom = viewer.viewport.imageToViewportZoom(1);
-        const zoomStep = Math.pow(fullZoom / homeZoom, 1 / 7);
+        zoomStep = Math.pow(fullZoom / homeZoom, 1 / 7);
         viewer.zoomPerClick = zoomStep;
         viewer.zoomPerScroll = zoomStep;
         window.zoomStep = zoomStep;
@@ -127,38 +127,44 @@ svg rect:hover {
         // console.log("8. Создано прямоугольников:", rectCount);
         // console.log("9. Всего в SVG:", document.querySelectorAll('svg rect').length);
 
-        // --- ДОБАВЛЕНИЕ КНОПКИ В .openseadragon-container ---
+        // --- ДОБАВЛЕНИЕ КНОПКИ ЧЕРЕЗ ButtonGroup ---
         function addCustomButton() {
-            const container = document.querySelector('.openseadragon-container');
-            if (container) {
-                if (container.querySelector('.custom-home-button')) return;
-                const myButton = document.createElement('div');
-                myButton.className = 'custom-home-button';
-                myButton.title = 'Сброс вида';
-                myButton.style.cssText = `
-                    display: inline-block;
-                    width: 28px;
-                    height: 28px;
-                    background: rgba(0,0,0,0.7);
-                    border: 1px solid #ccc;
-                    border-radius: 4px;
-                    color: white;
-                    cursor: pointer;
-                    margin: 2px;
-                    font-size: 18px;
-                    text-align: center;
-                    line-height: 28px;
-                `;
-                myButton.innerHTML = '⚡';
-                myButton.onclick = () => viewer.viewport.goHome();
-                container.appendChild(myButton);
-                console.log('✅ Кнопка добавлена в .openseadragon-container');
-            } else {
-                console.log('⏳ .openseadragon-container не найден, жду...');
-                setTimeout(addCustomButton, 200);
+            const buttonGroup = viewer.buttonGroup;
+            if (!buttonGroup) {
+                setTimeout(addCustomButton, 100);
+                return;
             }
+
+            const btnElement = document.createElement('div');
+            btnElement.className = 'custom-home-button';
+            btnElement.title = 'Сброс вида';
+            btnElement.style.cssText = `
+                display: inline-block;
+                width: 28px;
+                height: 28px;
+                background: rgba(0,0,0,0.7);
+                border: 1px solid #ccc;
+                border-radius: 4px;
+                color: white;
+                cursor: pointer;
+                text-align: center;
+                line-height: 28px;
+                font-size: 18px;
+                margin: 2px;
+            `;
+            btnElement.innerHTML = '⚡';
+
+            const button = new OpenSeadragon.Button({
+                element: btnElement,
+                clickHandler: () => viewer.viewport.goHome(),
+                tooltip: 'Сброс вида'
+            });
+
+            buttonGroup.addControl(button.element, { anchor: OpenSeadragon.ControlAnchor.TOP_RIGHT });
+            console.log('✅ Кнопка добавлена в ButtonGroup');
         }
-        setTimeout(addCustomButton, 500);
+
+        setTimeout(addCustomButton, 1000);
     });
 
     viewer.canvas.addEventListener('contextmenu', function(e) {
