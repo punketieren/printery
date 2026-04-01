@@ -59,7 +59,7 @@ svg rect:hover {
         const viewer = OpenSeadragon({
             id: "viewer",
             prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/images/",
-            tileSources: "output3.dzi",
+            tileSources: "output5.dzi",
             gestureSettingsMouse: {	clickToZoom: false,
 									dblClickToZoom: false    },
             smoothTileEdges: false,
@@ -113,16 +113,16 @@ viewer.addHandler('open', function() {
 //    }
 //}
 });
-function updateSidebar(title, info, link) {               //обработка клика
-    const sidebar = document.querySelector('.sidebar');
-    sidebar.innerHTML = `
-        <div style="background: #3a3a3a; border-radius: 8px; padding: 20px;">
-            <h3 style="margin-bottom: 15px; color: #ffaa00;">${title}</h3>
-            <p style="margin: 10px 0;">${info}</p>
-            <a href="${link}" target="_blank" style="color: #66ccff;">${link}</a>
-        </div>
-    `;
-}
+//function updateSidebar(title, info, link) {               //обработка клика
+  //  const sidebar = document.querySelector('.sidebar');
+ //   sidebar.innerHTML = `
+  //      <div style="background: #3a3a3a; border-radius: 8px; padding: 20px;">
+ //           <h3 style="margin-bottom: 15px; color: #ffaa00;">${title}</h3>
+ //           <p style="margin: 10px 0;">${info}</p>
+ //           <a href="${link}" target="_blank" style="color: #66ccff;">${link}</a>
+  //      </div>
+ //   `;
+//}
         viewer.canvas.addEventListener('contextmenu', function(e) {
             e.preventDefault();
             const currentZoom = viewer.viewport.getZoom();
