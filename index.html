@@ -78,58 +78,73 @@ svg rect:hover {
     let zoomStep = 2;
     let svgOverlay = null;
 
-    // Единственный обработчик open
     viewer.addHandler('open', function() {
-        // Настройка зума
+        console.log("1. Обработчик начал работу");
         const homeZoom = viewer.viewport.getHomeZoom();
         const fullZoom = viewer.viewport.imageToViewportZoom(1);
-        zoomStep = Math.pow(fullZoom / homeZoom, 1 / 7);
+        const zoomStep = Math.pow(fullZoom / homeZoom, 1 / 7);
         viewer.zoomPerClick = zoomStep;
         viewer.zoomPerScroll = zoomStep;
         window.zoomStep = zoomStep;
-
-        // Сетка временно отключена (закомментирована, как и было)
+        console.log("2. Зум настроен");
+        console.log("4. Начинаю создавать сетку");
         // svgOverlay = viewer.svgOverlay();
-        // ... остальной код сетки ...
-        //    for (let row = 0; row < rows; row++) {
-        //    for (let col = 0; col < cols; col++) {
-        //        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-        //        rect.setAttribute("x", col / cols);
-        //        rect.setAttribute("y", (row / rows) * imageAspect);
-        //        rect.setAttribute("width", 1 / cols);
-        //        rect.setAttribute("height", (1 / rows) * imageAspect);
-        //        rect.setAttribute("fill", "rgba(255, 255, 255, 0.00)");
-        //        rect.setAttribute("stroke", "black");
-        //        rect.setAttribute("stroke-width", "0.0005");
-        //        rect.setAttribute("stroke-opacity", "0");
-        //        rect.setAttribute("cursor", "pointer");
-        //        rect.setAttribute("data-title", `Ячейка ${row+1}-${col+1}`);
-        //        svgOverlay.node().appendChild(rect);
-        //        rectCount++;
-        //        
-        //        new OpenSeadragon.MouseTracker({
-        //            element: rect,
-        //            clickHandler: function(event) {
-        //                if (event.quick) {
-        //                    const title = rect.getAttribute("data-title");
-        //                    updateSidebar(title, "Информация о ячейке", "https://example.com");
-        //                }
-        //                return false;
-        //            }
-        //        }).setTracking(true);
-        //    }
-        //}
+        // console.log("5. svgOverlay создан:", svgOverlay);
+        // const imageAspect = viewer.source.dimensions.y / viewer.source.dimensions.x;
+        // console.log("6. imageAspect =", imageAspect);
+        // const cols = 19;
+        // const rows = 18;
+        // console.log("7. Сетка", cols, "x", rows);
+        // let rectCount = 0;
+        // for (let row = 0; row < rows; row++) {
+        //     for (let col = 0; col < cols; col++) {
+        //         const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        //         rect.setAttribute("x", col / cols);
+        //         rect.setAttribute("y", (row / rows) * imageAspect);
+        //         rect.setAttribute("width", 1 / cols);
+        //         rect.setAttribute("height", (1 / rows) * imageAspect);
+        //         rect.setAttribute("fill", "rgba(255, 255, 255, 0.00)");
+        //         rect.setAttribute("stroke", "black");
+        //         rect.setAttribute("stroke-width", "0.0005");
+        //         rect.setAttribute("stroke-opacity", "0");
+        //         rect.setAttribute("cursor", "pointer");
+        //         rect.setAttribute("data-title", `Ячейка ${row+1}-${col+1}`);
+        //         svgOverlay.node().appendChild(rect);
+        //         rectCount++;
+        //         
+        //         new OpenSeadragon.MouseTracker({
+        //             element: rect,
+        //             clickHandler: function(event) {
+        //                 if (event.quick) {
+        //                     const title = this.getAttribute("data-title");
+        //                     console.log("Клик по ячейке:", title);
+        //                 }
+        //                 return false;
+        //             }
+        //         }).setTracking(true);
+        //     }
+        // }
+        // console.log("8. Создано прямоугольников:", rectCount);
+        // console.log("9. Всего в SVG:", document.querySelectorAll('svg rect').length);
 
-        // --- ДОБАВЛЕНИЕ КНОПКИ В ПАНЕЛЬ УПРАВЛЕНИЯ ---
-        function waitForZoomControls() {
-            const zoomControls = document.querySelector('.openseadragon-zoom');
-            if (zoomControls) {
-                if (zoomControls.querySelector('.custom-home-button')) return;
-                const myButton = document.createElement('button');
+        // --- ДОБАВЛЕНИЕ КНОПКИ РЯДОМ СО СТАНДАРТНЫМИ КНОПКАМИ ЗУМА ---
+        function waitForZoomButtons() {
+            const buttons = document.querySelectorAll('.openseadragon-container > div');
+            let zoomContainer = null;
+            for (let btn of buttons) {
+                const img = btn.querySelector('img');
+                if (img && (img.src.includes('zoom_in') || img.src.includes('zoom_out'))) {
+                    zoomContainer = btn.parentElement;
+                    break;
+                }
+            }
+            if (zoomContainer) {
+                if (zoomContainer.querySelector('.custom-home-button')) return;
+                const myButton = document.createElement('div');
                 myButton.className = 'custom-home-button';
-                myButton.innerHTML = '⚡';
                 myButton.title = 'Сброс вида';
                 myButton.style.cssText = `
+                    display: inline-block;
                     width: 28px;
                     height: 28px;
                     background: rgba(0,0,0,0.7);
@@ -138,21 +153,22 @@ svg rect:hover {
                     color: white;
                     cursor: pointer;
                     margin: 2px;
-                    font-size: 16px;
-                    line-height: 1;
+                    font-size: 18px;
+                    text-align: center;
+                    line-height: 28px;
                 `;
+                myButton.innerHTML = '⚡';
                 myButton.onclick = () => viewer.viewport.goHome();
-                zoomControls.appendChild(myButton);
+                zoomContainer.appendChild(myButton);
                 console.log('✅ Кнопка добавлена');
             } else {
-                console.log('⏳ .openseadragon-zoom ещё не создан, жду...');
-                setTimeout(waitForZoomControls, 200);
+                console.log('⏳ Контейнер с кнопками зума не найден, жду...');
+                setTimeout(waitForZoomButtons, 200);
             }
         }
-        setTimeout(waitForZoomControls, 300);
+        setTimeout(waitForZoomButtons, 500);
     });
 
-    // Правый клик = зум-аут
     viewer.canvas.addEventListener('contextmenu', function(e) {
         e.preventDefault();
         const currentZoom = viewer.viewport.getZoom();
@@ -163,14 +179,12 @@ svg rect:hover {
         return false;
     });
 
-    // Двойной клик = зум-ин
     viewer.canvas.addEventListener('dblclick', function(e) {
         e.preventDefault();
         const viewportPoint = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(e.clientX, e.clientY));
         viewer.viewport.zoomBy(zoomStep, viewportPoint);
     });
 </script>
-
 
 </body>
 </html>
