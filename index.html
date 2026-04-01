@@ -51,9 +51,6 @@ svg rect:hover {
     <div class="container">
  <!--       <div class="sidebar">  здесь позже добавите информацию  </div> -->
         <div class="viewer-container">
-	<button id="my-custom-button" style="position: fixed; bottom: 20px; left: 20px; z-index: 1000;">
-    Моя кнопка
-</button>
 
 			<div id="viewer"></div>
         </div>
@@ -62,10 +59,7 @@ svg rect:hover {
 
 
     <script>
-//инициализация кнопки
-document.getElementById('my-custom-button').addEventListener('click', function() {
-     alert('Привет!');
-});
+
 
         const viewer = OpenSeadragon({
             id: "viewer",
@@ -150,16 +144,17 @@ viewer.addHandler('open', function() {
         });
         let svgOverlay = null;
 		
-		//кнопку в шапку
-		viewer.addHandler('open', function() {
-    // Находим панель управления
-    const controls = document.querySelector('.openseadragon-controls');
-    if (controls) {
+
+viewer.addHandler('open', function() {
+    // Ищем контейнер стандартных кнопок зума
+    const zoomControls = document.querySelector('.openseadragon-zoom');
+    
+    if (zoomControls) {
+        // Если нашли — добавляем кнопку туда же
         const myButton = document.createElement('button');
-        myButton.innerHTML = '⚡';  // иконка
+        myButton.innerHTML = '⚡';
         myButton.title = 'Моя функция';
         myButton.style.cssText = `
-            position: relative;
             width: 28px;
             height: 28px;
             background: rgba(0,0,0,0.7);
@@ -170,11 +165,34 @@ viewer.addHandler('open', function() {
             margin: 2px;
         `;
         myButton.onclick = function() {
-            // Твоя функция
-            console.log('Моя кнопка нажата');
             viewer.viewport.goHome();
         };
-        controls.appendChild(myButton);
+        zoomControls.appendChild(myButton);
+    } else {
+        // Если не нашли — ищем любую панель управления
+        const controls = document.querySelector('.openseadragon-controls');
+        if (controls) {
+            const myButton = document.createElement('button');
+            myButton.innerHTML = '⚡';
+            myButton.title = 'Моя функция';
+            myButton.style.cssText = `
+                position: relative;
+                width: 28px;
+                height: 28px;
+                background: rgba(0,0,0,0.7);
+                border: 1px solid #ccc;
+                border-radius: 4px;
+                color: white;
+                cursor: pointer;
+                margin: 2px;
+            `;
+            myButton.onclick = function() {
+                viewer.viewport.goHome();
+            };
+            controls.appendChild(myButton);
+        } else {
+            console.log('Панель управления не найдена');
+        }
     }
 });
     </script>
