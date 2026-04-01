@@ -36,7 +36,7 @@
 				background-image: url('noise.png');
 				background-repeat: repeat;
 				background-size: 256px 256px;
-				opacity: 0.15;
+				opacity: 0.05;
 				z-index: 10;}
 
 
@@ -63,7 +63,7 @@ svg rect:hover {
             gestureSettingsMouse: {	clickToZoom: false,
 									dblClickToZoom: false    },
             smoothTileEdges: false,
-            imageSmoothingEnabled: false,
+            imageSmoothingEnabled: true,
             preloadCount: 20,
             imageLoaderLimit: 10,
             maxImageCacheCount: 500,
@@ -87,31 +87,31 @@ viewer.addHandler('open', function() {
     const rows = 18;
     console.log("7. Сетка", cols, "x", rows);
     let rectCount = 0;
-    for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
-        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-        rect.setAttribute("x", col / cols);
-        rect.setAttribute("y", (row / rows) * imageAspect);
-        rect.setAttribute("width", 1 / cols);
-        rect.setAttribute("height", (1 / rows) * imageAspect);
-        rect.setAttribute("fill", "rgba(255, 255, 255, 0.00)");
-        rect.setAttribute("stroke", "black");
-        rect.setAttribute("stroke-width", "0.0005");
-        rect.setAttribute("stroke-opacity", "0");
-        rect.setAttribute("cursor", "pointer");
-        rect.setAttribute("data-title", `Ячейка ${row+1}-${col+1}`);
-        svgOverlay.node().appendChild(rect);
-        rectCount++;
+//    for (let row = 0; row < rows; row++) {
+//    for (let col = 0; col < cols; col++) {
+//        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+//        rect.setAttribute("x", col / cols);
+//        rect.setAttribute("y", (row / rows) * imageAspect);
+//        rect.setAttribute("width", 1 / cols);
+//        rect.setAttribute("height", (1 / rows) * imageAspect);
+//        rect.setAttribute("fill", "rgba(255, 255, 255, 0.00)");
+//        rect.setAttribute("stroke", "black");
+//        rect.setAttribute("stroke-width", "0.0005");
+//        rect.setAttribute("stroke-opacity", "0");
+//        rect.setAttribute("cursor", "pointer");
+        //rect.setAttribute("data-title", `Ячейка ${row+1}-${col+1}`);
+//        svgOverlay.node().appendChild(rect);
+        //rectCount++;
         
-        new OpenSeadragon.MouseTracker({	element: rect,
-											clickHandler: function(event) {
-                if (event.quick) {	const title = rect.getAttribute("data-title");
-updateSidebar(title, "Информация о ячейке", "https://example.com");     }
-                return false;
-            }
-        }).setTracking(true);
-    }
-}
+      //  new OpenSeadragon.MouseTracker({	element: rect,
+	//										clickHandler: function(event) {
+//                if (event.quick) {	const title = rect.getAttribute("data-title");
+//updateSidebar(title, "Информация о ячейке", "https://example.com");     }
+//                return false;
+//            }
+//        }).setTracking(true);
+//    }
+//}
 });
 function updateSidebar(title, info, link) {               //обработка клика
     const sidebar = document.querySelector('.sidebar');
