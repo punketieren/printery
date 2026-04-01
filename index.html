@@ -62,7 +62,7 @@ svg rect:hover {
     const viewer = OpenSeadragon({
         id: "viewer",
         prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/images/",
-        tileSources: "output5.dzi",
+        tileSources: "output.dzi",
         gestureSettingsMouse: {
             clickToZoom: false,
             dblClickToZoom: false
@@ -82,7 +82,7 @@ svg rect:hover {
         console.log("1. Обработчик начал работу");
         const homeZoom = viewer.viewport.getHomeZoom();
         const fullZoom = viewer.viewport.imageToViewportZoom(1);
-        const zoomStep = Math.pow(fullZoom / homeZoom, 1 / 7);
+        zoomStep = Math.pow(fullZoom / homeZoom, 1 / 7);
         viewer.zoomPerClick = zoomStep;
         viewer.zoomPerScroll = zoomStep;
         window.zoomStep = zoomStep;
@@ -127,20 +127,20 @@ svg rect:hover {
         // console.log("8. Создано прямоугольников:", rectCount);
         // console.log("9. Всего в SVG:", document.querySelectorAll('svg rect').length);
 
-        // --- ДОБАВЛЕНИЕ КНОПКИ ПОСЛЕ КНОПКИ "Toggle full page" ---
-        function addButton() {
+        // --- КНОПКА СМЕНЫ ИЗОБРАЖЕНИЯ ---
+        function addSwitchButton() {
             const fullPageBtn = document.querySelector('[title="Toggle full page"]');
             if (!fullPageBtn) {
-                setTimeout(addButton, 200);
+                setTimeout(addSwitchButton, 200);
                 return;
             }
             
             const parent = fullPageBtn.parentElement;
-            if (!parent || parent.querySelector('.custom-home-button')) return;
+            if (!parent || parent.querySelector('.custom-switch-button')) return;
             
             const btn = document.createElement('div');
-            btn.className = 'custom-home-button';
-            btn.title = 'Сброс вида';
+            btn.className = 'custom-switch-button';
+            btn.title = 'Сменить изображение';
             btn.style.cssText = `
                 display: inline-block;
                 width: 28px;
@@ -155,14 +155,26 @@ svg rect:hover {
                 font-size: 18px;
                 margin: 2px;
             `;
-            btn.innerHTML = '⚡';
-            btn.onclick = () => viewer.viewport.goHome();
+            btn.innerHTML = '🔄';
+            
+            let current = 1;
+            btn.onclick = () => {
+                if (current === 1) {
+                    viewer.open("output5.dzi");
+                    current = 2;
+                    console.log('✅ Переключено на output5.dzi');
+                } else {
+                    viewer.open("output.dzi");
+                    current = 1;
+                    console.log('✅ Переключено на output.dzi');
+                }
+            };
             
             parent.appendChild(btn);
-            console.log('✅ Кнопка добавлена после кнопки fullscreen');
+            console.log('✅ Кнопка смены изображения добавлена');
         }
         
-        setTimeout(addButton, 1000);
+        setTimeout(addSwitchButton, 1000);
     });
 
     viewer.canvas.addEventListener('contextmenu', function(e) {
