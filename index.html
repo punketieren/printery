@@ -57,6 +57,7 @@ svg rect:hover {
     </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/openseadragon.min.js"> </script><script src="https://openseadragon.github.io/svg-overlay/openseadragon-svg-overlay.js"></script>
 
+
 <script>
     const viewer = OpenSeadragon({
         id: "viewer",
@@ -90,12 +91,42 @@ svg rect:hover {
         // Сетка временно отключена (закомментирована, как и было)
         // svgOverlay = viewer.svgOverlay();
         // ... остальной код сетки ...
+        //    for (let row = 0; row < rows; row++) {
+        //    for (let col = 0; col < cols; col++) {
+        //        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        //        rect.setAttribute("x", col / cols);
+        //        rect.setAttribute("y", (row / rows) * imageAspect);
+        //        rect.setAttribute("width", 1 / cols);
+        //        rect.setAttribute("height", (1 / rows) * imageAspect);
+        //        rect.setAttribute("fill", "rgba(255, 255, 255, 0.00)");
+        //        rect.setAttribute("stroke", "black");
+        //        rect.setAttribute("stroke-width", "0.0005");
+        //        rect.setAttribute("stroke-opacity", "0");
+        //        rect.setAttribute("cursor", "pointer");
+        //        rect.setAttribute("data-title", `Ячейка ${row+1}-${col+1}`);
+        //        svgOverlay.node().appendChild(rect);
+        //        rectCount++;
+        //        
+        //        new OpenSeadragon.MouseTracker({
+        //            element: rect,
+        //            clickHandler: function(event) {
+        //                if (event.quick) {
+        //                    const title = rect.getAttribute("data-title");
+        //                    updateSidebar(title, "Информация о ячейке", "https://example.com");
+        //                }
+        //                return false;
+        //            }
+        //        }).setTracking(true);
+        //    }
+        //}
 
         // --- ДОБАВЛЕНИЕ КНОПКИ В ПАНЕЛЬ УПРАВЛЕНИЯ ---
-        setTimeout(() => {
+        function waitForZoomControls() {
             const zoomControls = document.querySelector('.openseadragon-zoom');
             if (zoomControls) {
+                if (zoomControls.querySelector('.custom-home-button')) return;
                 const myButton = document.createElement('button');
+                myButton.className = 'custom-home-button';
                 myButton.innerHTML = '⚡';
                 myButton.title = 'Сброс вида';
                 myButton.style.cssText = `
@@ -107,16 +138,18 @@ svg rect:hover {
                     color: white;
                     cursor: pointer;
                     margin: 2px;
+                    font-size: 16px;
+                    line-height: 1;
                 `;
-                myButton.onclick = function() {
-                    viewer.viewport.goHome();
-                };
+                myButton.onclick = () => viewer.viewport.goHome();
                 zoomControls.appendChild(myButton);
                 console.log('✅ Кнопка добавлена');
             } else {
-                console.log('❌ .openseadragon-zoom не найден');
+                console.log('⏳ .openseadragon-zoom ещё не создан, жду...');
+                setTimeout(waitForZoomControls, 200);
             }
-        }, 100);
+        }
+        setTimeout(waitForZoomControls, 300);
     });
 
     // Правый клик = зум-аут
@@ -137,6 +170,7 @@ svg rect:hover {
         viewer.viewport.zoomBy(zoomStep, viewportPoint);
     });
 </script>
+
 
 </body>
 </html>
