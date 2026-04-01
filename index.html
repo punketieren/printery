@@ -82,7 +82,7 @@ svg rect:hover {
         console.log("1. Обработчик начал работу");
         const homeZoom = viewer.viewport.getHomeZoom();
         const fullZoom = viewer.viewport.imageToViewportZoom(1);
-        zoomStep = Math.pow(fullZoom / homeZoom, 1 / 7);
+        const zoomStep = Math.pow(fullZoom / homeZoom, 1 / 7);
         viewer.zoomPerClick = zoomStep;
         viewer.zoomPerScroll = zoomStep;
         window.zoomStep = zoomStep;
@@ -127,18 +127,21 @@ svg rect:hover {
         // console.log("8. Создано прямоугольников:", rectCount);
         // console.log("9. Всего в SVG:", document.querySelectorAll('svg rect').length);
 
-        // --- ДОБАВЛЕНИЕ КНОПКИ ЧЕРЕЗ ButtonGroup ---
-        function addCustomButton() {
-            const buttonGroup = viewer.buttonGroup;
-            if (!buttonGroup) {
-                setTimeout(addCustomButton, 100);
+        // --- ДОБАВЛЕНИЕ КНОПКИ ПОСЛЕ КНОПКИ "Toggle full page" ---
+        function addButton() {
+            const fullPageBtn = document.querySelector('[title="Toggle full page"]');
+            if (!fullPageBtn) {
+                setTimeout(addButton, 200);
                 return;
             }
-
-            const btnElement = document.createElement('div');
-            btnElement.className = 'custom-home-button';
-            btnElement.title = 'Сброс вида';
-            btnElement.style.cssText = `
+            
+            const parent = fullPageBtn.parentElement;
+            if (!parent || parent.querySelector('.custom-home-button')) return;
+            
+            const btn = document.createElement('div');
+            btn.className = 'custom-home-button';
+            btn.title = 'Сброс вида';
+            btn.style.cssText = `
                 display: inline-block;
                 width: 28px;
                 height: 28px;
@@ -152,19 +155,14 @@ svg rect:hover {
                 font-size: 18px;
                 margin: 2px;
             `;
-            btnElement.innerHTML = '⚡';
-
-            const button = new OpenSeadragon.Button({
-                element: btnElement,
-                clickHandler: () => viewer.viewport.goHome(),
-                tooltip: 'Сброс вида'
-            });
-
-            buttonGroup.addControl(button.element, { anchor: OpenSeadragon.ControlAnchor.TOP_RIGHT });
-            console.log('✅ Кнопка добавлена в ButtonGroup');
+            btn.innerHTML = '⚡';
+            btn.onclick = () => viewer.viewport.goHome();
+            
+            parent.appendChild(btn);
+            console.log('✅ Кнопка добавлена после кнопки fullscreen');
         }
-
-        setTimeout(addCustomButton, 1000);
+        
+        setTimeout(addButton, 1000);
     });
 
     viewer.canvas.addEventListener('contextmenu', function(e) {
