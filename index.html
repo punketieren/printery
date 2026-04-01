@@ -57,145 +57,86 @@ svg rect:hover {
     </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/openseadragon.min.js"> </script><script src="https://openseadragon.github.io/svg-overlay/openseadragon-svg-overlay.js"></script>
 
+<script>
+    const viewer = OpenSeadragon({
+        id: "viewer",
+        prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/images/",
+        tileSources: "output5.dzi",
+        gestureSettingsMouse: {
+            clickToZoom: false,
+            dblClickToZoom: false
+        },
+        smoothTileEdges: false,
+        imageSmoothingEnabled: true,
+        preloadCount: 20,
+        imageLoaderLimit: 10,
+        maxImageCacheCount: 500,
+        timeout: 15000
+    });
 
-    <script>
+    let zoomStep = 2;
+    let svgOverlay = null;
 
+    // Единственный обработчик open
+    viewer.addHandler('open', function() {
+        // Настройка зума
+        const homeZoom = viewer.viewport.getHomeZoom();
+        const fullZoom = viewer.viewport.imageToViewportZoom(1);
+        zoomStep = Math.pow(fullZoom / homeZoom, 1 / 7);
+        viewer.zoomPerClick = zoomStep;
+        viewer.zoomPerScroll = zoomStep;
+        window.zoomStep = zoomStep;
 
-        const viewer = OpenSeadragon({
-            id: "viewer",
-            prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/images/",
-            tileSources: "output5.dzi",
-            gestureSettingsMouse: {	clickToZoom: false,
-									dblClickToZoom: false    },
-            smoothTileEdges: false,
-            imageSmoothingEnabled: true,
-            preloadCount: 20,
-            imageLoaderLimit: 10,
-            maxImageCacheCount: 500,
-            timeout: 15000        });
-        let zoomStep = 2;
-viewer.addHandler('open', function() {
-    console.log("1. Обработчик начал работу");
-    const homeZoom = viewer.viewport.getHomeZoom();    // Настройка зума
-    const fullZoom = viewer.viewport.imageToViewportZoom(1);
-    const zoomStep = Math.pow(fullZoom / homeZoom, 1 / 7);
-    viewer.zoomPerClick = zoomStep;
-    viewer.zoomPerScroll = zoomStep;
-    window.zoomStep = zoomStep;
-    console.log("2. Зум настроен");
-    console.log("4. Начинаю создавать сетку");    // Создание сетки
-    svgOverlay = viewer.svgOverlay();
-    console.log("5. svgOverlay создан:", svgOverlay);
-    const imageAspect = viewer.source.dimensions.y / viewer.source.dimensions.x;
-    console.log("6. imageAspect =", imageAspect);
-    const cols = 19;
-    const rows = 18;
-    console.log("7. Сетка", cols, "x", rows);
-    let rectCount = 0;
-//    for (let row = 0; row < rows; row++) {
-//    for (let col = 0; col < cols; col++) {
-//        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-//        rect.setAttribute("x", col / cols);
-//        rect.setAttribute("y", (row / rows) * imageAspect);
-//        rect.setAttribute("width", 1 / cols);
-//        rect.setAttribute("height", (1 / rows) * imageAspect);
-//        rect.setAttribute("fill", "rgba(255, 255, 255, 0.00)");
-//        rect.setAttribute("stroke", "black");
-//        rect.setAttribute("stroke-width", "0.0005");
-//        rect.setAttribute("stroke-opacity", "0");
-//        rect.setAttribute("cursor", "pointer");
-        //rect.setAttribute("data-title", `Ячейка ${row+1}-${col+1}`);
-//        svgOverlay.node().appendChild(rect);
-        //rectCount++;
-        
-      //  new OpenSeadragon.MouseTracker({	element: rect,
-	//										clickHandler: function(event) {
-//                if (event.quick) {	const title = rect.getAttribute("data-title");
-//updateSidebar(title, "Информация о ячейке", "https://example.com");     }
-//                return false;
-//            }
-//        }).setTracking(true);
-//    }
-//}
-});
-//function updateSidebar(title, info, link) {               //обработка клика
-  //  const sidebar = document.querySelector('.sidebar');
- //   sidebar.innerHTML = `
-  //      <div style="background: #3a3a3a; border-radius: 8px; padding: 20px;">
- //           <h3 style="margin-bottom: 15px; color: #ffaa00;">${title}</h3>
- //           <p style="margin: 10px 0;">${info}</p>
- //           <a href="${link}" target="_blank" style="color: #66ccff;">${link}</a>
-  //      </div>
- //   `;
-//}
-        viewer.canvas.addEventListener('contextmenu', function(e) {
-            e.preventDefault();
-            const currentZoom = viewer.viewport.getZoom();
-            const minZoom = viewer.viewport.getHomeZoom();
-            if (currentZoom <= minZoom) return false;
-            const viewportPoint = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(e.clientX, e.clientY));
-            viewer.viewport.zoomBy(1 / zoomStep, viewportPoint);
-            return false;
-        });
-        viewer.canvas.addEventListener('dblclick', function(e) {
-            e.preventDefault();
-            const viewportPoint = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(e.clientX, e.clientY));
-            viewer.viewport.zoomBy(zoomStep, viewportPoint);
-        });
-        let svgOverlay = null;
-		
+        // Сетка временно отключена (закомментирована, как и было)
+        // svgOverlay = viewer.svgOverlay();
+        // ... остальной код сетки ...
 
-viewer.addHandler('open', function() {
-    // Ищем контейнер стандартных кнопок зума
-    const zoomControls = document.querySelector('.openseadragon-zoom');
-    
-    if (zoomControls) {
-        // Если нашли — добавляем кнопку туда же
-        const myButton = document.createElement('button');
-        myButton.innerHTML = '⚡';
-        myButton.title = 'Моя функция';
-        myButton.style.cssText = `
-            width: 28px;
-            height: 28px;
-            background: rgba(0,0,0,0.7);
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            color: white;
-            cursor: pointer;
-            margin: 2px;
-        `;
-        myButton.onclick = function() {
-            viewer.viewport.goHome();
-        };
-        zoomControls.appendChild(myButton);
-    } else {
-        // Если не нашли — ищем любую панель управления
-        const controls = document.querySelector('.openseadragon-controls');
-        if (controls) {
-            const myButton = document.createElement('button');
-            myButton.innerHTML = '⚡';
-            myButton.title = 'Моя функция';
-            myButton.style.cssText = `
-                position: relative;
-                width: 28px;
-                height: 28px;
-                background: rgba(0,0,0,0.7);
-                border: 1px solid #ccc;
-                border-radius: 4px;
-                color: white;
-                cursor: pointer;
-                margin: 2px;
-            `;
-            myButton.onclick = function() {
-                viewer.viewport.goHome();
-            };
-            controls.appendChild(myButton);
-        } else {
-            console.log('Панель управления не найдена');
-        }
-    }
-});
-    </script>
+        // --- ДОБАВЛЕНИЕ КНОПКИ В ПАНЕЛЬ УПРАВЛЕНИЯ ---
+        setTimeout(() => {
+            const zoomControls = document.querySelector('.openseadragon-zoom');
+            if (zoomControls) {
+                const myButton = document.createElement('button');
+                myButton.innerHTML = '⚡';
+                myButton.title = 'Сброс вида';
+                myButton.style.cssText = `
+                    width: 28px;
+                    height: 28px;
+                    background: rgba(0,0,0,0.7);
+                    border: 1px solid #ccc;
+                    border-radius: 4px;
+                    color: white;
+                    cursor: pointer;
+                    margin: 2px;
+                `;
+                myButton.onclick = function() {
+                    viewer.viewport.goHome();
+                };
+                zoomControls.appendChild(myButton);
+                console.log('✅ Кнопка добавлена');
+            } else {
+                console.log('❌ .openseadragon-zoom не найден');
+            }
+        }, 100);
+    });
+
+    // Правый клик = зум-аут
+    viewer.canvas.addEventListener('contextmenu', function(e) {
+        e.preventDefault();
+        const currentZoom = viewer.viewport.getZoom();
+        const minZoom = viewer.viewport.getHomeZoom();
+        if (currentZoom <= minZoom) return false;
+        const viewportPoint = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(e.clientX, e.clientY));
+        viewer.viewport.zoomBy(1 / zoomStep, viewportPoint);
+        return false;
+    });
+
+    // Двойной клик = зум-ин
+    viewer.canvas.addEventListener('dblclick', function(e) {
+        e.preventDefault();
+        const viewportPoint = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(e.clientX, e.clientY));
+        viewer.viewport.zoomBy(zoomStep, viewportPoint);
+    });
+</script>
 
 </body>
 </html>
