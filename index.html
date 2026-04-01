@@ -51,11 +51,22 @@ svg rect:hover {
     <div class="container">
  <!--       <div class="sidebar">  здесь позже добавите информацию  </div> -->
         <div class="viewer-container">
+	<button id="my-custom-button" style="position: fixed; bottom: 20px; left: 20px; z-index: 1000;">
+    Моя кнопка
+</button>
+
 			<div id="viewer"></div>
         </div>
     </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/openseadragon.min.js"> </script><script src="https://openseadragon.github.io/svg-overlay/openseadragon-svg-overlay.js"></script>
+
+
     <script>
+//инициализация кнопки
+document.getElementById('my-custom-button').addEventListener('click', function() {
+     alert('Привет!');
+});
+
         const viewer = OpenSeadragon({
             id: "viewer",
             prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/images/",
@@ -138,6 +149,35 @@ viewer.addHandler('open', function() {
             viewer.viewport.zoomBy(zoomStep, viewportPoint);
         });
         let svgOverlay = null;
+		
+		//кнопку в шапку
+		viewer.addHandler('open', function() {
+    // Находим панель управления
+    const controls = document.querySelector('.openseadragon-controls');
+    if (controls) {
+        const myButton = document.createElement('button');
+        myButton.innerHTML = '⚡';  // иконка
+        myButton.title = 'Моя функция';
+        myButton.style.cssText = `
+            position: relative;
+            width: 28px;
+            height: 28px;
+            background: rgba(0,0,0,0.7);
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            color: white;
+            cursor: pointer;
+            margin: 2px;
+        `;
+        myButton.onclick = function() {
+            // Твоя функция
+            console.log('Моя кнопка нажата');
+            viewer.viewport.goHome();
+        };
+        controls.appendChild(myButton);
+    }
+});
     </script>
+
 </body>
 </html>
