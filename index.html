@@ -160,13 +160,18 @@ svg rect:hover {
             `;
             btn.innerHTML = '🔄';
             
-            const sources = ["output6.dzi", "output5.dzi", "output7.dzi", "output8.dzi"];
-let currentIndex = 0;
-btn.onclick = () => {
-    currentIndex = (currentIndex + 1) % sources.length;
-    viewer.open(sources[currentIndex]);
-    console.log(`✅ Переключено на ${sources[currentIndex]}`);
-};
+            let current = 1;
+            btn.onclick = () => {
+                if (current === 1) {
+                    viewer.open("output6.dzi");
+                    current = 2;
+                    console.log('✅ Переключено на output6.dzi');
+                } else {
+                    viewer.open("output5.dzi");
+                    current = 1;
+                    console.log('✅ Переключено на output5.dzi');
+                }
+            };
             
             parent.appendChild(btn);
             console.log('✅ Кнопка смены изображения добавлена');
