@@ -144,7 +144,7 @@ svg rect:hover {
             btn.style.cssText = `
                 display: inline-block;
                 width: 28px;
-                height: 28px;
+                height: 34px;
                 background: rgba(0,0,0,0.7);
                 border: 1px solid #ccc;
                 border-radius: 4px;
@@ -160,13 +160,13 @@ svg rect:hover {
             let current = 1;
             btn.onclick = () => {
                 if (current === 1) {
-                    viewer.open("output5.dzi");
-                    current = 2;
-                    console.log('✅ Переключено на output5.dzi');
-                } else {
                     viewer.open("output6.dzi");
-                    current = 1;
+                    current = 2;
                     console.log('✅ Переключено на output6.dzi');
+                } else {
+                    viewer.open("output5.dzi");
+                    current = 1;
+                    console.log('✅ Переключено на output5.dzi');
                 }
             };
             
