@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Сшивка с правильной геометрией</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #f0f2f5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #1a1a1a;
+        }
+
+        .controls {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .btn {
+            background: #1877f2;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+        }
+
+        .btn:hover {
+            background: #166fe5;
+        }
+
+        .btn.secondary {
+            background: #42b72a;
+        }
+
+        .btn:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+        }
+
+        .file-input-wrapper {
+            position: relative;
+            overflow: hidden;
+            display: inline-block;
+        }
+
+        .file-input-wrapper input {
+            position: absolute;
+            left: 0;
+            top: 0;
+            opacity: 0;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+        }
+
+        .quality-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #f8f9fa;
+            padding: 10px 15px;
+            border-radius: 6px;
+        }
+
+        .quality-control input {
+            width: 80px;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .limits {
+            background: #e8f4fd;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            color: #1877f2;
+        }
+
+        .progress-container {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        .progress-item {
+            margin-bottom: 15px;
+        }
+
+        .progress-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+
+        .progress-bar-bg {
+            width: 100%;
+            height: 12px;
+            background: #e9ecef;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: #1877f2;
+            transition: width 0.2s;
+            width: 0%;
+            border-radius: 6px;
+        }
+
+        .progress-status {
+            font-family: monospace;
+            font-size: 0.9rem;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 600;
+            color: #1877f2;
+        }
+
+        .stat-label {
+            color: #666;
+            margin-top: 5px;
+            font-size: 0.9rem;
+        }
+
+        .grid-info {
+            background: #e8f4fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-family: monospace;
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+
+        .grid-info.success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .previews {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .preview-section {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .preview-section h2 {
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .canvas-container {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 10px;
+            min-height: 300px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border: 2px dashed #ddd;
+            overflow: auto;
+        }
+
+        canvas {
+            max-width: 100%;
+            height: auto;
+            border-radius: 4px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .download-btn {
+            width: 100%;
+            padding: 12px;
+            background: #42b72a;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-top: 15px;
+            font-size: 1rem;
+        }
+
+        .download-btn:hover:not(:disabled) {
+            background: #3ba126;
+        }
+
+        .download-btn:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+        }
+
+        .error-log {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 10px;
+            border-radius: 6px;
+            margin-top: 10px;
+            font-size: 0.9rem;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🖼️ Сшивка с правильной геометрией</h1>
+        
+        <div class="controls">
+            <div class="file-input-wrapper">
+                <button class="btn">📁 Выбрать файлы</button>
+                <input type="file" id="fileInput" multiple accept="image/*" onchange="handleFiles(this.files)">
+            </div>
+            
+            <div class="file-input-wrapper">
+                <button class="btn">📂 Выбрать папку</button>
+                <input type="file" id="folderInput" multiple accept="image/*" webkitdirectory directory onchange="handleFiles(this.files)">
+            </div>
+            
+            <div class="quality-control">
+                <label>Качество JPEG:</label>
+                <input type="number" id="quality" min="1" max="100" value="25">%
+            </div>
+            
+            <div class="limits">
+                Макс: 25500×18214
+            </div>
+            
+            <button class="btn secondary" id="processBtn" disabled onclick="processImages()">
+                🔄 Сшить
+            </button>
+        </div>
+
+        <div class="progress-container hidden" id="progressContainer">
+            <div class="progress-item">
+                <div class="progress-label">
+                    <span id="progressTitle">Общий прогресс</span>
+                    <span id="progressPercent">0%</span>
+                </div>
+                <div class="progress-bar-bg">
+                    <div class="progress-bar-fill" id="progressBar"></div>
+                </div>
+                <div class="progress-status" id="progressStatus">
+                    Подготовка...
+                </div>
+            </div>
+        </div>
+
+        <div class="stats-grid" id="statsGrid">
+            <div class="stat-card">
+                <div class="stat-value" id="totalFiles">0</div>
+                <div class="stat-label">Всего файлов</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="landscapeTotal">0</div>
+                <div class="stat-label">Пейзажных</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="portraitTotal">0</div>
+                <div class="stat-label">Портретных</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="processedCount">0</div>
+                <div class="stat-label">Обработано</div>
+            </div>
+        </div>
+
+        <div class="grid-info hidden" id="gridInfo">
+            <div id="landscapeGridInfo"></div>
+            <div id="portraitGridInfo"></div>
+        </div>
+
+        <div class="error-log hidden" id="errorLog"></div>
+
+        <div class="previews">
+            <div class="preview-section">
+                <h2>🌄 Пейзажные <span id="landscapeCount">0</span></h2>
+                <div class="canvas-container">
+                    <canvas id="landscapeCanvas"></canvas>
+                </div>
+                <button class="download-btn" id="downloadLandscape" disabled onclick="downloadImage('landscape')">
+                    💾 Скачать пейзажную сшивку
+                </button>
+            </div>
+            
+            <div class="preview-section">
+                <h2>🏙️ Портретные <span id="portraitCount">0</span></h2>
+                <div class="canvas-container">
+                    <canvas id="portraitCanvas"></canvas>
+                </div>
+                <button class="download-btn" id="downloadPortrait" disabled onclick="downloadImage('portrait')">
+                    💾 Скачать портретную сшивку
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Константы
+        const MAX_WIDTH = 25500;
+        const MAX_HEIGHT = 18214;
+        const SMALL_SIDE = 5;  // a
+        const LARGE_SIDE = 7;   // b
+        const BATCH_SIZE = 10;
+
+        // Глобальные переменные
+        let landscapeMetadata = [];
+        let portraitMetadata = [];
+        let landscapeCanvas = document.getElementById('landscapeCanvas');
+        let portraitCanvas = document.getElementById('portraitCanvas');
+        let landscapeCtx = landscapeCanvas.getContext('2d');
+        let portraitCtx = portraitCanvas.getContext('2d');
+
+        // UI элементы
+        const processBtn = document.getElementById('processBtn');
+        const downloadLandscape = document.getElementById('downloadLandscape');
+        const downloadPortrait = document.getElementById('downloadPortrait');
+        const landscapeCount = document.getElementById('landscapeCount');
+        const portraitCount = document.getElementById('portraitCount');
+        const totalFiles = document.getElementById('totalFiles');
+        const landscapeTotal = document.getElementById('landscapeTotal');
+        const portraitTotal = document.getElementById('portraitTotal');
+        const processedCount = document.getElementById('processedCount');
+        const gridInfo = document.getElementById('gridInfo');
+        const landscapeGridInfo = document.getElementById('landscapeGridInfo');
+        const portraitGridInfo = document.getElementById('portraitGridInfo');
+        const errorLog = document.getElementById('errorLog');
+
+        // Прогресс
+        const progressContainer = document.getElementById('progressContainer');
+        const progressTitle = document.getElementById('progressTitle');
+        const progressPercent = document.getElementById('progressPercent');
+        const progressBar = document.getElementById('progressBar');
+        const progressStatus = document.getElementById('progressStatus');
+
+        function addError(message) {
+            errorLog.classList.remove('hidden');
+            const entry = document.createElement('div');
+            entry.textContent = `❌ ${message}`;
+            errorLog.appendChild(entry);
+            errorLog.scrollTop = errorLog.scrollHeight;
+        }
+
+        function updateProgress(percent, status) {
+            progressBar.style.width = percent + '%';
+            progressPercent.textContent = Math.round(percent) + '%';
+            if (status) progressStatus.textContent = status;
+        }
+
+        function getImageDimensions(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        resolve({
+                            width: img.width,
+                            height: img.height
+                        });
+                    };
+                    img.onerror = reject;
+                    img.src = e.target.result;
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+
+        async function handleFiles(files) {
+            landscapeMetadata = [];
+            portraitMetadata = [];
+            
+            progressContainer.classList.remove('hidden');
+            progressTitle.textContent = 'Анализ файлов';
+            
+            const total = files.length;
+            let analyzed = 0;
+
+            for (let file of files) {
+                if (!file.type.startsWith('image/')) continue;
+
+                try {
+                    const dimensions = await getImageDimensions(file);
+                    
+                    if (dimensions.width > dimensions.height) {
+                        landscapeMetadata.push({
+                            file: file,
+                            width: dimensions.width,
+                            height: dimensions.height,
+                            name: file.name
+                        });
+                    } else {
+                        portraitMetadata.push({
+                            file: file,
+                            width: dimensions.width,
+                            height: dimensions.height,
+                            name: file.name
+                        });
+                    }
+                } catch (e) {
+                    addError(`Не удалось прочитать: ${file.name}`);
+                }
+
+                analyzed++;
+                const percent = (analyzed / total) * 100;
+                updateProgress(percent, `Анализ: ${analyzed}/${total}`);
+                
+                if (analyzed % 20 === 0) {
+                    await new Promise(r => setTimeout(r, 5));
+                }
+            }
+
+            landscapeCount.textContent = landscapeMetadata.length;
+            portraitCount.textContent = portraitMetadata.length;
+            totalFiles.textContent = landscapeMetadata.length + portraitMetadata.length;
+            landscapeTotal.textContent = landscapeMetadata.length;
+            portraitTotal.textContent = portraitMetadata.length;
+            processedCount.textContent = '0';
+
+            processBtn.disabled = (landscapeMetadata.length === 0 && portraitMetadata.length === 0);
+            
+            progressContainer.classList.add('hidden');
+        }
+
+        function findBestGridLandscape(count) {
+            if (count === 0) return null;
+            let bestM = 1, bestN = 1;
+            let bestScale = 0;
+            let bestEmptyCells = Infinity;
+            for (let n = 1; n <= Math.min(count, 20); n++) {
+                let m = Math.ceil(count / n);
+                let emptyCells = m * n - count;
+                let kByWidth = MAX_WIDTH / (m * LARGE_SIDE);
+                let kByHeight = MAX_HEIGHT / (n * SMALL_SIDE);
+                let k = Math.min(kByWidth, kByHeight);
+                if (k > bestScale || (Math.abs(k - bestScale) < 0.001 && emptyCells < bestEmptyCells)) {
+                    bestScale = k;
+                    bestM = m;
+                    bestN = n;
+                    bestEmptyCells = emptyCells;
+                }
+            }
+            return {
+                m: bestM,
+                n: bestN,
+                scale: bestScale,
+                emptyCells: bestEmptyCells,
+                width: Math.round(bestM * LARGE_SIDE * bestScale),
+                height: Math.round(bestN * SMALL_SIDE * bestScale),
+                cellWidth: Math.round(LARGE_SIDE * bestScale),
+                cellHeight: Math.round(SMALL_SIDE * bestScale)
+            };
+        }
+
+        function findBestGridPortrait(count) {
+            if (count === 0) return null;
+            let bestM = 1, bestN = 1;
+            let bestScale = 0;
+            let bestEmptyCells = Infinity;
+            for (let n = 1; n <= Math.min(count, 20); n++) {
+                let m = Math.ceil(count / n);
+                let emptyCells = m * n - count;
+                let kByWidth = MAX_WIDTH / (m * SMALL_SIDE);
+                let kByHeight = MAX_HEIGHT / (n * LARGE_SIDE);
+                let k = Math.min(kByWidth, kByHeight);
+                if (k > bestScale || (Math.abs(k - bestScale) < 0.001 && emptyCells < bestEmptyCells)) {
+                    bestScale = k;
+                    bestM = m;
+                    bestN = n;
+                    bestEmptyCells = emptyCells;
+                }
+            }
+            return {
+                m: bestM,
+                n: bestN,
+                scale: bestScale,
+                emptyCells: bestEmptyCells,
+                width: Math.round(bestM * SMALL_SIDE * bestScale),
+                height: Math.round(bestN * LARGE_SIDE * bestScale),
+                cellWidth: Math.round(SMALL_SIDE * bestScale),
+                cellHeight: Math.round(LARGE_SIDE * bestScale)
+            };
+        }
+
+        function loadImage(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => resolve(img);
+                    img.onerror = reject;
+                    img.src = e.target.result;
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+
+        async function stitchLandscape() {
+            if (landscapeMetadata.length === 0) return;
+            const grid = findBestGridLandscape(landscapeMetadata.length);
+            if (!grid) return;
+            landscapeGridInfo.innerHTML = `
+                🌄 Пейзажные: ${grid.m}×${grid.n} = ${grid.m * grid.n} ячеек (пустых: ${grid.emptyCells})<br>
+                Размер ячейки: ${grid.cellWidth}×${grid.cellHeight}<br>
+                Итоговый размер: ${grid.width}×${grid.height}
+            `;
+            landscapeCanvas.width = grid.width;
+            landscapeCanvas.height = grid.height;
+            const total = landscapeMetadata.length;
+            let processed = 0;
+            for (let i = 0; i < total; i += BATCH_SIZE) {
+                const batch = landscapeMetadata.slice(i, i + BATCH_SIZE);
+                for (let j = 0; j < batch.length; j++) {
+                    const idx = i + j;
+                    const meta = batch[j];
+                    try {
+                        const img = await loadImage(meta.file);
+                        const row = Math.floor(idx / grid.m);
+                        const col = idx % grid.m;
+                        const x = col * grid.cellWidth;
+                        const y = row * grid.cellHeight;
+                        const scale = grid.cellWidth / img.width;
+                        const scaledHeight = img.height * scale;
+                        const offsetY = (grid.cellHeight - scaledHeight) / 2;
+                        landscapeCtx.drawImage(
+                            img,
+                            0, 0, img.width, img.height,
+                            x, y + offsetY, grid.cellWidth, scaledHeight
+                        );
+                        img.src = '';
+                    } catch (e) {
+                        addError(`Ошибка: ${meta.name}`);
+                    }
+                    processed++;
+                    const percent = (processed / total) * 100;
+                    updateProgress(percent, `Пейзажные: ${processed}/${total}`);
+                    processedCount.textContent = processed;
+                    if (processed % 5 === 0) {
+                        await new Promise(r => setTimeout(r, 5));
+                    }
+                }
+            }
+            downloadLandscape.disabled = false;
+        }
+
+        async function stitchPortrait() {
+            if (portraitMetadata.length === 0) return;
+            const grid = findBestGridPortrait(portraitMetadata.length);
+            if (!grid) return;
+            portraitGridInfo.innerHTML = `
+                🏙️ Портретные: ${grid.m}×${grid.n} = ${grid.m * grid.n} ячеек (пустых: ${grid.emptyCells})<br>
+                Размер ячейки: ${grid.cellWidth}×${grid.cellHeight}<br>
+                Итоговый размер: ${grid.width}×${grid.height}
+            `;
+            portraitCanvas.width = grid.width;
+            portraitCanvas.height = grid.height;
+            const total = portraitMetadata.length;
+            let processed = 0;
+            for (let i = 0; i < total; i += BATCH_SIZE) {
+                const batch = portraitMetadata.slice(i, i + BATCH_SIZE);
+                for (let j = 0; j < batch.length; j++) {
+                    const idx = i + j;
+                    const meta = batch[j];
+                    try {
+                        const img = await loadImage(meta.file);
+                        const row = Math.floor(idx / grid.m);
+                        const col = idx % grid.m;
+                        const x = col * grid.cellWidth;
+                        const y = row * grid.cellHeight;
+                        const scale = grid.cellHeight / img.height;
+                        const scaledWidth = img.width * scale;
+                        const offsetX = (grid.cellWidth - scaledWidth) / 2;
+                        portraitCtx.drawImage(
+                            img,
+                            0, 0, img.width, img.height,
+                            x + offsetX, y, scaledWidth, grid.cellHeight
+                        );
+                        img.src = '';
+                    } catch (e) {
+                        addError(`Ошибка: ${meta.name}`);
+                    }
+                    processed++;
+                    const percent = (processed / total) * 100;
+                    updateProgress(percent, `Портретные: ${processed}/${total}`);
+                    processedCount.textContent = landscapeMetadata.length + processed;
+                    if (processed % 5 === 0) {
+                        await new Promise(r => setTimeout(r, 5));
+                    }
+                }
+            }
+            downloadPortrait.disabled = false;
+        }
+
+        async function processImages() {
+            processBtn.disabled = true;
+            downloadLandscape.disabled = true;
+            downloadPortrait.disabled = true;
+            gridInfo.classList.remove('hidden');
+            errorLog.classList.add('hidden');
+            errorLog.innerHTML = '';
+            progressContainer.classList.remove('hidden');
+            progressTitle.textContent = 'Сшивка изображений';
+            try {
+                if (landscapeMetadata.length > 0) {
+                    await stitchLandscape();
+                }
+                if (portraitMetadata.length > 0) {
+                    await stitchPortrait();
+                }
+                gridInfo.classList.add('success');
+                updateProgress(100, 'Готово!');
+                setTimeout(() => {
+                    progressContainer.classList.add('hidden');
+                }, 2000);
+            } catch (e) {
+                addError('Критическая ошибка: ' + e.message);
+                processBtn.disabled = false;
+            }
+        }
+
+        function downloadImage(type) {
+            const canvas = type === 'landscape' ? landscapeCanvas : portraitCanvas;
+            const quality = document.getElementById('quality').value / 100;
+            const link = document.createElement('a');
+            link.download = `${type}_${canvas.width}x${canvas.height}.jpg`;
+            link.href = canvas.toDataURL('image/jpeg', quality);
+            link.click();
+        }
+    </script>
+</body>
+</html>
