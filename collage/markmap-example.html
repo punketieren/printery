@@ -3,14 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Markmap — автообновляемый редактор</title>
+    <title>Markmap — Редактор с панелью форматирования</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { background: #f5f7fb; height: 100vh; display: flex; flex-direction: column; font-family: system-ui, sans-serif; }
-        .toolbar { background: white; padding: 12px 24px; border-bottom: 1px solid #e2e8f0; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-        .toolbar button { padding: 6px 14px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; cursor: pointer; font-size: 13px; }
+        .toolbar { background: white; padding: 8px 16px; border-bottom: 1px solid #e2e8f0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .toolbar button, .toolbar select { padding: 4px 10px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; cursor: pointer; font-size: 13px; }
         .toolbar button.primary { background: #3b82f6; border-color: #3b82f6; color: white; }
-        .toolbar .status { margin-left: auto; font-size: 13px; color: #475569; background: #f1f5f9; padding: 4px 12px; border-radius: 20px; }
+        .toolbar .separator { width: 1px; height: 24px; background: #cbd5e1; margin: 0 4px; }
+        .toolbar .status { margin-left: auto; font-size: 12px; color: #475569; background: #f1f5f9; padding: 4px 12px; border-radius: 20px; }
         .main-container { flex: 1; display: flex; gap: 10px; padding: 10px; overflow: hidden; }
         .editor-panel { width: 40%; display: flex; flex-direction: column; gap: 8px; background: white; border-radius: 12px; border: 1px solid #e2e8f0; padding: 16px; }
         .editor-panel textarea { width: 100%; flex: 1; font-family: monospace; font-size: 14px; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; resize: none; }
@@ -22,9 +23,36 @@
 </head>
 <body>
     <div class="toolbar">
+        <!-- Заголовки -->
+        <button id="btn-h1" title="Заголовок 1 уровня">H1</button>
+        <button id="btn-h2" title="Заголовок 2 уровня">H2</button>
+        <button id="btn-h3" title="Заголовок 3 уровня">H3</button>
+        <div class="separator"></div>
+        <!-- Форматирование -->
+        <button id="btn-bold" title="Жирный (Ctrl+B)"><b>B</b></button>
+        <button id="btn-italic" title="Курсив (Ctrl+I)"><i>I</i></button>
+        <div class="separator"></div>
+        <!-- Списки -->
+        <button id="btn-ul" title="Маркированный список">• Список</button>
+        <button id="btn-ol" title="Нумерованный список">1. Список</button>
+        <div class="separator"></div>
+        <!-- Ссылка -->
+        <button id="btn-link" title="Вставить ссылку">🔗 Ссылка</button>
+        <div class="separator"></div>
+        <!-- Цвет ветви -->
+        <select id="color-select">
+            <option value="">🎨 Цвет ветви</option>
+            <option value="#3b82f6">Синий</option>
+            <option value="#10b981">Зелёный</option>
+            <option value="#f59e0b">Оранжевый</option>
+            <option value="#ef4444">Красный</option>
+            <option value="#8b5cf6">Фиолетовый</option>
+        </select>
+        <div class="separator"></div>
+        <!-- Файлы -->
         <button id="save-btn">💾 Сохранить</button>
         <button id="load-btn">📂 Загрузить</button>
-        <span class="status" id="status-text">✨ Редактируйте Markdown — карта обновляется автоматически</span>
+        <span class="status" id="status-text">✨ Редактируйте Markdown</span>
     </div>
     <div class="main-container">
         <div class="editor-panel">
@@ -38,7 +66,7 @@
         const textarea = document.getElementById('markdown-editor');
         const container = document.getElementById('mindmap-container');
         const statusSpan = document.getElementById('status-text');
-        
+
         const defaultMarkdown = `# Центральная идея
 ## Основной раздел 1
 ### Деталь 1.1
@@ -50,23 +78,96 @@
 - Элемент списка 1
 - Элемент списка 2`;
 
+        // === ОБНОВЛЕНИЕ КАРТЫ ===
         function renderMindmap(markdownText) {
             container.innerHTML = markdownText;
             if (window.markmap?.autoLoader?.renderAll) {
                 window.markmap.autoLoader.renderAll();
             }
-            statusSpan.innerText = '✅ Карта обновлена';
-            setTimeout(() => {
-                if (statusSpan.innerText === '✅ Карта обновлена')
-                    statusSpan.innerText = '✨ Редактируйте Markdown — карта обновляется автоматически';
-            }, 1000);
         }
 
-        // Автообновление при вводе текста
-        textarea.addEventListener('input', (e) => {
-            renderMindmap(e.target.value);
-        });
+        // === ВСТАВКА ТЕКСТА В ПОЗИЦИЮ КУРСОРА ===
+        function insertTextBeforeAfter(before, after) {
+            const start = textarea.selectionStart;
+            const end = textarea.selectionEnd;
+            const selected = textarea.value.substring(start, end);
+            const newText = textarea.value.substring(0, start) + before + selected + after + textarea.value.substring(end);
+            textarea.value = newText;
+            textarea.focus();
+            textarea.setSelectionRange(start + before.length, end + before.length);
+            renderMindmap(textarea.value);
+        }
 
+        function insertAround(before, after) {
+            insertTextBeforeAfter(before, after);
+        }
+
+        function insertPrefix(prefix) {
+            const start = textarea.selectionStart;
+            const end = textarea.selectionEnd;
+            const lineStart = textarea.value.lastIndexOf('\n', start - 1) + 1;
+            const currentLine = textarea.value.substring(lineStart, end);
+            const newText = textarea.value.substring(0, lineStart) + prefix + currentLine + textarea.value.substring(end);
+            textarea.value = newText;
+            textarea.focus();
+            const newCursorPos = lineStart + prefix.length + currentLine.length;
+            textarea.setSelectionRange(newCursorPos, newCursorPos);
+            renderMindmap(textarea.value);
+        }
+
+        // === ФУНКЦИИ ФОРМАТИРОВАНИЯ ===
+        function wrapSelection(before, after) {
+            const start = textarea.selectionStart;
+            const end = textarea.selectionEnd;
+            if (start === end) {
+                insertTextBeforeAfter(before, after);
+            } else {
+                const selected = textarea.value.substring(start, end);
+                const newText = textarea.value.substring(0, start) + before + selected + after + textarea.value.substring(end);
+                textarea.value = newText;
+                textarea.focus();
+                textarea.setSelectionRange(start + before.length, end + before.length);
+                renderMindmap(textarea.value);
+            }
+        }
+
+        // Заголовки
+        document.getElementById('btn-h1').onclick = () => insertPrefix('# ');
+        document.getElementById('btn-h2').onclick = () => insertPrefix('## ');
+        document.getElementById('btn-h3').onclick = () => insertPrefix('### ');
+
+        // Форматирование
+        document.getElementById('btn-bold').onclick = () => wrapSelection('**', '**');
+        document.getElementById('btn-italic').onclick = () => wrapSelection('*', '*');
+
+        // Списки
+        document.getElementById('btn-ul').onclick = () => insertPrefix('- ');
+        document.getElementById('btn-ol').onclick = () => insertPrefix('1. ');
+
+        // Ссылка
+        document.getElementById('btn-link').onclick = () => {
+            const url = prompt('Введите URL:', 'https://');
+            if (url) {
+                wrapSelection('[', `](${url})`);
+            }
+        };
+
+        // Цвет ветви (добавляет атрибут style к строке)
+        document.getElementById('color-select').onchange = (e) => {
+            const color = e.target.value;
+            if (color) {
+                const start = textarea.selectionStart;
+                const end = textarea.selectionEnd;
+                if (start === end) {
+                    insertTextBeforeAfter(`<span style="color:${color}">`, '</span>');
+                } else {
+                    wrapSelection(`<span style="color:${color}">`, '</span>');
+                }
+                e.target.value = '';
+            }
+        };
+
+        // Сохранение
         function saveToFile() {
             const blob = new Blob([textarea.value], { type: 'text/markdown' });
             const url = URL.createObjectURL(blob);
@@ -76,9 +177,10 @@
             a.click();
             URL.revokeObjectURL(url);
             statusSpan.innerText = '✅ Сохранено';
-            setTimeout(() => statusSpan.innerText = '✨ Редактируйте Markdown — карта обновляется автоматически', 1500);
+            setTimeout(() => statusSpan.innerText = '✨ Редактируйте Markdown', 1500);
         }
 
+        // Загрузка
         function loadFromFile() {
             const input = document.createElement('input');
             input.type = 'file';
@@ -91,13 +193,27 @@
                     textarea.value = ev.target.result;
                     renderMindmap(ev.target.result);
                     statusSpan.innerText = '✅ Загружено';
-                    setTimeout(() => statusSpan.innerText = '✨ Редактируйте Markdown — карта обновляется автоматически', 1500);
+                    setTimeout(() => statusSpan.innerText = '✨ Редактируйте Markdown', 1500);
                 };
                 reader.readAsText(file);
             };
             input.click();
         }
 
+        // Горячие клавиши
+        textarea.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.metaKey) {
+                switch (e.key) {
+                    case 'b': e.preventDefault(); document.getElementById('btn-bold').click(); break;
+                    case 'i': e.preventDefault(); document.getElementById('btn-italic').click(); break;
+                }
+            }
+        });
+
+        // Автообновление при вводе
+        textarea.addEventListener('input', (e) => renderMindmap(e.target.value));
+
+        // Инициализация
         textarea.value = defaultMarkdown;
         renderMindmap(defaultMarkdown);
         document.getElementById('save-btn').onclick = saveToFile;
