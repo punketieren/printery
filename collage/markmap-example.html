@@ -3,23 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Markmap — онлайн редактор</title>
+    <title>Markmap — онлайн редактор (с отладкой)</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { background: #f5f7fb; height: 100vh; display: flex; flex-direction: column; font-family: system-ui, sans-serif; }
         .toolbar { background: white; padding: 12px 24px; border-bottom: 1px solid #e2e8f0; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
         .toolbar button { padding: 6px 14px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; cursor: pointer; font-size: 13px; }
         .toolbar button.primary { background: #3b82f6; border-color: #3b82f6; color: white; }
-        .toolbar .status { margin-left: auto; font-size: 13px; color: #475569; background: #f1f5f9; padding: 4px 12px; border-radius: 20px; }
+        .toolbar .status { margin-left: auto; font-size: 13px; color: #475569; background: #f1f5f9; padding: 4px 12px; border-radius: 20px; font-family: monospace; }
         .main-container { flex: 1; display: flex; gap: 10px; padding: 10px; overflow: hidden; }
         .editor-panel { width: 40%; display: flex; flex-direction: column; gap: 8px; background: white; border-radius: 12px; border: 1px solid #e2e8f0; padding: 16px; }
         .editor-panel textarea { width: 100%; flex: 1; font-family: monospace; font-size: 14px; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; resize: none; }
         .viewer-panel { flex: 1; background: white; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; position: relative; }
         .viewer-panel .markmap { width: 100%; height: 100%; }
-        @media (max-width: 768px) { .main-container { flex-direction: column; } .editor-panel { width: 100%; height: 40%; } }
+        .debug { position: fixed; bottom: 10px; right: 10px; background: #1e1e1e; color: #0f0; font-family: monospace; font-size: 11px; padding: 8px; border-radius: 8px; z-index: 999; max-width: 300px; max-height: 150px; overflow: auto; opacity: 0.8; pointer-events: none; }
+        @media (max-width: 768px) { .main-container { flex-direction: column; } .editor-panel { width: 100%; height: 40%; } .debug { display: none; } }
     </style>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.0/dist/katex.min.css">
-    <!-- Используем importmap для чистых ES-модулей -->
     <script type="importmap">
         {
             "imports": {
@@ -34,22 +34,59 @@
         <button id="apply-btn" class="primary">🔄 Применить</button>
         <button id="save-btn">💾 Сохранить</button>
         <button id="load-btn">📂 Загрузить</button>
-        <span class="status" id="status-text">✨ Готово</span>
+        <span class="status" id="status-text">✨ Инициализация...</span>
     </div>
     <div class="main-container">
         <div class="editor-panel">
-            <textarea id="markdown-editor"></textarea>
+            <textarea id="markdown-editor" placeholder="# Введите Markdown..."></textarea>
         </div>
         <div class="viewer-panel">
             <div class="markmap" id="mindmap-container"></div>
         </div>
     </div>
+    <div class="debug" id="debug-panel">📋 Консоль отладки</div>
 
     <script type="module">
-        import { Transformer } from 'markmap-lib';
-        import { Markmap } from 'markmap-view';
+        // === ОТЛАДОЧНАЯ ФУНКЦИЯ ===
+        const debugEl = document.getElementById('debug-panel');
+        const statusEl = document.getElementById('status-text');
+        
+        function log(msg, type = 'info') {
+            const time = new Date().toLocaleTimeString();
+            const line = `[${time}] ${msg}`;
+            console.log(`%c${line}`, type === 'error' ? 'color: red; font-weight: bold' : 'color: #0f0');
+            if (debugEl) {
+                const div = document.createElement('div');
+                div.textContent = line;
+                debugEl.appendChild(div);
+                if (debugEl.children.length > 10) debugEl.removeChild(debugEl.children[0]);
+            }
+        }
 
-        const defaultMarkdown = `# Центральная идея
+        function setStatus(msg, isError = false) {
+            statusEl.innerHTML = isError ? `❌ ${msg}` : `✅ ${msg}`;
+            if (!isError) {
+                setTimeout(() => {
+                    if (statusEl.innerHTML === `✅ ${msg}`) statusEl.innerHTML = '✨ Готово';
+                }, 2000);
+            }
+        }
+
+        log('🚀 Начало загрузки модулей...');
+        setStatus('Загрузка модулей...');
+
+        try {
+            log('📦 Импорт Transformer и Markmap...');
+            const { Transformer } = await import('markmap-lib');
+            log('✅ Transformer загружен');
+            const { Markmap } = await import('markmap-view');
+            log('✅ Markmap загружен');
+            
+            log('🎉 Все модули успешно загружены');
+            setStatus('Модули загружены');
+
+            // === ДАННЫЕ ===
+            const defaultMarkdown = `# Центральная идея
 ## Основной раздел 1
 ### Деталь 1.1
 ### Деталь 1.2
@@ -60,77 +97,129 @@
 - Элемент списка 1
 - Элемент списка 2`;
 
-        let currentMarkmap = null;
-        const textarea = document.getElementById('markdown-editor');
-        const container = document.getElementById('mindmap-container');
-        const statusSpan = document.getElementById('status-text');
+            // === ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ===
+            let currentMarkmap = null;
+            const textarea = document.getElementById('markdown-editor');
+            const container = document.getElementById('mindmap-container');
+            
+            log('🔍 DOM элементы:', { textarea: !!textarea, container: !!container });
+            if (!textarea || !container) {
+                throw new Error('Не найдены textarea или контейнер');
+            }
 
-        function renderMindmap(markdownText) {
-            try {
-                const transformer = new Transformer();
-                const { root } = transformer.transform(markdownText);
-                // Очищаем контейнер
-                while (container.firstChild) container.removeChild(container.firstChild);
-                // Создаём SVG
-                const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-                svg.style.width = '100%';
-                svg.style.height = '100%';
-                container.appendChild(svg);
-                // Создаём карту
-                currentMarkmap = Markmap.create(svg, {
-                    autoFit: true,
-                    duration: 500,
-                    initialExpandLevel: 2
-                }, root);
-                statusSpan.innerText = '✅ Карта обновлена';
-                setTimeout(() => statusSpan.innerText = '✨ Готово', 2000);
-            } catch (err) {
-                console.error(err);
-                statusSpan.innerText = '❌ Ошибка: ' + err.message;
+            // === РЕНДЕРИНГ КАРТЫ ===
+            async function renderMindmap(markdownText) {
+                log(`🖌️ renderMindmap, длина текста: ${markdownText.length}`);
+                try {
+                    const transformer = new Transformer();
+                    log('🔄 Преобразование Markdown...');
+                    const { root } = transformer.transform(markdownText);
+                    log('✅ Markdown преобразован', { hasRoot: !!root });
+                    
+                    // Очищаем контейнер
+                    while (container.firstChild) container.removeChild(container.firstChild);
+                    
+                    // Создаём SVG
+                    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                    svg.style.width = '100%';
+                    svg.style.height = '100%';
+                    container.appendChild(svg);
+                    log('✅ SVG создан');
+                    
+                    // Создаём карту
+                    currentMarkmap = Markmap.create(svg, {
+                        autoFit: true,
+                        duration: 500,
+                        initialExpandLevel: 2
+                    }, root);
+                    log('✅ Карта создана');
+                    setStatus('Карта обновлена');
+                } catch (err) {
+                    log(`❌ Ошибка рендеринга: ${err.message}`, 'error');
+                    setStatus(err.message, true);
+                    container.innerHTML = `<div style="padding: 20px; color: red;">Ошибка: ${err.message}</div>`;
+                }
+            }
+
+            // === ПРИМЕНИТЬ ИЗМЕНЕНИЯ ===
+            function applyChanges() {
+                log('🔘 Кнопка "Применить"');
+                renderMindmap(textarea.value);
+            }
+
+            // === СОХРАНЕНИЕ ===
+            function saveToFile() {
+                log('🔘 Кнопка "Сохранить"');
+                try {
+                    const blob = new Blob([textarea.value], { type: 'text/markdown' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `mindmap_${Date.now()}.md`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    log('✅ Файл сохранён');
+                    setStatus('Файл сохранён');
+                } catch (err) {
+                    log(`❌ Ошибка сохранения: ${err.message}`, 'error');
+                    setStatus(err.message, true);
+                }
+            }
+
+            // === ЗАГРУЗКА ===
+            function loadFromFile() {
+                log('🔘 Кнопка "Загрузить"');
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = '.md,.txt';
+                input.onchange = async (e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    log(`📁 Выбран файл: ${file.name}, размер: ${file.size}`);
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                        const content = ev.target.result;
+                        textarea.value = content;
+                        renderMindmap(content);
+                        setStatus('Файл загружен');
+                    };
+                    reader.onerror = (err) => {
+                        log(`❌ Ошибка чтения файла: ${err.message}`, 'error');
+                        setStatus('Ошибка чтения файла', true);
+                    };
+                    reader.readAsText(file);
+                };
+                input.click();
+            }
+
+            // === ИНИЦИАЛИЗАЦИЯ ===
+            textarea.value = defaultMarkdown;
+            log('📝 Текстовая область заполнена');
+            
+            await renderMindmap(defaultMarkdown);
+            log('✅ Начальный рендеринг выполнен');
+            
+            // Подключаем обработчики кнопок
+            document.getElementById('apply-btn').onclick = applyChanges;
+            document.getElementById('save-btn').onclick = saveToFile;
+            document.getElementById('load-btn').onclick = loadFromFile;
+            log('🎮 Обработчики кнопок подключены');
+            
+            setStatus('Готов к работе');
+            
+        } catch (error) {
+            log(`❌ КРИТИЧЕСКАЯ ОШИБКА: ${error.message}`, 'error');
+            console.error(error);
+            setStatus(`Ошибка: ${error.message}`, true);
+            const container = document.getElementById('mindmap-container');
+            if (container) {
+                container.innerHTML = `<div style="padding: 20px; color: red; background: #ffe0e0; border-radius: 8px;">
+                    <h3>❌ Критическая ошибка</h3>
+                    <p>${error.message}</p>
+                    <p>Подробности в консоли (F12)</p>
+                </div>`;
             }
         }
-
-        function applyChanges() {
-            renderMindmap(textarea.value);
-        }
-
-        function saveToFile() {
-            const blob = new Blob([textarea.value], { type: 'text/markdown' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'mindmap.md';
-            a.click();
-            URL.revokeObjectURL(url);
-            statusSpan.innerText = '✅ Сохранено';
-            setTimeout(() => statusSpan.innerText = '✨ Готово', 1500);
-        }
-
-        function loadFromFile() {
-            const input = document.createElement('input');
-            input.type = 'file';
-            input.accept = '.md,.txt';
-            input.onchange = (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                const reader = new FileReader();
-                reader.onload = (ev) => {
-                    textarea.value = ev.target.result;
-                    renderMindmap(ev.target.result);
-                    statusSpan.innerText = '✅ Загружено';
-                    setTimeout(() => statusSpan.innerText = '✨ Готово', 1500);
-                };
-                reader.readAsText(file);
-            };
-            input.click();
-        }
-
-        textarea.value = defaultMarkdown;
-        renderMindmap(defaultMarkdown);
-
-        document.getElementById('apply-btn').onclick = applyChanges;
-        document.getElementById('save-btn').onclick = saveToFile;
-        document.getElementById('load-btn').onclick = loadFromFile;
     </script>
 </body>
 </html>
