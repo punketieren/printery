@@ -3,20 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WYSIWYG + Markmap — Редактор с ментальной картой</title>
+    <title>Markmap — Редактор с панелью форматирования и полноэкранным режимом</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { background: #f5f7fb; height: 100vh; display: flex; flex-direction: column; font-family: system-ui, sans-serif; overflow: hidden; }
         
+        /* Верхняя панель инструментов */
         .toolbar { background: white; padding: 8px 16px; border-bottom: 1px solid #e2e8f0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; z-index: 10; }
-        .toolbar button { padding: 4px 10px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; cursor: pointer; font-size: 13px; }
+        .toolbar button, .toolbar select { padding: 4px 10px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; cursor: pointer; font-size: 13px; }
         .toolbar button.primary { background: #3b82f6; border-color: #3b82f6; color: white; }
         .toolbar .separator { width: 1px; height: 24px; background: #cbd5e1; margin: 0 4px; }
         .toolbar .status { margin-left: auto; font-size: 12px; color: #475569; background: #f1f5f9; padding: 4px 12px; border-radius: 20px; }
         
+        /* Основной контейнер */
         .main-container { flex: 1; display: flex; position: relative; overflow: hidden; }
         
-        /* Панель редактора */
+        /* Выплывающая панель редактора */
         .editor-panel {
             position: absolute;
             left: 0;
@@ -34,6 +36,7 @@
         }
         .editor-panel.collapsed { transform: translateX(-100%); }
         
+        /* Кнопка открытия/закрытия редактора */
         .toggle-editor-btn {
             position: absolute;
             left: 460px;
@@ -54,33 +57,34 @@
         }
         .editor-panel.collapsed + .toggle-editor-btn { left: 10px; }
         
-        /* Стили для WYSIWYG редактора (TipTap) */
-        .editor-header { padding: 12px 16px; border-bottom: 1px solid #e2e8f0; background: #fafafa; display: flex; gap: 8px; flex-wrap: wrap; }
-        .editor-header button { padding: 4px 8px; background: white; border: 1px solid #cbd5e1; border-radius: 4px; cursor: pointer; font-size: 13px; }
-        .editor-header button.is-active { background: #3b82f6; color: white; border-color: #3b82f6; }
+        .editor-header { 
+            padding: 12px 16px; 
+            border-bottom: 1px solid #e2e8f0; 
+            font-weight: bold;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+            background: #fafafa;
+        }
+        .editor-header button {
+            padding: 4px 8px;
+            background: white;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+        .editor-header button:hover { background: #f1f5f9; transform: scale(1.02); }
         .editor-header .separator { width: 1px; height: 20px; background: #cbd5e1; margin: 0 4px; }
         
-        .ProseMirror {
-            flex: 1;
-            padding: 16px;
-            outline: none;
-            font-family: 'Segoe UI', system-ui, sans-serif;
-            font-size: 14px;
-            line-height: 1.6;
-            overflow-y: auto;
-        }
-        .ProseMirror h1 { font-size: 1.8em; margin: 0.5em 0; }
-        .ProseMirror h2 { font-size: 1.5em; margin: 0.5em 0; }
-        .ProseMirror h3 { font-size: 1.3em; margin: 0.5em 0; }
-        .ProseMirror p { margin: 0.5em 0; }
-        .ProseMirror ul, .ProseMirror ol { padding-left: 2em; margin: 0.5em 0; }
-        .ProseMirror li { margin: 0.2em 0; }
-        .ProseMirror a { color: #3b82f6; text-decoration: underline; cursor: pointer; }
-        .ProseMirror strong { font-weight: bold; }
-        .ProseMirror em { font-style: italic; }
+        .editor-panel textarea { width: 100%; flex: 1; font-family: monospace; font-size: 14px; padding: 16px; border: none; resize: none; outline: none; background: #fafafa; }
         
+        /* Панель просмотра карты */
         .viewer-panel { flex: 1; background: white; overflow: hidden; position: relative; margin-left: 0; transition: margin-left 0.3s ease; }
         .viewer-panel.fullscreen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1000; margin: 0; border-radius: 0; background: white; }
+        
         .viewer-panel .markmap { width: 100%; height: 100%; }
         
         .fullscreen-btn {
@@ -99,7 +103,9 @@
             justify-content: center;
             font-size: 20px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            transition: all 0.2s;
         }
+        .fullscreen-btn:hover { background: #f1f5f9; transform: scale(1.05); }
         
         .map-controls {
             position: absolute;
@@ -112,34 +118,36 @@
             gap: 5px;
             padding: 5px;
             z-index: 30;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
-        .map-controls button { width: 32px; height: 32px; border: none; background: #f8fafc; border-radius: 6px; cursor: pointer; font-size: 16px; }
+        .map-controls button {
+            width: 32px;
+            height: 32px;
+            border: none;
+            background: #f8fafc;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+        }
         .map-controls button:hover { background: #e2e8f0; }
         
         @media (max-width: 768px) { .editor-panel { width: 100%; } .toggle-editor-btn { left: calc(100% - 40px); top: 70px; } .editor-panel.collapsed + .toggle-editor-btn { left: 10px; } }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/markmap-autoloader"></script>
-    <!-- TipTap WYSIWYG -->
-    <script src="https://unpkg.com/@tiptap/core@2.0.3/dist/index.js"></script>
-    <script src="https://unpkg.com/@tiptap/starter-kit@2.0.3/dist/index.js"></script>
-    <script src="https://unpkg.com/@tiptap/extension-placeholder@2.0.3/dist/index.js"></script>
-    <script src="https://unpkg.com/@tiptap/extension-link@2.0.3/dist/index.js"></script>
-    <script src="https://unpkg.com/@tiptap/pm@2.0.3/dist/index.js"></script>
 </head>
 <body>
     <div class="toolbar">
-        <button id="save-btn" title="Сохранить в Markdown">💾 Сохранить</button>
-        <button id="load-btn" title="Загрузить из Markdown">📂 Загрузить</button>
-        <button id="print-btn" title="Распечатать текст">🖨️ Распечатать</button>
-        <span class="status" id="status-text">✨ WYSIWYG + Markmap</span>
+        <!-- Файлы -->
+        <button id="save-btn" title="Сохранить в файл">💾 Сохранить</button>
+        <button id="load-btn" title="Загрузить из файла">📂 Загрузить</button>
+        <span class="status" id="status-text">✨ Редактируйте Markdown</span>
     </div>
     
     <div class="main-container">
+        <!-- Выплывающая панель редактора -->
         <div class="editor-panel" id="editor-panel">
-            <div class="editor-header" id="editor-header">
-                <button id="btn-h1" title="Заголовок 1">H1</button>
-                <button id="btn-h2" title="Заголовок 2">H2</button>
-                <button id="btn-h3" title="Заголовок 3">H3</button>
+            <div class="editor-header">
+                <button id="btn-hash" title="Добавить заголовок (#)"># Заголовок</button>
                 <div class="separator"></div>
                 <button id="btn-bold" title="Жирный (Ctrl+B)"><b>B</b></button>
                 <button id="btn-italic" title="Курсив (Ctrl+I)"><i>I</i></button>
@@ -149,10 +157,12 @@
                 <div class="separator"></div>
                 <button id="btn-link" title="Вставить ссылку">🔗 Ссылка</button>
             </div>
-            <div id="editor-content"></div>
+            <textarea id="markdown-editor"></textarea>
         </div>
+        <!-- Кнопка открытия/закрытия редактора -->
         <button class="toggle-editor-btn" id="toggle-editor-btn" title="Скрыть/показать редактор">◀</button>
         
+        <!-- Панель просмотра карты -->
         <div class="viewer-panel" id="viewer-panel">
             <div class="markmap" id="mindmap-container"></div>
             <button class="fullscreen-btn" id="fullscreen-btn" title="Полноэкранный режим">⛶</button>
@@ -163,120 +173,182 @@
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/markmap-autoloader"></script>
-    <script type="importmap">
-        {
-            "imports": {
-                "@tiptap/core": "https://unpkg.com/@tiptap/core@2.0.3/dist/index.js",
-                "@tiptap/starter-kit": "https://unpkg.com/@tiptap/starter-kit@2.0.3/dist/index.js",
-                "@tiptap/extension-placeholder": "https://unpkg.com/@tiptap/extension-placeholder@2.0.3/dist/index.js",
-                "@tiptap/extension-link": "https://unpkg.com/@tiptap/extension-link@2.0.3/dist/index.js",
-                "@tiptap/pm": "https://unpkg.com/@tiptap/pm@2.0.3/dist/index.js"
-            }
-        }
-    </script>
-    <script type="module">
-        import { Editor } from '@tiptap/core';
-        import StarterKit from '@tiptap/starter-kit';
-        import Link from '@tiptap/extension-link';
-        import Placeholder from '@tiptap/extension-placeholder';
-        
-        // === ИНИЦИАЛИЗАЦИЯ TIPTAP EDITOR ===
-        const editor = new Editor({
-            element: document.getElementById('editor-content'),
-            extensions: [
-                StarterKit,
-                Link.configure({ openOnClick: false }),
-                Placeholder.configure({ placeholder: 'Начните писать здесь...' })
-            ],
-            content: '<h1>Центральная идея</h1><h2>Основной раздел 1</h2><h3>Деталь 1.1</h3><h3>Деталь 1.2</h3><h2>Основной раздел 2</h2><h3>Деталь 2.1</h3><h3>Деталь 2.2</h3><ul><li>Элемент списка 1</li><li>Элемент списка 2</li></ul>',
-            onUpdate: ({ editor }) => {
-                // Преобразуем HTML в Markdown для Markmap
-                const html = editor.getHTML();
-                const markdown = htmlToMarkdown(html);
-                renderMindmap(markdown);
-            }
-        });
-        
-        // === КНОПКИ ФОРМАТИРОВАНИЯ ===
-        document.getElementById('btn-h1').onclick = () => editor.chain().focus().toggleHeading({ level: 1 }).run();
-        document.getElementById('btn-h2').onclick = () => editor.chain().focus().toggleHeading({ level: 2 }).run();
-        document.getElementById('btn-h3').onclick = () => editor.chain().focus().toggleHeading({ level: 3 }).run();
-        document.getElementById('btn-bold').onclick = () => editor.chain().focus().toggleBold().run();
-        document.getElementById('btn-italic').onclick = () => editor.chain().focus().toggleItalic().run();
-        document.getElementById('btn-ul').onclick = () => editor.chain().focus().toggleBulletList().run();
-        document.getElementById('btn-ol').onclick = () => editor.chain().focus().toggleOrderedList().run();
-        document.getElementById('btn-link').onclick = () => {
-            const url = prompt('Введите URL:', 'https://');
-            if (url) editor.chain().focus().setLink({ href: url }).run();
-        };
-        
-        // Обработчики активных кнопок
-        editor.on('transaction', () => {
-            document.getElementById('btn-h1').classList.toggle('is-active', editor.isActive('heading', { level: 1 }));
-            document.getElementById('btn-h2').classList.toggle('is-active', editor.isActive('heading', { level: 2 }));
-            document.getElementById('btn-h3').classList.toggle('is-active', editor.isActive('heading', { level: 3 }));
-            document.getElementById('btn-bold').classList.toggle('is-active', editor.isActive('bold'));
-            document.getElementById('btn-italic').classList.toggle('is-active', editor.isActive('italic'));
-            document.getElementById('btn-ul').classList.toggle('is-active', editor.isActive('bulletList'));
-            document.getElementById('btn-ol').classList.toggle('is-active', editor.isActive('orderedList'));
-            document.getElementById('btn-link').classList.toggle('is-active', editor.isActive('link'));
-        });
-        
-        // === ПРЕОБРАЗОВАНИЕ HTML В MARKDOWN (простая версия) ===
-        function htmlToMarkdown(html) {
-            let md = html;
-            md = md.replace(/<h1>(.*?)<\/h1>/g, '# $1\n');
-            md = md.replace(/<h2>(.*?)<\/h2>/g, '## $1\n');
-            md = md.replace(/<h3>(.*?)<\/h3>/g, '### $1\n');
-            md = md.replace(/<strong>(.*?)<\/strong>/g, '**$1**');
-            md = md.replace(/<em>(.*?)<\/em>/g, '*$1*');
-            md = md.replace(/<ul>(.*?)<\/ul>/gs, (_, content) => {
-                return content.replace(/<li>(.*?)<\/li>/g, '- $1\n');
-            });
-            md = md.replace(/<ol>(.*?)<\/ol>/gs, (_, content) => {
-                let i = 1;
-                return content.replace(/<li>(.*?)<\/li>/g, () => `${i++}. $1\n`);
-            });
-            md = md.replace(/<a href="(.*?)">(.*?)<\/a>/g, '[$2]($1)');
-            md = md.replace(/<p>(.*?)<\/p>/g, '$1\n\n');
-            md = md.replace(/<div>(.*?)<\/div>/g, '$1');
-            md = md.replace(/<[^>]+>/g, '');
-            md = md.replace(/&nbsp;/g, ' ');
-            md = md.replace(/\n\s*\n\s*\n/g, '\n\n');
-            return md.trim();
-        }
-        
-        // === ОБНОВЛЕНИЕ КАРТЫ ===
+    <script>
+        const textarea = document.getElementById('markdown-editor');
         const container = document.getElementById('mindmap-container');
+        const statusSpan = document.getElementById('status-text');
+        const editorPanel = document.getElementById('editor-panel');
+        const viewerPanel = document.getElementById('viewer-panel');
+        const toggleBtn = document.getElementById('toggle-editor-btn');
+        
+        let isRendering = false;
+        let renderTimeout = null;
+        
+        const defaultMarkdown = `# Центральная идея
+## Основной раздел 1
+### Деталь 1.1
+### Деталь 1.2
+#### Подробность 1.2.1
+## Основной раздел 2
+### Деталь 2.1
+### Деталь 2.2
+- Элемент списка 1
+- Элемент списка 2`;
+        
+        // === ОБНОВЛЕНИЕ КАРТЫ с защитой от многократных вызовов ===
         function renderMindmap(markdownText) {
-            if (!markdownText) return;
+            if (isRendering) return;
+            isRendering = true;
+            
             try {
                 container.innerHTML = markdownText;
                 if (window.markmap?.autoLoader?.renderAll) {
                     window.markmap.autoLoader.renderAll();
                 }
             } catch (e) {
-                console.warn('Ошибка рендеринга карты:', e);
+                console.warn('Ошибка рендеринга:', e);
+            } finally {
+                setTimeout(() => { isRendering = false; }, 100);
             }
         }
         
-        // === СОХРАНЕНИЕ В MARKDOWN ФАЙЛ ===
+        // Дебаунс для автоматического обновления
+        function debouncedRender() {
+            if (renderTimeout) clearTimeout(renderTimeout);
+            renderTimeout = setTimeout(() => {
+                renderMindmap(textarea.value);
+            }, 300);
+        }
+        
+        // === ВСТАВКА ТЕКСТА ===
+        function insertPrefix(prefix) {
+            const start = textarea.selectionStart;
+            const end = textarea.selectionEnd;
+            const lineStart = textarea.value.lastIndexOf('\n', start - 1) + 1;
+            const newText = textarea.value.substring(0, lineStart) + prefix + textarea.value.substring(lineStart);
+            textarea.value = newText;
+            textarea.focus();
+            const newCursorPos = lineStart + prefix.length + (end - start);
+            textarea.setSelectionRange(newCursorPos, newCursorPos);
+            renderMindmap(textarea.value);
+        }
+        
+        function wrapSelection(before, after) {
+            const start = textarea.selectionStart;
+            const end = textarea.selectionEnd;
+            if (start === end) {
+                const newText = textarea.value.substring(0, start) + before + after + textarea.value.substring(end);
+                textarea.value = newText;
+                textarea.focus();
+                textarea.setSelectionRange(start + before.length, start + before.length);
+            } else {
+                const selected = textarea.value.substring(start, end);
+                const newText = textarea.value.substring(0, start) + before + selected + after + textarea.value.substring(end);
+                textarea.value = newText;
+                textarea.focus();
+                textarea.setSelectionRange(start + before.length, end + before.length);
+            }
+            renderMindmap(textarea.value);
+        }
+        
+        // === ОБРАБОТЧИКИ КНОПОК ФОРМАТИРОВАНИЯ ===
+        document.getElementById('btn-hash').onclick = () => insertPrefix('# ');
+        document.getElementById('btn-bold').onclick = () => wrapSelection('**', '**');
+        document.getElementById('btn-italic').onclick = () => wrapSelection('*', '*');
+        document.getElementById('btn-ul').onclick = () => insertPrefix('- ');
+        document.getElementById('btn-ol').onclick = () => insertPrefix('1. ');
+        document.getElementById('btn-link').onclick = () => {
+            const url = prompt('Введите URL:', 'https://');
+            if (url) wrapSelection('[', `](${url})`);
+        };
+        
+        // === УПРАВЛЕНИЕ ПАНЕЛЬЮ РЕДАКТОРА ===
+        toggleBtn.onclick = () => {
+            editorPanel.classList.toggle('collapsed');
+            toggleBtn.textContent = editorPanel.classList.contains('collapsed') ? '▶' : '◀';
+            // Принудительно обновляем карту после анимации
+            setTimeout(() => {
+                renderMindmap(textarea.value);
+            }, 350);
+        };
+        
+        // === ПОЛНОЭКРАННЫЙ РЕЖИМ ===
+        document.getElementById('fullscreen-btn').onclick = () => {
+            viewerPanel.classList.toggle('fullscreen');
+            const btn = document.getElementById('fullscreen-btn');
+            if (viewerPanel.classList.contains('fullscreen')) {
+                btn.textContent = '✕';
+                btn.title = 'Выйти из полноэкранного режима';
+                // При входе в полноэкранный режим сворачиваем редактор
+                if (!editorPanel.classList.contains('collapsed')) {
+                    editorPanel.classList.add('collapsed');
+                    toggleBtn.textContent = '▶';
+                }
+            } else {
+                btn.textContent = '⛶';
+                btn.title = 'Полноэкранный режим';
+            }
+            // Обновляем карту после изменения размера
+            setTimeout(() => {
+                renderMindmap(textarea.value);
+            }, 100);
+        };
+        
+        // === УПРАВЛЕНИЕ ВЕТКАМИ КАРТЫ ===
+        function getMarkmapInstance() {
+            const svg = document.querySelector('.markmap svg');
+            if (svg && svg.__markmap__) {
+                return svg.__markmap__;
+            }
+            return null;
+        }
+        
+        function collapseAll() {
+            const mm = getMarkmapInstance();
+            if (mm && mm.state && mm.state.data) {
+                function collapseNode(node) {
+                    if (node.children) {
+                        node.state = node.state || {};
+                        node.state.collapsed = true;
+                        node.children.forEach(collapseNode);
+                    }
+                }
+                collapseNode(mm.state.data);
+                mm.render();
+            }
+        }
+        
+        function expandAll() {
+            const mm = getMarkmapInstance();
+            if (mm && mm.state && mm.state.data) {
+                function expandNode(node) {
+                    if (node.children) {
+                        node.state = node.state || {};
+                        node.state.collapsed = false;
+                        node.children.forEach(expandNode);
+                    }
+                }
+                expandNode(mm.state.data);
+                mm.render();
+            }
+        }
+        
+        document.getElementById('collapse-all').onclick = () => collapseAll();
+        document.getElementById('expand-all').onclick = () => expandAll();
+        
+        // === СОХРАНЕНИЕ И ЗАГРУЗКА ===
         function saveToFile() {
-            const html = editor.getHTML();
-            const markdown = htmlToMarkdown(html);
-            const blob = new Blob([markdown], { type: 'text/markdown' });
+            const blob = new Blob([textarea.value], { type: 'text/markdown' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'document.md';
+            a.download = 'mindmap.md';
             a.click();
             URL.revokeObjectURL(url);
             statusSpan.innerText = '✅ Сохранено';
-            setTimeout(() => statusSpan.innerText = '✨ WYSIWYG + Markmap', 1500);
+            setTimeout(() => statusSpan.innerText = '✨ Редактируйте Markdown', 1500);
         }
         
-        // === ЗАГРУЗКА ИЗ MARKDOWN ФАЙЛА ===
         function loadFromFile() {
             const input = document.createElement('input');
             input.type = 'file';
@@ -286,115 +358,46 @@
                 if (!file) return;
                 const reader = new FileReader();
                 reader.onload = (ev) => {
-                    const markdown = ev.target.result;
-                    const html = markdownToHtml(markdown);
-                    editor.commands.setContent(html);
-                    renderMindmap(markdown);
+                    textarea.value = ev.target.result;
+                    renderMindmap(ev.target.result);
                     statusSpan.innerText = '✅ Загружено';
-                    setTimeout(() => statusSpan.innerText = '✨ WYSIWYG + Markmap', 1500);
+                    setTimeout(() => statusSpan.innerText = '✨ Редактируйте Markdown', 1500);
                 };
                 reader.readAsText(file);
             };
             input.click();
         }
         
-        // === ПРЕОБРАЗОВАНИЕ MARKDOWN В HTML (простая версия) ===
-        function markdownToHtml(md) {
-            let html = md;
-            html = html.replace(/^# (.*$)/gm, '<h1>$1</h1>');
-            html = html.replace(/^## (.*$)/gm, '<h2>$1</h2>');
-            html = html.replace(/^### (.*$)/gm, '<h3>$1</h3>');
-            html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-            html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
-            html = html.replace(/^- (.*$)/gm, '<ul><li>$1</li></ul>');
-            html = html.replace(/^\d+\. (.*$)/gm, '<ol><li>$1</li></ol>');
-            html = html.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2">$1</a>');
-            html = html.replace(/^(.*)$/gm, (match) => {
-                if (!match.startsWith('<')) return `<p>${match}</p>`;
-                return match;
-            });
-            html = html.replace(/<\/ul>\n<ul>/g, '');
-            html = html.replace(/<\/ol>\n<ol>/g, '');
-            return html;
-        }
-        
-        // === ПЕЧАТЬ ТЕКСТА ===
-        function printText() {
-            const html = editor.getHTML();
-            const printWindow = window.open('', '_blank');
-            printWindow.document.write(`
-                <html>
-                <head>
-                    <title>Документ</title>
-                    <style>
-                        body { font-family: 'Times New Roman', serif; margin: 40px; line-height: 1.5; }
-                        h1 { font-size: 24px; margin: 20px 0 10px; }
-                        h2 { font-size: 20px; margin: 15px 0 10px; }
-                        h3 { font-size: 18px; margin: 10px 0 5px; }
-                        ul, ol { margin: 10px 0; padding-left: 30px; }
-                        li { margin: 5px 0; }
-                        a { color: blue; }
-                    </style>
-                </head>
-                <body>${html}</body>
-                </html>
-            `);
-            printWindow.document.close();
-            printWindow.print();
-        }
-        
-        // === УПРАВЛЕНИЕ ПАНЕЛЬЮ РЕДАКТОРА ===
-        const editorPanel = document.getElementById('editor-panel');
-        const toggleBtn = document.getElementById('toggle-editor-btn');
-        toggleBtn.onclick = () => {
-            editorPanel.classList.toggle('collapsed');
-            toggleBtn.textContent = editorPanel.classList.contains('collapsed') ? '▶' : '◀';
-            setTimeout(() => renderMindmap(htmlToMarkdown(editor.getHTML())), 350);
-        };
-        
-        // === ПОЛНОЭКРАННЫЙ РЕЖИМ ===
-        const viewerPanel = document.getElementById('viewer-panel');
-        document.getElementById('fullscreen-btn').onclick = () => {
-            viewerPanel.classList.toggle('fullscreen');
-            const btn = document.getElementById('fullscreen-btn');
-            btn.textContent = viewerPanel.classList.contains('fullscreen') ? '✕' : '⛶';
-            if (!editorPanel.classList.contains('collapsed')) {
-                editorPanel.classList.add('collapsed');
-                toggleBtn.textContent = '▶';
+        // === ГОРЯЧИЕ КЛАВИШИ ===
+        textarea.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.metaKey) {
+                switch (e.key) {
+                    case 'b': e.preventDefault(); document.getElementById('btn-bold').click(); break;
+                    case 'i': e.preventDefault(); document.getElementById('btn-italic').click(); break;
+                }
             }
-            setTimeout(() => renderMindmap(htmlToMarkdown(editor.getHTML())), 100);
-        };
+        });
         
-        // === УПРАВЛЕНИЕ ВЕТКАМИ КАРТЫ ===
-        function getMarkmapInstance() {
-            const svg = document.querySelector('.markmap svg');
-            return svg?.__markmap__ || null;
-        }
+        // === АВТООБНОВЛЕНИЕ с дебаунсом ===
+        textarea.addEventListener('input', debouncedRender);
         
-        document.getElementById('collapse-all').onclick = () => {
-            const mm = getMarkmapInstance();
-            if (mm && mm.state?.data) {
-                const collapse = (node) => { if (node.children) { node.state = node.state || {}; node.state.collapsed = true; node.children.forEach(collapse); } };
-                collapse(mm.state.data);
-                mm.render();
-            }
-        };
-        
-        document.getElementById('expand-all').onclick = () => {
-            const mm = getMarkmapInstance();
-            if (mm && mm.state?.data) {
-                const expand = (node) => { if (node.children) { node.state = node.state || {}; node.state.collapsed = false; node.children.forEach(expand); } };
-                expand(mm.state.data);
-                mm.render();
-            }
-        };
-        
+        // === ИНИЦИАЛИЗАЦИЯ ===
+        textarea.value = defaultMarkdown;
+        // Небольшая задержка для инициализации autoloader
+        setTimeout(() => {
+            renderMindmap(defaultMarkdown);
+        }, 200);
         document.getElementById('save-btn').onclick = saveToFile;
         document.getElementById('load-btn').onclick = loadFromFile;
-        document.getElementById('print-btn').onclick = printText;
         
-        // Инициализация карты
-        setTimeout(() => renderMindmap(htmlToMarkdown(editor.getHTML())), 500);
+        // Исправляем проблему с отображением при сворачивании/разворачивании
+        window.addEventListener('resize', () => {
+            setTimeout(() => {
+                if (!editorPanel.classList.contains('collapsed') || viewerPanel.classList.contains('fullscreen')) {
+                    renderMindmap(textarea.value);
+                }
+            }, 200);
+        });
     </script>
 </body>
 </html>
