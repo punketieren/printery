@@ -1,113 +1,40 @@
 <!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Markmap — Полноценный онлайн-редактор</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { background: #f5f7fb; height: 100vh; display: flex; flex-direction: column; font-family: system-ui, sans-serif; }
-        .toolbar { background: white; padding: 12px 24px; border-bottom: 1px solid #e2e8f0; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-        .toolbar button { padding: 6px 14px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; cursor: pointer; font-size: 13px; }
-        .toolbar button.primary { background: #3b82f6; border-color: #3b82f6; color: white; }
-        .toolbar button.primary:hover { background: #2563eb; }
-        .toolbar button:hover { background: #f1f5f9; }
-        .toolbar .status { margin-left: auto; font-size: 13px; color: #475569; background: #f1f5f9; padding: 4px 12px; border-radius: 20px; }
-        .main-container { flex: 1; display: flex; gap: 10px; padding: 10px; overflow: hidden; }
-        .editor-panel { width: 40%; display: flex; flex-direction: column; gap: 8px; background: white; border-radius: 12px; border: 1px solid #e2e8f0; padding: 16px; }
-        .editor-panel textarea { width: 100%; flex: 1; font-family: monospace; font-size: 14px; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; resize: none; }
-        .viewer-panel { flex: 1; background: white; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; position: relative; }
-        .viewer-panel .markmap { width: 100%; height: 100%; }
-        @media (max-width: 768px) { .main-container { flex-direction: column; } .editor-panel { width: 100%; height: 40%; } }
-    </style>
-    <!-- Подключаем через autoloader — работает "из коробки" -->
-    <script src="https://cdn.jsdelivr.net/npm/markmap-autoloader"></script>
-</head>
+<html>
 <body>
-    <div class="toolbar">
-        <button id="apply-btn" class="primary">🔄 Применить</button>
-        <button id="save-btn">💾 Сохранить</button>
-        <button id="load-btn">📂 Загрузить</button>
-        <span class="status" id="status-text">✨ Готово</span>
-    </div>
-    <div class="main-container">
-        <div class="editor-panel">
-            <textarea id="markdown-editor"></textarea>
-        </div>
-        <div class="viewer-panel">
-            <!-- Контейнер, который будет содержать карту -->
-            <div class="markmap" id="mindmap-container"></div>
-        </div>
-    </div>
-    <script>
-        // Получаем ссылки на элементы
-        const textarea = document.getElementById('markdown-editor');
-        const container = document.getElementById('mindmap-container');
-        const statusSpan = document.getElementById('status-text');
-        
-        // Начальные данные в формате Markdown
-        const defaultMarkdown = `# Центральная идея
-## Основной раздел 1
+    <style>
+        .markmap > svg { width: 100%; height: 300px; }
+    </style>
+    
+    <!-- Кнопка для обновления -->
+    <button onclick="updateMindmap()">🔄 Обновить карту</button>
+    
+    <!-- Контейнер, который будет содержать карту -->
+    <div class="markmap" id="mindmap-container">
+# Стартовая идея
+## Раздел 1
 ### Деталь 1.1
 ### Деталь 1.2
-#### Подробность 1.2.1
-## Основной раздел 2
-### Деталь 2.1
-### Деталь 2.2
-- Элемент списка 1
-- Элемент списка 2`;
-
-        // Функция для обновления карты
-        function renderMindmap(markdownText) {
-            // Очищаем контейнер и вставляем новый код
-            container.innerHTML = markdownText;
+    </div>
+    
+    <script>
+        function updateMindmap() {
+            // Получаем контейнер
+            const container = document.getElementById('mindmap-container');
+            // Задаём новое содержимое в формате Markdown
+            container.innerHTML = `
+# Обновлённая идея
+## Новый раздел
+### Новая деталь 1
+### Новая деталь 2
+            `;
             // markmap-autoloader сам подхватит изменения и отрендерит карту
             if (window.markmap?.autoLoader?.renderAll) {
                 window.markmap.autoLoader.renderAll();
             }
-            statusSpan.innerText = '✅ Карта обновлена';
-            setTimeout(() => statusSpan.innerText = '✨ Готово', 2000);
         }
-
-        // Сохранение в файл .md
-        function saveToFile() {
-            const blob = new Blob([textarea.value], { type: 'text/markdown' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'mindmap.md';
-            a.click();
-            URL.revokeObjectURL(url);
-            statusSpan.innerText = '✅ Сохранено';
-            setTimeout(() => statusSpan.innerText = '✨ Готово', 1500);
-        }
-
-        // Загрузка из файла .md
-        function loadFromFile() {
-            const input = document.createElement('input');
-            input.type = 'file';
-            input.accept = '.md,.txt';
-            input.onchange = (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                const reader = new FileReader();
-                reader.onload = (ev) => {
-                    textarea.value = ev.target.result;
-                    renderMindmap(ev.target.result);
-                    statusSpan.innerText = '✅ Загружено';
-                    setTimeout(() => statusSpan.innerText = '✨ Готово', 1500);
-                };
-                reader.readAsText(file);
-            };
-            input.click();
-        }
-
-        // Инициализация и назначение обработчиков событий
-        textarea.value = defaultMarkdown;
-        renderMindmap(defaultMarkdown);
-        document.getElementById('apply-btn').onclick = () => renderMindmap(textarea.value);
-        document.getElementById('save-btn').onclick = saveToFile;
-        document.getElementById('load-btn').onclick = loadFromFile;
     </script>
+    
+    <!-- Подключаем autoloader — основной механизм, который превращает Markdown в карту -->
+    <script src="https://cdn.jsdelivr.net/npm/markmap-autoloader"></script>
 </body>
 </html>
