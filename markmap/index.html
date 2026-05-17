@@ -34,7 +34,6 @@
         .editor del { text-decoration: line-through; }
         .status-bar { background: white; border-top: 1px solid #e2e8f0; color: #64748b; flex-shrink: 0; font-size: 12px; padding: 6px 12px; display: flex; justify-content: space-between; }
     </style>
-    <!-- Подключаем Turndown и marked -->
     <script src="https://unpkg.com/turndown@7.1.2/dist/turndown.js"></script>
     <script src="https://unpkg.com/marked@11.1.1/marked.min.js"></script>
 </head>
@@ -62,12 +61,12 @@
         <div class="toolbar-group">
             <button id="link" title="Ссылка">🔗</button>
             <button id="image" title="Изображение">🖼️</button>
-            <button id="formula" title="Формула (LaTeX)">∑</button>
+            <button id="formula" title="Формула">∑</button>
             <button id="hr" title="Горизонтальная линия">—</button>
         </div>
         <div class="toolbar-group">
-            <button id="save" title="Сохранить (MD)">💾</button>
-            <button id="load" title="Загрузить (MD)">📂</button>
+            <button id="save" title="Сохранить">💾</button>
+            <button id="load" title="Загрузить">📂</button>
         </div>
     </div>
     <div class="editor-wrapper">
@@ -82,25 +81,20 @@
         const editor = document.getElementById('editor');
         const statusSpan = document.getElementById('status');
         
-        // Настройка Turndown (HTML → Markdown)
+        // Настройка Turndown
         const turndownService = new TurndownService({
             headingStyle: 'atx',
             codeBlockStyle: 'fenced',
             bulletListMarker: '-'
         });
-        // Настройка преобразования turndown для mark (==highlight==)
         turndownService.addRule('highlight', {
             filter: 'mark',
             replacement: (content) => `==${content}==`
         });
         
-        // Настройка marked (Markdown → HTML)
-        marked.setOptions({
-            breaks: true,
-            gfm: true
-        });
+        // Настройка marked
+        marked.setOptions({ breaks: true, gfm: true });
         
-        // Начальное содержимое в Markdown (храним его, а не HTML)
         let currentMarkdown = `# Центральная идея
 
 ## Основной раздел 1
@@ -130,25 +124,65 @@ function hello() { console.log("Hello"); }
 
 Текст после линии.`;
         
-        // Функция обновления редактора из Markdown
         function updateEditorFromMarkdown() {
-            const html = marked.parse(currentMarkdown);
-            editor.innerHTML = html;
+            editor.innerHTML = marked.parse(currentMarkdown);
         }
         
-        // Функция сохранения текущего HTML в Markdown (через Turndown)
         function updateMarkdownFromEditor() {
             currentMarkdown = turndownService.turndown(editor.innerHTML);
         }
         
-        // При любом изменении в редакторе обновляем Markdown
         editor.addEventListener('input', () => {
             updateMarkdownFromEditor();
             statusSpan.innerText = '📝 Редактирование...';
             setTimeout(() => statusSpan.innerText = 'Готов', 1000);
         });
         
-        // Форматирование через execCommand
+        // Универсальная функция обёртки выделения
+        function wrapSelection(tag, placeholder = null) {
+            const selection = window.getSelection();
+            if (selection.isCollapsed) {
+                // Если ничего не выделено — вставляем заготовку
+                const text = placeholder || (tag === 'code' ? 'код' : (tag === 'mark' ? 'текст' : ''));
+                document.execCommand('insertHTML', false, `<${tag}>${text}</${tag}>`);
+            } else {
+                const range = selection.getRangeAt(0);
+                const selectedText = range.toString();
+                const span = document.createElement('span');
+                span.innerHTML = `<${tag}>${selectedText}</${tag}>`;
+                range.deleteContents();
+                range.insertNode(span);
+                // Снимаем выделение
+                selection.collapseToEnd();
+            }
+            updateMarkdownFromEditor();
+            statusSpan.innerText = `✅ ${tag}`;
+            setTimeout(() => statusSpan.innerText = 'Готов', 1000);
+        }
+        
+        // Функция для переключения цитаты
+        function toggleQuote() {
+            const selection = window.getSelection();
+            if (selection.isCollapsed) return;
+            const range = selection.getRangeAt(0);
+            let container = range.commonAncestorContainer;
+            if (container.nodeType === Node.TEXT_NODE) container = container.parentElement;
+            const blockquote = container.closest('blockquote');
+            if (blockquote) {
+                // Если уже внутри цитаты — разворачиваем
+                const parent = blockquote.parentNode;
+                while (blockquote.firstChild) {
+                    parent.insertBefore(blockquote.firstChild, blockquote);
+                }
+                parent.removeChild(blockquote);
+            } else {
+                document.execCommand('formatBlock', false, 'blockquote');
+            }
+            updateMarkdownFromEditor();
+            statusSpan.innerText = '✅ Цитата';
+            setTimeout(() => statusSpan.innerText = 'Готов', 1000);
+        }
+        
         function format(command, value = null) {
             editor.focus();
             document.execCommand(command, false, value);
@@ -166,7 +200,6 @@ function hello() { console.log("Hello"); }
             document.getElementById('ol').classList.toggle('active', document.queryCommandState('insertOrderedList'));
         }
         
-        // Сохранение в файл
         function saveToFile() {
             updateMarkdownFromEditor();
             const blob = new Blob([currentMarkdown], { type: 'text/markdown' });
@@ -180,7 +213,6 @@ function hello() { console.log("Hello"); }
             setTimeout(() => statusSpan.innerText = 'Готов', 1500);
         }
         
-        // Загрузка из файла
         function loadFromFile() {
             const input = document.createElement('input');
             input.type = 'file';
@@ -205,19 +237,18 @@ function hello() { console.log("Hello"); }
         document.getElementById('bold').onclick = () => format('bold');
         document.getElementById('italic').onclick = () => format('italic');
         document.getElementById('strike').onclick = () => format('strikeThrough');
-        document.getElementById('code').onclick = () => format('insertHTML', '<code>Текст</code>');
-        document.getElementById('highlight').onclick = () => format('insertHTML', '<mark>Текст</mark>');
+        document.getElementById('code').onclick = () => wrapSelection('code', 'код');
+        document.getElementById('highlight').onclick = () => wrapSelection('mark', 'текст');
         document.getElementById('ul').onclick = () => format('insertUnorderedList');
         document.getElementById('ol').onclick = () => format('insertOrderedList');
-        document.getElementById('quote').onclick = () => format('formatBlock', 'blockquote');
+        document.getElementById('quote').onclick = toggleQuote;
         document.getElementById('link').onclick = () => { let url = prompt('Введите URL:'); if (url) format('createLink', url); };
         document.getElementById('image').onclick = () => { let url = prompt('Введите URL изображения:'); if (url) format('insertImage', url); };
-        document.getElementById('formula').onclick = () => format('insertHTML', '$$Формула$$');
+        document.getElementById('formula').onclick = () => wrapSelection('span', '$$Формула$$');
         document.getElementById('hr').onclick = () => format('insertHorizontalRule');
         document.getElementById('save').onclick = saveToFile;
         document.getElementById('load').onclick = loadFromFile;
         
-        // Горячие клавиши
         editor.addEventListener('keydown', (e) => {
             if (e.ctrlKey || e.metaKey) {
                 switch (e.key) {
@@ -226,11 +257,9 @@ function hello() { console.log("Hello"); }
                 }
             }
         });
-        
         editor.addEventListener('keyup', updateButtonStates);
         editor.addEventListener('mouseup', updateButtonStates);
         
-        // Инициализация
         updateEditorFromMarkdown();
         updateButtonStates();
     </script>
