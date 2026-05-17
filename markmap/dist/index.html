@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Milkdown Editor</title>
+    <style>
+        body { margin: 0; padding: 20px; font-family: system-ui; background: #f0f2f5; }
+        #editor-container { 
+            height: 80vh; 
+            background: white;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+            padding: 20px;
+            overflow: auto;
+        }
+        .toolbar { margin-bottom: 10px; }
+        .toolbar button { margin-right: 5px; padding: 4px 12px; cursor: pointer; }
+    </style>
+  <script type="module" crossorigin src="/assets/index-jhel2NML.js"></script>
+</head>
+<body>
+    <div class="toolbar">
+        <button id="save-btn">💾 Сохранить MD</button>
+        <button id="load-btn">📂 Загрузить MD</button>
+    </div>
+    <div id="editor-container"></div>
+</body>
+</html>
