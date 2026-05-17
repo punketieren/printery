@@ -1,28 +1,160 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Milkdown Editor</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Milkdown WYSIWYG Editor</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@milkdown/theme-nord/lib/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@milkdown/theme-nord/lib/theme.css">
     <style>
-        body { margin: 0; padding: 20px; font-family: system-ui; background: #f0f2f5; }
+        body { margin: 0; padding: 20px; font-family: system-ui; background: #f5f7fb; }
+        .toolbar { margin-bottom: 16px; display: flex; gap: 8px; align-items: center; }
+        button { padding: 6px 14px; background: white; border: 1px solid #ccc; border-radius: 6px; cursor: pointer; }
+        button.primary { background: #3b82f6; color: white; border-color: #3b82f6; }
         #editor-container { 
-            height: 80vh; 
-            background: white;
-            border-radius: 8px;
-            border: 1px solid #ddd;
-            padding: 20px;
+            background: white; 
+            border-radius: 12px; 
+            border: 1px solid #e2e8f0; 
+            padding: 20px; 
+            min-height: 70vh;
             overflow: auto;
         }
-        .toolbar { margin-bottom: 10px; }
-        .toolbar button { margin-right: 5px; padding: 4px 12px; cursor: pointer; }
+        .status { margin-left: auto; font-size: 13px; color: #475569; }
     </style>
 </head>
 <body>
     <div class="toolbar">
-        <button id="save-btn">💾 Сохранить MD</button>
-        <button id="load-btn">📂 Загрузить MD</button>
+        <button id="save-btn" class="primary">💾 Сохранить (MD)</button>
+        <button id="load-btn">📂 Загрузить (MD)</button>
+        <span class="status" id="status">✨ Редактор готов</span>
     </div>
     <div id="editor-container"></div>
-    <script type="module" src="/main.js"></script>
+
+    <!-- Загружаем Milkdown из CDN (один файл) -->
+    <script src="https://cdn.jsdelivr.net/npm/@milkdown/standalone@7.6.2/lib/index.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@milkdown/standalone@7.6.2/lib/style.css">
+
+    <script>
+        const { Editor, defaultValueCtx } = window.Milkdown;
+        let editor = null;
+
+        const initialMarkdown = `# Центральная идея
+
+## Основной раздел 1
+
+### Деталь 1.1
+
+### Деталь 1.2
+
+#### Подробность 1.2.1
+
+## Основной раздел 2
+
+### Деталь 2.1
+
+### Деталь 2.2
+
+- Элемент списка 1
+- Элемент списка 2
+
+1. Нумерованный список
+2. Второй элемент
+
+**Жирный текст** и *курсив*.
+
+[Ссылка на пример](https://example.com)`;
+
+        async function initEditor() {
+            editor = await Editor
+                .make()
+                .config((ctx) => {
+                    ctx.set(defaultValueCtx, initialMarkdown);
+                })
+                .create(document.getElementById('editor-container'));
+            
+            document.getElementById('status').innerText = '✅ Редактор готов';
+        }
+
+        async function getMarkdown() {
+            if (!editor) return '';
+            // Простой способ: читаем содержимое из DOM
+            const container = document.getElementById('editor-container');
+            const html = container.querySelector('.milkdown')?.innerHTML || '';
+            // Конвертируем HTML в Markdown (простая функция)
+            let md = html;
+            md = md.replace(/<h1>(.*?)<\/h1>/g, '# $1\n');
+            md = md.replace(/<h2>(.*?)<\/h2>/g, '## $1\n');
+            md = md.replace(/<h3>(.*?)<\/h3>/g, '### $1\n');
+            md = md.replace(/<strong>(.*?)<\/strong>/g, '**$1**');
+            md = md.replace(/<em>(.*?)<\/em>/g, '*$1*');
+            md = md.replace(/<ul>(.*?)<\/ul>/gs, (_, c) => c.replace(/<li>(.*?)<\/li>/g, '- $1\n'));
+            md = md.replace(/<ol>(.*?)<\/ol>/gs, (_, c) => {
+                let i = 1;
+                return c.replace(/<li>(.*?)<\/li>/g, () => `${i++}. $1\n`);
+            });
+            md = md.replace(/<p>(.*?)<\/p>/g, '$1\n\n');
+            md = md.replace(/<[^>]+>/g, '');
+            return md.trim();
+        }
+
+        async function setMarkdown(markdown) {
+            if (!editor) return;
+            // Простая конвертация Markdown в HTML
+            let html = markdown;
+            html = html.replace(/^# (.*)$/gm, '<h1>$1</h1>');
+            html = html.replace(/^## (.*)$/gm, '<h2>$1</h2>');
+            html = html.replace(/^### (.*)$/gm, '<h3>$1</h3>');
+            html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+            html = html.replace(/^- (.*)$/gm, '<ul><li>$1</li></ul>');
+            html = html.replace(/^\d+\. (.*)$/gm, '<ol><li>$1</li></ol>');
+            html = html.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2">$1</a>');
+            html = html.replace(/^(?!<[a-z])/gm, (m) => `<p>${m}</p>`);
+            html = html.replace(/<\/ul>\n<ul>/g, '');
+            html = html.replace(/<\/ol>\n<ol>/g, '');
+            
+            // Вставляем HTML в редактор
+            const container = document.getElementById('editor-container');
+            const milkdownDiv = container.querySelector('.milkdown');
+            if (milkdownDiv) {
+                milkdownDiv.innerHTML = html;
+            }
+        }
+
+        async function saveMarkdown() {
+            const md = await getMarkdown();
+            const blob = new Blob([md], { type: 'text/markdown' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'document.md';
+            a.click();
+            URL.revokeObjectURL(url);
+            document.getElementById('status').innerText = '✅ Сохранено';
+            setTimeout(() => document.getElementById('status').innerText = '✨ Редактор готов', 1500);
+        }
+
+        function loadMarkdown() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.md,.txt';
+            input.onchange = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = async (ev) => {
+                    await setMarkdown(ev.target.result);
+                    document.getElementById('status').innerText = '✅ Загружено';
+                    setTimeout(() => document.getElementById('status').innerText = '✨ Редактор готов', 1500);
+                };
+                reader.readAsText(file);
+            };
+            input.click();
+        }
+
+        initEditor();
+        document.getElementById('save-btn').onclick = saveMarkdown;
+        document.getElementById('load-btn').onclick = loadMarkdown;
+    </script>
 </body>
 </html>
