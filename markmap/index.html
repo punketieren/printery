@@ -36,11 +36,11 @@
 
         .toolbar-group {
             display: flex;
-            gap: 4px;
+            gap: 2px;
             align-items: center;
             background: #f8fafc;
             padding: 4px 8px;
-            border-radius: 8px;
+            border-radius: 4px;
         }
 
         .toolbar button {
@@ -48,9 +48,9 @@
             border: 1px solid #cbd5e1;
             border-radius: 6px;
             cursor: pointer;
-            font-size: 14px;
+            font-size: 10px;
             font-weight: 500;
-            min-width: 32px;
+            min-width: 22px;
             padding: 6px 10px;
             transition: all 0.2s;
         }
@@ -134,12 +134,11 @@
     <div class="toolbar">
         <div class="toolbar-group">
             <select id="heading-select" aria-label="Уровень заголовка">
-                <option value="">Абзац</option>
+                <option value="">-</option>
                 <option value="h1">H1</option><option value="h2">H2</option><option value="h3">H3</option>
                 <option value="h4">H4</option><option value="h5">H5</option><option value="h6">H6</option>
             </select>
         </div>
-        <div class="separator"></div>
         <div class="toolbar-group">
             <button id="bold" title="Жирный (Ctrl+B)"><b>B</b></button>
             <button id="italic" title="Курсив (Ctrl+I)"><i>I</i></button>
@@ -147,23 +146,19 @@
             <button id="code" title="Код">&lt;/&gt;</button>
             <button id="highlight" title="Подсветка"><mark>H</mark></button>
         </div>
-        <div class="separator"></div>
         <div class="toolbar-group">
-            <button id="ul" title="Маркированный список">• UL</button>
-            <button id="ol" title="Нумерованный список">1. OL</button>
+            <button id="ul" title="Маркированный список">• </button>
+            <button id="ol" title="Нумерованный список">1. </button>
             <button id="quote" title="Цитата">"</button>
         </div>
-        <div class="separator"></div>
         <div class="toolbar-group">
             <button id="link" title="Ссылка">🔗</button>
-            <button id="image" title="Изображение">🖼️</button>
             <button id="formula" title="Формула (LaTeX)">∑</button>
             <button id="hr" title="Горизонтальная линия">—</button>
         </div>
-        <div class="separator"></div>
         <div class="toolbar-group">
-            <button id="save">💾 Сохранить (MD)</button>
-            <button id="load">📂 Загрузить (MD)</button>
+            <button id="save">💾 </button>
+            <button id="load">📂 </button>
         </div>
     </div>
     <div class="editor-wrapper">
