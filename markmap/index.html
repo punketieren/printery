@@ -5,97 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>WYSIWYG Markdown Editor</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            background: #f5f7fb;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
-
-        /* --- Меню (Toolbar) --- */
-        .toolbar {
-            background: white;
-            padding: 6px 12px;
-            border-bottom: 1px solid #e2e8f0;
-            display: flex;
-            gap: 4px;
-            flex-wrap: wrap;
-            flex-shrink: 0;
-            position: sticky;
-            top: 0;
-            z-index: 10;
-        }
-
-        .toolbar-group {
-            display: flex;
-            gap: 3px;
-            align-items: center;
-            background: #f8fafc;
-            padding: 3px 6px;
-            border-radius: 6px;
-        }
-
-        .toolbar button {
-            background: white;
-            border: 1px solid #cbd5e1;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 13px;
-            font-weight: 500;
-            min-width: 28px;
-            padding: 4px 8px;
-            transition: all 0.2s;
-            line-height: 1.2;
-        }
-
-        .toolbar button:hover {
-            background: #f1f5f9;
-            transform: translateY(-1px);
-        }
-
-        .toolbar button.active {
-            background: #3b82f6;
-            border-color: #3b82f6;
-            color: white;
-        }
-
-        .toolbar select {
-            background: white;
-            border: 1px solid #cbd5e1;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 12px;
-            padding: 4px 6px;
-        }
-
-        /* --- Контейнер редактора (с прокруткой) --- */
-        .editor-wrapper {
-            flex: 1;
-            overflow-y: auto;
-            padding: 20px;
-        }
-
-        .editor {
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-            font-size: 16px;
-            line-height: 1.6;
-            margin: 0 auto;
-            max-width: 900px;
-            outline: none;
-            padding: 32px;
-        }
-
-        /* Стили для отображения форматирования */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #f5f7fb; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        .toolbar { background: white; padding: 6px 12px; border-bottom: 1px solid #e2e8f0; display: flex; gap: 4px; flex-wrap: wrap; flex-shrink: 0; position: sticky; top: 0; z-index: 10; }
+        .toolbar-group { display: flex; gap: 3px; align-items: center; background: #f8fafc; padding: 3px 6px; border-radius: 6px; }
+        .toolbar button { background: white; border: 1px solid #cbd5e1; border-radius: 5px; cursor: pointer; font-size: 13px; font-weight: 500; min-width: 28px; padding: 4px 8px; transition: all 0.2s; line-height: 1.2; }
+        .toolbar button:hover { background: #f1f5f9; transform: translateY(-1px); }
+        .toolbar button.active { background: #3b82f6; border-color: #3b82f6; color: white; }
+        .toolbar select { background: white; border: 1px solid #cbd5e1; border-radius: 5px; cursor: pointer; font-size: 12px; padding: 4px 6px; }
+        .editor-wrapper { flex: 1; overflow-y: auto; padding: 20px; }
+        .editor { background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); font-size: 16px; line-height: 1.6; margin: 0 auto; max-width: 900px; outline: none; padding: 32px; }
         .editor h1 { font-size: 2em; margin: 0.5em 0; }
         .editor h2 { font-size: 1.5em; margin: 0.5em 0; }
         .editor h3 { font-size: 1.25em; margin: 0.5em 0; }
@@ -113,23 +32,16 @@
         .editor strong { font-weight: bold; }
         .editor em { font-style: italic; }
         .editor del { text-decoration: line-through; }
-
-        .status-bar {
-            background: white;
-            border-top: 1px solid #e2e8f0;
-            color: #64748b;
-            flex-shrink: 0;
-            font-size: 12px;
-            padding: 6px 12px;
-            display: flex;
-            justify-content: space-between;
-        }
+        .status-bar { background: white; border-top: 1px solid #e2e8f0; color: #64748b; flex-shrink: 0; font-size: 12px; padding: 6px 12px; display: flex; justify-content: space-between; }
     </style>
+    <!-- Подключаем Turndown и marked -->
+    <script src="https://unpkg.com/turndown@7.1.2/dist/turndown.js"></script>
+    <script src="https://unpkg.com/marked@11.1.1/marked.min.js"></script>
 </head>
 <body>
     <div class="toolbar">
         <div class="toolbar-group">
-            <select id="heading-select" aria-label="Уровень заголовка" title="Уровень заголовка">
+            <select id="heading-select" title="Уровень заголовка">
                 <option value="">Абзац</option>
                 <option value="h1">H1</option><option value="h2">H2</option><option value="h3">H3</option>
                 <option value="h4">H4</option><option value="h5">H5</option><option value="h6">H6</option>
@@ -170,24 +82,77 @@
         const editor = document.getElementById('editor');
         const statusSpan = document.getElementById('status');
         
-        // Начальное содержимое
-        editor.innerHTML = `<h1>Центральная идея</h1>
-<h2>Основной раздел 1</h2>
-<h3>Деталь 1.1</h3>
-<h3>Деталь 1.2</h3>
-<p><strong>Жирный текст</strong> и <em>курсив</em> и <del>зачёркнутый</del></p>
-<ul><li>Маркированный список</li><li>Второй элемент</li></ul>
-<ol><li>Нумерованный список</li><li>Второй элемент</li></ol>
-<blockquote>Это цитата</blockquote>
-<p><code>inline code</code></p>
-<pre><code>// Блок кода
-function hello() { console.log("Hello"); }</code></pre>
-<hr>
-<p>Текст после линии.</p>`;
+        // Настройка Turndown (HTML → Markdown)
+        const turndownService = new TurndownService({
+            headingStyle: 'atx',
+            codeBlockStyle: 'fenced',
+            bulletListMarker: '-'
+        });
+        // Настройка преобразования turndown для mark (==highlight==)
+        turndownService.addRule('highlight', {
+            filter: 'mark',
+            replacement: (content) => `==${content}==`
+        });
         
+        // Настройка marked (Markdown → HTML)
+        marked.setOptions({
+            breaks: true,
+            gfm: true
+        });
+        
+        // Начальное содержимое в Markdown (храним его, а не HTML)
+        let currentMarkdown = `# Центральная идея
+
+## Основной раздел 1
+
+### Деталь 1.1
+
+### Деталь 1.2
+
+**Жирный текст** и *курсив* и ~~зачёркнутый~~
+
+- Маркированный список
+- Второй элемент
+
+1. Нумерованный список
+2. Второй элемент
+
+> Это цитата
+
+\`inline code\`
+
+\`\`\`
+// Блок кода
+function hello() { console.log("Hello"); }
+\`\`\`
+
+---
+
+Текст после линии.`;
+        
+        // Функция обновления редактора из Markdown
+        function updateEditorFromMarkdown() {
+            const html = marked.parse(currentMarkdown);
+            editor.innerHTML = html;
+        }
+        
+        // Функция сохранения текущего HTML в Markdown (через Turndown)
+        function updateMarkdownFromEditor() {
+            currentMarkdown = turndownService.turndown(editor.innerHTML);
+        }
+        
+        // При любом изменении в редакторе обновляем Markdown
+        editor.addEventListener('input', () => {
+            updateMarkdownFromEditor();
+            statusSpan.innerText = '📝 Редактирование...';
+            setTimeout(() => statusSpan.innerText = 'Готов', 1000);
+        });
+        
+        // Форматирование через execCommand
         function format(command, value = null) {
-            document.execCommand(command, false, value);
             editor.focus();
+            document.execCommand(command, false, value);
+            updateMarkdownFromEditor();
             updateButtonStates();
             statusSpan.innerText = `✅ ${command}`;
             setTimeout(() => statusSpan.innerText = 'Готов', 1000);
@@ -201,64 +166,10 @@ function hello() { console.log("Hello"); }</code></pre>
             document.getElementById('ol').classList.toggle('active', document.queryCommandState('insertOrderedList'));
         }
         
-        // --- Конвертация HTML → Markdown ---
-        function htmlToMarkdown(html) {
-            let md = html;
-            for (let i = 1; i <= 6; i++) {
-                md = md.replace(new RegExp(`<h${i}>(.*?)<\\/h${i}>`, 'g'), '#'.repeat(i) + ' $1\n');
-            }
-            md = md.replace(/<strong>(.*?)<\/strong>/g, '**$1**');
-            md = md.replace(/<em>(.*?)<\/em>/g, '*$1*');
-            md = md.replace(/<del>(.*?)<\/del>/g, '~~$1~~');
-            md = md.replace(/<code>(.*?)<\/code>/g, '`$1`');
-            md = md.replace(/<pre><code>(.*?)<\/code><\/pre>/gs, '```\n$1\n```\n');
-            md = md.replace(/<blockquote>(.*?)<\/blockquote>/gs, (_, c) => c.replace(/^/gm, '> '));
-            md = md.replace(/<ul>(.*?)<\/ul>/gs, (_, c) => c.replace(/<li>(.*?)<\/li>/g, '- $1\n'));
-            md = md.replace(/<ol>(.*?)<\/ol>/gs, (_, c) => {
-                let i = 1;
-                return c.replace(/<li>(.*?)<\/li>/g, () => `${i++}. $1\n`);
-            });
-            md = md.replace(/<a href="(.*?)">(.*?)<\/a>/g, '[$2]($1)');
-            md = md.replace(/<img src="(.*?)" alt="(.*?)">/g, '![$2]($1)');
-            md = md.replace(/<mark>(.*?)<\/mark>/g, '==$1==');
-            md = md.replace(/<hr>/g, '---\n');
-            md = md.replace(/<p>(.*?)<\/p>/g, '$1\n\n');
-            md = md.replace(/<br>/g, '\n');
-            md = md.replace(/<[^>]+>/g, '');
-            md = md.replace(/&nbsp;/g, ' ');
-            md = md.replace(/\n\s*\n\s*\n/g, '\n\n');
-            return md.trim();
-        }
-        
-        // --- Конвертация Markdown → HTML ---
-        function markdownToHtml(md) {
-            let html = md;
-            for (let i = 6; i >= 1; i--) {
-                html = html.replace(new RegExp(`^${'#'.repeat(i)} (.*)$`, 'gm'), `<h${i}>$1</h${i}>`);
-            }
-            html = html.replace(/\*\*\*(.*?)\*\*\*/g, '<strong><em>$1</em></strong>');
-            html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-            html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
-            html = html.replace(/~~(.*?)~~/g, '<del>$1</del>');
-            html = html.replace(/`(.*?)`/g, '<code>$1</code>');
-            html = html.replace(/```(.*?)```/gs, '<pre><code>$1</code></pre>');
-            html = html.replace(/^> (.*)$/gm, '<blockquote>$1</blockquote>');
-            html = html.replace(/^- (.*)$/gm, '<li>$1</li>');
-            html = html.replace(/^\d+\. (.*)$/gm, '<li>$1</li>');
-            html = html.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2">$1</a>');
-            html = html.replace(/!\[(.*?)\]\((.*?)\)/g, '<img src="$2" alt="$1">');
-            html = html.replace(/==(.*?)==/g, '<mark>$1</mark>');
-            html = html.replace(/^---$/gm, '<hr>');
-            html = html.replace(/^(?!<[a-z]|$)(.*$)/gm, '<p>$1</p>');
-            html = html.replace(/<\/li>\n<li>/g, '</li><li>');
-            html = html.replace(/<\/blockquote>\n<blockquote>/g, '');
-            return html;
-        }
-        
-        // --- Сохранение в файл .md ---
+        // Сохранение в файл
         function saveToFile() {
-            const md = htmlToMarkdown(editor.innerHTML);
-            const blob = new Blob([md], { type: 'text/markdown' });
+            updateMarkdownFromEditor();
+            const blob = new Blob([currentMarkdown], { type: 'text/markdown' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
@@ -269,7 +180,7 @@ function hello() { console.log("Hello"); }</code></pre>
             setTimeout(() => statusSpan.innerText = 'Готов', 1500);
         }
         
-        // --- Загрузка из файла .md ---
+        // Загрузка из файла
         function loadFromFile() {
             const input = document.createElement('input');
             input.type = 'file';
@@ -279,9 +190,8 @@ function hello() { console.log("Hello"); }</code></pre>
                 if (!file) return;
                 const reader = new FileReader();
                 reader.onload = (ev) => {
-                    const md = ev.target.result;
-                    const html = markdownToHtml(md);
-                    editor.innerHTML = html;
+                    currentMarkdown = ev.target.result;
+                    updateEditorFromMarkdown();
                     statusSpan.innerText = '✅ Загружено';
                     setTimeout(() => statusSpan.innerText = 'Готов', 1500);
                 };
@@ -290,7 +200,7 @@ function hello() { console.log("Hello"); }</code></pre>
             input.click();
         }
         
-        // --- Назначение кнопок ---
+        // Назначение кнопок
         document.getElementById('heading-select').onchange = (e) => { if (e.target.value) format('formatBlock', e.target.value); e.target.value = ''; };
         document.getElementById('bold').onclick = () => format('bold');
         document.getElementById('italic').onclick = () => format('italic');
@@ -307,8 +217,21 @@ function hello() { console.log("Hello"); }</code></pre>
         document.getElementById('save').onclick = saveToFile;
         document.getElementById('load').onclick = loadFromFile;
         
+        // Горячие клавиши
+        editor.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.metaKey) {
+                switch (e.key) {
+                    case 'b': e.preventDefault(); format('bold'); break;
+                    case 'i': e.preventDefault(); format('italic'); break;
+                }
+            }
+        });
+        
         editor.addEventListener('keyup', updateButtonStates);
         editor.addEventListener('mouseup', updateButtonStates);
+        
+        // Инициализация
+        updateEditorFromMarkdown();
         updateButtonStates();
     </script>
 </body>
