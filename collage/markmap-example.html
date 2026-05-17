@@ -3,21 +3,117 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Markmap — Редактор с панелью форматирования</title>
+    <title>Markmap — Редактор с панелью форматирования и полноэкранным режимом</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { background: #f5f7fb; height: 100vh; display: flex; flex-direction: column; font-family: system-ui, sans-serif; }
-        .toolbar { background: white; padding: 8px 16px; border-bottom: 1px solid #e2e8f0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        body { background: #f5f7fb; height: 100vh; display: flex; flex-direction: column; font-family: system-ui, sans-serif; overflow: hidden; }
+        
+        /* Верхняя панель инструментов */
+        .toolbar { background: white; padding: 8px 16px; border-bottom: 1px solid #e2e8f0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; z-index: 10; }
         .toolbar button, .toolbar select { padding: 4px 10px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; cursor: pointer; font-size: 13px; }
         .toolbar button.primary { background: #3b82f6; border-color: #3b82f6; color: white; }
         .toolbar .separator { width: 1px; height: 24px; background: #cbd5e1; margin: 0 4px; }
         .toolbar .status { margin-left: auto; font-size: 12px; color: #475569; background: #f1f5f9; padding: 4px 12px; border-radius: 20px; }
-        .main-container { flex: 1; display: flex; gap: 10px; padding: 10px; overflow: hidden; }
-        .editor-panel { width: 40%; display: flex; flex-direction: column; gap: 8px; background: white; border-radius: 12px; border: 1px solid #e2e8f0; padding: 16px; }
-        .editor-panel textarea { width: 100%; flex: 1; font-family: monospace; font-size: 14px; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; resize: none; }
-        .viewer-panel { flex: 1; background: white; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; position: relative; }
+        
+        /* Основной контейнер */
+        .main-container { flex: 1; display: flex; position: relative; overflow: hidden; }
+        
+        /* Выплывающая панель редактора */
+        .editor-panel {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 450px;
+            height: 100%;
+            background: white;
+            border-right: 1px solid #e2e8f0;
+            z-index: 20;
+            transform: translateX(0);
+            transition: transform 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 2px 0 8px rgba(0,0,0,0.05);
+        }
+        .editor-panel.collapsed { transform: translateX(-100%); }
+        
+        /* Кнопка открытия/закрытия редактора */
+        .toggle-editor-btn {
+            position: absolute;
+            left: 460px;
+            top: 20px;
+            width: 32px;
+            height: 32px;
+            background: white;
+            border: 1px solid #cbd5e1;
+            border-radius: 0 8px 8px 0;
+            cursor: pointer;
+            z-index: 25;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            transition: left 0.3s ease;
+            box-shadow: 2px 0 4px rgba(0,0,0,0.05);
+        }
+        .editor-panel.collapsed + .toggle-editor-btn { left: 10px; }
+        
+        .editor-header { padding: 16px 16px 8px; border-bottom: 1px solid #e2e8f0; font-weight: bold; }
+        .editor-panel textarea { width: 100%; flex: 1; font-family: monospace; font-size: 14px; padding: 16px; border: none; resize: none; outline: none; background: #fafafa; }
+        
+        /* Панель просмотра карты */
+        .viewer-panel { flex: 1; background: white; overflow: hidden; position: relative; margin-left: 0; transition: margin-left 0.3s ease; }
+        .viewer-panel.fullscreen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1000; margin: 0; border-radius: 0; }
+        .viewer-panel.fullscreen .markmap { height: 100%; }
+        
         .viewer-panel .markmap { width: 100%; height: 100%; }
-        @media (max-width: 768px) { .main-container { flex-direction: column; } .editor-panel { width: 100%; height: 40%; } }
+        
+        /* Кнопка полноэкранного режима на карте */
+        .fullscreen-btn {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 40px;
+            height: 40px;
+            background: white;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            cursor: pointer;
+            z-index: 30;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            transition: all 0.2s;
+        }
+        .fullscreen-btn:hover { background: #f1f5f9; transform: scale(1.05); }
+        
+        /* Кнопки управления картой (сворачивание веток) */
+        .map-controls {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: white;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            display: flex;
+            gap: 5px;
+            padding: 5px;
+            z-index: 30;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .map-controls button {
+            width: 32px;
+            height: 32px;
+            border: none;
+            background: #f8fafc;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .map-controls button:hover { background: #e2e8f0; }
+        
+        @media (max-width: 768px) { .editor-panel { width: 100%; } .toggle-editor-btn { left: calc(100% - 40px); top: 70px; } .editor-panel.collapsed + .toggle-editor-btn { left: 10px; } }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/markmap-autoloader"></script>
 </head>
@@ -54,19 +150,40 @@
         <button id="load-btn">📂 Загрузить</button>
         <span class="status" id="status-text">✨ Редактируйте Markdown</span>
     </div>
+    
     <div class="main-container">
-        <div class="editor-panel">
+        <!-- Выплывающая панель редактора -->
+        <div class="editor-panel" id="editor-panel">
+            <div class="editor-header">📝 Редактор Markdown</div>
             <textarea id="markdown-editor"></textarea>
         </div>
-        <div class="viewer-panel">
+        <!-- Кнопка открытия/закрытия редактора -->
+        <button class="toggle-editor-btn" id="toggle-editor-btn" title="Скрыть/показать редактор">◀</button>
+        
+        <!-- Панель просмотра карты -->
+        <div class="viewer-panel" id="viewer-panel">
             <div class="markmap" id="mindmap-container"></div>
+            <!-- Кнопка полноэкранного режима -->
+            <button class="fullscreen-btn" id="fullscreen-btn" title="Полноэкранный режим">⛶</button>
+            <!-- Кнопки управления картой (сворачивание/разворачивание) -->
+            <div class="map-controls">
+                <button id="collapse-all" title="Свернуть все ветки">−</button>
+                <button id="expand-all" title="Развернуть всё">+</button>
+                <button id="collapse-level" title="Свернуть до уровня 2">◀</button>
+            </div>
         </div>
     </div>
+
     <script>
         const textarea = document.getElementById('markdown-editor');
         const container = document.getElementById('mindmap-container');
         const statusSpan = document.getElementById('status-text');
-
+        const editorPanel = document.getElementById('editor-panel');
+        const viewerPanel = document.getElementById('viewer-panel');
+        const toggleBtn = document.getElementById('toggle-editor-btn');
+        
+        let isFullscreen = false;
+        
         const defaultMarkdown = `# Центральная идея
 ## Основной раздел 1
 ### Деталь 1.1
@@ -77,7 +194,7 @@
 ### Деталь 2.2
 - Элемент списка 1
 - Элемент списка 2`;
-
+        
         // === ОБНОВЛЕНИЕ КАРТЫ ===
         function renderMindmap(markdownText) {
             container.innerHTML = markdownText;
@@ -85,7 +202,7 @@
                 window.markmap.autoLoader.renderAll();
             }
         }
-
+        
         // === ВСТАВКА ТЕКСТА В ПОЗИЦИЮ КУРСОРА ===
         function insertTextBeforeAfter(before, after) {
             const start = textarea.selectionStart;
@@ -97,25 +214,19 @@
             textarea.setSelectionRange(start + before.length, end + before.length);
             renderMindmap(textarea.value);
         }
-
-        function insertAround(before, after) {
-            insertTextBeforeAfter(before, after);
-        }
-
+        
         function insertPrefix(prefix) {
             const start = textarea.selectionStart;
             const end = textarea.selectionEnd;
             const lineStart = textarea.value.lastIndexOf('\n', start - 1) + 1;
-            const currentLine = textarea.value.substring(lineStart, end);
-            const newText = textarea.value.substring(0, lineStart) + prefix + currentLine + textarea.value.substring(end);
+            const newText = textarea.value.substring(0, lineStart) + prefix + textarea.value.substring(lineStart);
             textarea.value = newText;
             textarea.focus();
-            const newCursorPos = lineStart + prefix.length + currentLine.length;
+            const newCursorPos = lineStart + prefix.length + (end - start);
             textarea.setSelectionRange(newCursorPos, newCursorPos);
             renderMindmap(textarea.value);
         }
-
-        // === ФУНКЦИИ ФОРМАТИРОВАНИЯ ===
+        
         function wrapSelection(before, after) {
             const start = textarea.selectionStart;
             const end = textarea.selectionEnd;
@@ -130,44 +241,116 @@
                 renderMindmap(textarea.value);
             }
         }
-
-        // Заголовки
+        
+        // === ФУНКЦИИ УПРАВЛЕНИЯ КАРТОЙ ===
+        function getMarkmapInstance() {
+            // Получаем SVG элемент карты
+            const svg = document.querySelector('.markmap svg');
+            if (svg && svg.__markmap__) {
+                return svg.__markmap__;
+            }
+            return null;
+        }
+        
+        function collapseAll() {
+            const mm = getMarkmapInstance();
+            if (mm && mm.toggleNode) {
+                // Сворачиваем все узлы, кроме корневого
+                const root = mm.state?.data;
+                if (root) {
+                    collapseNode(root);
+                }
+                mm.render();
+            }
+        }
+        
+        function collapseNode(node) {
+            if (node.children) {
+                node.state = node.state || {};
+                node.state.collapsed = true;
+                node.children.forEach(child => collapseNode(child));
+            }
+        }
+        
+        function expandAll() {
+            const mm = getMarkmapInstance();
+            if (mm && mm.toggleNode) {
+                const root = mm.state?.data;
+                if (root) {
+                    expandNode(root);
+                }
+                mm.render();
+            }
+        }
+        
+        function expandNode(node) {
+            if (node.children) {
+                node.state = node.state || {};
+                node.state.collapsed = false;
+                node.children.forEach(child => expandNode(child));
+            }
+        }
+        
+        function collapseToLevel(level = 2) {
+            // Это более сложная функция, оставим для дальнейшего улучшения
+            alert('Функция в разработке. Используйте кнопки − и + для сворачивания/разворачивания всех веток.');
+        }
+        
+        // === ОБРАБОТЧИКИ КНОПОК ФОРМАТИРОВАНИЯ ===
         document.getElementById('btn-h1').onclick = () => insertPrefix('# ');
         document.getElementById('btn-h2').onclick = () => insertPrefix('## ');
         document.getElementById('btn-h3').onclick = () => insertPrefix('### ');
-
-        // Форматирование
         document.getElementById('btn-bold').onclick = () => wrapSelection('**', '**');
         document.getElementById('btn-italic').onclick = () => wrapSelection('*', '*');
-
-        // Списки
         document.getElementById('btn-ul').onclick = () => insertPrefix('- ');
         document.getElementById('btn-ol').onclick = () => insertPrefix('1. ');
-
-        // Ссылка
         document.getElementById('btn-link').onclick = () => {
             const url = prompt('Введите URL:', 'https://');
-            if (url) {
-                wrapSelection('[', `](${url})`);
-            }
+            if (url) wrapSelection('[', `](${url})`);
         };
-
-        // Цвет ветви (добавляет атрибут style к строке)
         document.getElementById('color-select').onchange = (e) => {
             const color = e.target.value;
-            if (color) {
-                const start = textarea.selectionStart;
-                const end = textarea.selectionEnd;
-                if (start === end) {
-                    insertTextBeforeAfter(`<span style="color:${color}">`, '</span>');
-                } else {
-                    wrapSelection(`<span style="color:${color}">`, '</span>');
-                }
-                e.target.value = '';
-            }
+            if (color) wrapSelection(`<span style="color:${color}">`, '</span>');
+            e.target.value = '';
         };
-
-        // Сохранение
+        
+        // === УПРАВЛЕНИЕ ПАНЕЛЬЮ РЕДАКТОРА ===
+        toggleBtn.onclick = () => {
+            editorPanel.classList.toggle('collapsed');
+            toggleBtn.textContent = editorPanel.classList.contains('collapsed') ? '▶' : '◀';
+            // Небольшой таймаут для адаптации карты
+            setTimeout(() => {
+                if (window.markmap?.autoLoader?.renderAll) window.markmap.autoLoader.renderAll();
+            }, 350);
+        };
+        
+        // === ПОЛНОЭКРАННЫЙ РЕЖИМ ===
+        document.getElementById('fullscreen-btn').onclick = () => {
+            viewerPanel.classList.toggle('fullscreen');
+            const btn = document.getElementById('fullscreen-btn');
+            if (viewerPanel.classList.contains('fullscreen')) {
+                btn.textContent = '✕';
+                btn.title = 'Выйти из полноэкранного режима';
+                // При входе в полноэкранный режим сворачиваем редактор
+                if (!editorPanel.classList.contains('collapsed')) {
+                    editorPanel.classList.add('collapsed');
+                    toggleBtn.textContent = '▶';
+                }
+            } else {
+                btn.textContent = '⛶';
+                btn.title = 'Полноэкранный режим';
+            }
+            setTimeout(() => {
+                if (window.markmap?.autoLoader?.renderAll) window.markmap.autoLoader.renderAll();
+            }, 100);
+        };
+        
+        // === УПРАВЛЕНИЕ ВЕТКАМИ КАРТЫ ===
+        document.getElementById('collapse-all').onclick = () => collapseAll();
+        document.getElementById('expand-all').onclick = () => expandAll();
+        document.getElementById('collapse-level').onclick = () => collapseToLevel(2);
+        
+        // === СОХРАНЕНИЕ И ЗАГРУЗКА ===
         function saveToFile() {
             const blob = new Blob([textarea.value], { type: 'text/markdown' });
             const url = URL.createObjectURL(blob);
@@ -179,8 +362,7 @@
             statusSpan.innerText = '✅ Сохранено';
             setTimeout(() => statusSpan.innerText = '✨ Редактируйте Markdown', 1500);
         }
-
-        // Загрузка
+        
         function loadFromFile() {
             const input = document.createElement('input');
             input.type = 'file';
@@ -199,8 +381,8 @@
             };
             input.click();
         }
-
-        // Горячие клавиши
+        
+        // === ГОРЯЧИЕ КЛАВИШИ ===
         textarea.addEventListener('keydown', (e) => {
             if (e.ctrlKey || e.metaKey) {
                 switch (e.key) {
@@ -209,11 +391,11 @@
                 }
             }
         });
-
-        // Автообновление при вводе
+        
+        // === АВТООБНОВЛЕНИЕ ===
         textarea.addEventListener('input', (e) => renderMindmap(e.target.value));
-
-        // Инициализация
+        
+        // === ИНИЦИАЛИЗАЦИЯ ===
         textarea.value = defaultMarkdown;
         renderMindmap(defaultMarkdown);
         document.getElementById('save-btn').onclick = saveToFile;
