@@ -57,17 +57,36 @@
         }
         .editor-panel.collapsed + .toggle-editor-btn { left: 10px; }
         
-        .editor-header { padding: 16px 16px 8px; border-bottom: 1px solid #e2e8f0; font-weight: bold; }
+        .editor-header { 
+            padding: 12px 16px; 
+            border-bottom: 1px solid #e2e8f0; 
+            font-weight: bold;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+            background: #fafafa;
+        }
+        .editor-header button {
+            padding: 4px 8px;
+            background: white;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+        .editor-header button:hover { background: #f1f5f9; transform: scale(1.02); }
+        .editor-header .separator { width: 1px; height: 20px; background: #cbd5e1; margin: 0 4px; }
+        
         .editor-panel textarea { width: 100%; flex: 1; font-family: monospace; font-size: 14px; padding: 16px; border: none; resize: none; outline: none; background: #fafafa; }
         
         /* Панель просмотра карты */
         .viewer-panel { flex: 1; background: white; overflow: hidden; position: relative; margin-left: 0; transition: margin-left 0.3s ease; }
-        .viewer-panel.fullscreen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1000; margin: 0; border-radius: 0; }
-        .viewer-panel.fullscreen .markmap { height: 100%; }
+        .viewer-panel.fullscreen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1000; margin: 0; border-radius: 0; background: white; }
         
         .viewer-panel .markmap { width: 100%; height: 100%; }
         
-        /* Кнопка полноэкранного режима на карте */
         .fullscreen-btn {
             position: absolute;
             bottom: 20px;
@@ -88,7 +107,6 @@
         }
         .fullscreen-btn:hover { background: #f1f5f9; transform: scale(1.05); }
         
-        /* Кнопки управления картой (сворачивание веток) */
         .map-controls {
             position: absolute;
             bottom: 20px;
@@ -119,42 +137,26 @@
 </head>
 <body>
     <div class="toolbar">
-        <!-- Заголовки -->
-        <button id="btn-h1" title="Заголовок 1 уровня">H1</button>
-        <button id="btn-h2" title="Заголовок 2 уровня">H2</button>
-        <button id="btn-h3" title="Заголовок 3 уровня">H3</button>
-        <div class="separator"></div>
-        <!-- Форматирование -->
-        <button id="btn-bold" title="Жирный (Ctrl+B)"><b>B</b></button>
-        <button id="btn-italic" title="Курсив (Ctrl+I)"><i>I</i></button>
-        <div class="separator"></div>
-        <!-- Списки -->
-        <button id="btn-ul" title="Маркированный список">• Список</button>
-        <button id="btn-ol" title="Нумерованный список">1. Список</button>
-        <div class="separator"></div>
-        <!-- Ссылка -->
-        <button id="btn-link" title="Вставить ссылку">🔗 Ссылка</button>
-        <div class="separator"></div>
-        <!-- Цвет ветви -->
-        <select id="color-select">
-            <option value="">🎨 Цвет ветви</option>
-            <option value="#3b82f6">Синий</option>
-            <option value="#10b981">Зелёный</option>
-            <option value="#f59e0b">Оранжевый</option>
-            <option value="#ef4444">Красный</option>
-            <option value="#8b5cf6">Фиолетовый</option>
-        </select>
-        <div class="separator"></div>
         <!-- Файлы -->
-        <button id="save-btn">💾 Сохранить</button>
-        <button id="load-btn">📂 Загрузить</button>
+        <button id="save-btn" title="Сохранить в файл">💾 Сохранить</button>
+        <button id="load-btn" title="Загрузить из файла">📂 Загрузить</button>
         <span class="status" id="status-text">✨ Редактируйте Markdown</span>
     </div>
     
     <div class="main-container">
         <!-- Выплывающая панель редактора -->
         <div class="editor-panel" id="editor-panel">
-            <div class="editor-header">📝 Редактор Markdown</div>
+            <div class="editor-header">
+                <button id="btn-hash" title="Добавить заголовок (#)"># Заголовок</button>
+                <div class="separator"></div>
+                <button id="btn-bold" title="Жирный (Ctrl+B)"><b>B</b></button>
+                <button id="btn-italic" title="Курсив (Ctrl+I)"><i>I</i></button>
+                <div class="separator"></div>
+                <button id="btn-ul" title="Маркированный список">• Список</button>
+                <button id="btn-ol" title="Нумерованный список">1. Список</button>
+                <div class="separator"></div>
+                <button id="btn-link" title="Вставить ссылку">🔗 Ссылка</button>
+            </div>
             <textarea id="markdown-editor"></textarea>
         </div>
         <!-- Кнопка открытия/закрытия редактора -->
@@ -163,13 +165,10 @@
         <!-- Панель просмотра карты -->
         <div class="viewer-panel" id="viewer-panel">
             <div class="markmap" id="mindmap-container"></div>
-            <!-- Кнопка полноэкранного режима -->
             <button class="fullscreen-btn" id="fullscreen-btn" title="Полноэкранный режим">⛶</button>
-            <!-- Кнопки управления картой (сворачивание/разворачивание) -->
             <div class="map-controls">
                 <button id="collapse-all" title="Свернуть все ветки">−</button>
                 <button id="expand-all" title="Развернуть всё">+</button>
-                <button id="collapse-level" title="Свернуть до уровня 2">◀</button>
             </div>
         </div>
     </div>
@@ -182,7 +181,8 @@
         const viewerPanel = document.getElementById('viewer-panel');
         const toggleBtn = document.getElementById('toggle-editor-btn');
         
-        let isFullscreen = false;
+        let isRendering = false;
+        let renderTimeout = null;
         
         const defaultMarkdown = `# Центральная идея
 ## Основной раздел 1
@@ -195,26 +195,32 @@
 - Элемент списка 1
 - Элемент списка 2`;
         
-        // === ОБНОВЛЕНИЕ КАРТЫ ===
+        // === ОБНОВЛЕНИЕ КАРТЫ с защитой от многократных вызовов ===
         function renderMindmap(markdownText) {
-            container.innerHTML = markdownText;
-            if (window.markmap?.autoLoader?.renderAll) {
-                window.markmap.autoLoader.renderAll();
+            if (isRendering) return;
+            isRendering = true;
+            
+            try {
+                container.innerHTML = markdownText;
+                if (window.markmap?.autoLoader?.renderAll) {
+                    window.markmap.autoLoader.renderAll();
+                }
+            } catch (e) {
+                console.warn('Ошибка рендеринга:', e);
+            } finally {
+                setTimeout(() => { isRendering = false; }, 100);
             }
         }
         
-        // === ВСТАВКА ТЕКСТА В ПОЗИЦИЮ КУРСОРА ===
-        function insertTextBeforeAfter(before, after) {
-            const start = textarea.selectionStart;
-            const end = textarea.selectionEnd;
-            const selected = textarea.value.substring(start, end);
-            const newText = textarea.value.substring(0, start) + before + selected + after + textarea.value.substring(end);
-            textarea.value = newText;
-            textarea.focus();
-            textarea.setSelectionRange(start + before.length, end + before.length);
-            renderMindmap(textarea.value);
+        // Дебаунс для автоматического обновления
+        function debouncedRender() {
+            if (renderTimeout) clearTimeout(renderTimeout);
+            renderTimeout = setTimeout(() => {
+                renderMindmap(textarea.value);
+            }, 300);
         }
         
+        // === ВСТАВКА ТЕКСТА ===
         function insertPrefix(prefix) {
             const start = textarea.selectionStart;
             const end = textarea.selectionEnd;
@@ -231,75 +237,22 @@
             const start = textarea.selectionStart;
             const end = textarea.selectionEnd;
             if (start === end) {
-                insertTextBeforeAfter(before, after);
+                const newText = textarea.value.substring(0, start) + before + after + textarea.value.substring(end);
+                textarea.value = newText;
+                textarea.focus();
+                textarea.setSelectionRange(start + before.length, start + before.length);
             } else {
                 const selected = textarea.value.substring(start, end);
                 const newText = textarea.value.substring(0, start) + before + selected + after + textarea.value.substring(end);
                 textarea.value = newText;
                 textarea.focus();
                 textarea.setSelectionRange(start + before.length, end + before.length);
-                renderMindmap(textarea.value);
             }
-        }
-        
-        // === ФУНКЦИИ УПРАВЛЕНИЯ КАРТОЙ ===
-        function getMarkmapInstance() {
-            // Получаем SVG элемент карты
-            const svg = document.querySelector('.markmap svg');
-            if (svg && svg.__markmap__) {
-                return svg.__markmap__;
-            }
-            return null;
-        }
-        
-        function collapseAll() {
-            const mm = getMarkmapInstance();
-            if (mm && mm.toggleNode) {
-                // Сворачиваем все узлы, кроме корневого
-                const root = mm.state?.data;
-                if (root) {
-                    collapseNode(root);
-                }
-                mm.render();
-            }
-        }
-        
-        function collapseNode(node) {
-            if (node.children) {
-                node.state = node.state || {};
-                node.state.collapsed = true;
-                node.children.forEach(child => collapseNode(child));
-            }
-        }
-        
-        function expandAll() {
-            const mm = getMarkmapInstance();
-            if (mm && mm.toggleNode) {
-                const root = mm.state?.data;
-                if (root) {
-                    expandNode(root);
-                }
-                mm.render();
-            }
-        }
-        
-        function expandNode(node) {
-            if (node.children) {
-                node.state = node.state || {};
-                node.state.collapsed = false;
-                node.children.forEach(child => expandNode(child));
-            }
-        }
-        
-        function collapseToLevel(level = 2) {
-            // Это более сложная функция, оставим для дальнейшего улучшения
-            alert('Функция в разработке. Используйте кнопки − и + для сворачивания/разворачивания всех веток.');
+            renderMindmap(textarea.value);
         }
         
         // === ОБРАБОТЧИКИ КНОПОК ФОРМАТИРОВАНИЯ ===
-        document.getElementById('btn-h1').onclick = () => insertPrefix('# ');
-        document.getElementById('btn-h2').onclick = () => insertPrefix('## ');
-        document.getElementById('btn-h3').onclick = () => insertPrefix('### ');
+        document.getElementById('btn-hash').onclick = () => insertPrefix('# ');
         document.getElementById('btn-bold').onclick = () => wrapSelection('**', '**');
         document.getElementById('btn-italic').onclick = () => wrapSelection('*', '*');
         document.getElementById('btn-ul').onclick = () => insertPrefix('- ');
@@ -308,19 +261,14 @@
             const url = prompt('Введите URL:', 'https://');
             if (url) wrapSelection('[', `](${url})`);
         };
-        document.getElementById('color-select').onchange = (e) => {
-            const color = e.target.value;
-            if (color) wrapSelection(`<span style="color:${color}">`, '</span>');
-            e.target.value = '';
-        };
         
         // === УПРАВЛЕНИЕ ПАНЕЛЬЮ РЕДАКТОРА ===
         toggleBtn.onclick = () => {
             editorPanel.classList.toggle('collapsed');
             toggleBtn.textContent = editorPanel.classList.contains('collapsed') ? '▶' : '◀';
-            // Небольшой таймаут для адаптации карты
+            // Принудительно обновляем карту после анимации
             setTimeout(() => {
-                if (window.markmap?.autoLoader?.renderAll) window.markmap.autoLoader.renderAll();
+                renderMindmap(textarea.value);
             }, 350);
         };
         
@@ -340,15 +288,53 @@
                 btn.textContent = '⛶';
                 btn.title = 'Полноэкранный режим';
             }
+            // Обновляем карту после изменения размера
             setTimeout(() => {
-                if (window.markmap?.autoLoader?.renderAll) window.markmap.autoLoader.renderAll();
+                renderMindmap(textarea.value);
             }, 100);
         };
         
         // === УПРАВЛЕНИЕ ВЕТКАМИ КАРТЫ ===
+        function getMarkmapInstance() {
+            const svg = document.querySelector('.markmap svg');
+            if (svg && svg.__markmap__) {
+                return svg.__markmap__;
+            }
+            return null;
+        }
+        
+        function collapseAll() {
+            const mm = getMarkmapInstance();
+            if (mm && mm.state && mm.state.data) {
+                function collapseNode(node) {
+                    if (node.children) {
+                        node.state = node.state || {};
+                        node.state.collapsed = true;
+                        node.children.forEach(collapseNode);
+                    }
+                }
+                collapseNode(mm.state.data);
+                mm.render();
+            }
+        }
+        
+        function expandAll() {
+            const mm = getMarkmapInstance();
+            if (mm && mm.state && mm.state.data) {
+                function expandNode(node) {
+                    if (node.children) {
+                        node.state = node.state || {};
+                        node.state.collapsed = false;
+                        node.children.forEach(expandNode);
+                    }
+                }
+                expandNode(mm.state.data);
+                mm.render();
+            }
+        }
+        
         document.getElementById('collapse-all').onclick = () => collapseAll();
         document.getElementById('expand-all').onclick = () => expandAll();
-        document.getElementById('collapse-level').onclick = () => collapseToLevel(2);
         
         // === СОХРАНЕНИЕ И ЗАГРУЗКА ===
         function saveToFile() {
@@ -392,14 +378,26 @@
             }
         });
         
-        // === АВТООБНОВЛЕНИЕ ===
-        textarea.addEventListener('input', (e) => renderMindmap(e.target.value));
+        // === АВТООБНОВЛЕНИЕ с дебаунсом ===
+        textarea.addEventListener('input', debouncedRender);
         
         // === ИНИЦИАЛИЗАЦИЯ ===
         textarea.value = defaultMarkdown;
-        renderMindmap(defaultMarkdown);
+        // Небольшая задержка для инициализации autoloader
+        setTimeout(() => {
+            renderMindmap(defaultMarkdown);
+        }, 200);
         document.getElementById('save-btn').onclick = saveToFile;
         document.getElementById('load-btn').onclick = loadFromFile;
+        
+        // Исправляем проблему с отображением при сворачивании/разворачивании
+        window.addEventListener('resize', () => {
+            setTimeout(() => {
+                if (!editorPanel.classList.contains('collapsed') || viewerPanel.classList.contains('fullscreen')) {
+                    renderMindmap(textarea.value);
+                }
+            }, 200);
+        });
     </script>
 </body>
 </html>
