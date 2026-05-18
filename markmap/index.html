@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>WYSIWYG Markdown Editor with Markmap (стабильная версия)</title>
+    <title>WYSIWYG Markdown Editor with Markmap</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { background: #f5f7fb; font-family: system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
@@ -35,28 +35,28 @@
 <body>
 <div class="toolbar">
     <div class="toolbar-group">
-        <select id="heading-select"><option value="">Абзац</option><option value="H1">H1</option><option value="H2">H2</option><option value="H3">H3</option></select>
+        <select id="heading-select"><option value="">Абзац</option><option value="H1">H1</option><option value="H2">H2</option><option value="H3">H3</option><option value="H4">H4</option><option value="H5">H5</option><option value="H6">H6</option></select>
     </div>
     <div class="toolbar-group">
-        <button id="bold"><b>B</b></button>
-        <button id="italic"><i>I</i></button>
-        <button id="strike"><s>S</s></button>
-        <button id="code-inline">&lt;/&gt;</button>
-        <button id="highlight"><mark>H</mark></button>
+        <button id="bold" title="Жирный"><b>B</b></button>
+        <button id="italic" title="Курсив"><i>I</i></button>
+        <button id="strike" title="Зачёркнутый"><s>S</s></button>
+        <button id="code-inline" title="Код">&lt;/&gt;</button>
+        <button id="highlight" title="Подсветка"><mark>H</mark></button>
     </div>
     <div class="toolbar-group">
-        <button id="ul">•</button>
-        <button id="ol">1.</button>
-        <button id="quote">"</button>
+        <button id="ul" title="Маркированный список">•</button>
+        <button id="ol" title="Нумерованный список">1.</button>
+        <button id="quote" title="Цитата">"</button>
     </div>
     <div class="toolbar-group">
-        <button id="link">🔗</button>
-        <button id="image">🖼️</button>
-        <button id="hr">—</button>
+        <button id="link" title="Ссылка">🔗</button>
+        <button id="image" title="Изображение">🖼️</button>
+        <button id="hr" title="Горизонтальная линия">—</button>
     </div>
     <div class="toolbar-group">
-        <button id="save-btn">💾 Сохранить</button>
-        <button id="load-btn">📂 Загрузить</button>
+        <button id="save-btn" title="Сохранить">💾</button>
+        <button id="load-btn" title="Загрузить">📂</button>
     </div>
 </div>
 <div class="container">
@@ -68,7 +68,7 @@
     </div>
 </div>
 <div class="status-bar">
-    <span>✏️ WYSIWYG Markdown + Markmap</span>
+    <span>✏️ WYSIWYG Markdown + Markmap (финальная стабильная версия)</span>
     <span id="status">Готов</span>
 </div>
 
@@ -117,7 +117,7 @@
             container.appendChild(svg);
             if (currentMarkmap) currentMarkmap.destroy?.();
             currentMarkmap = markmapView.create(svg, null, root);
-        } catch(e) { console.warn(e); }
+        } catch(e) { console.warn('Markmap error', e); }
     }
 
     function format(command, value = null) {
@@ -237,6 +237,16 @@
     document.getElementById('hr').onclick = () => format('insertHorizontalRule');
     document.getElementById('save-btn').onclick = saveToFile;
     document.getElementById('load-btn').onclick = loadFromFile;
+
+    // Горячие клавиши
+    editor.addEventListener('keydown', (e) => {
+        if (e.ctrlKey || e.metaKey) {
+            switch (e.key) {
+                case 'b': e.preventDefault(); format('bold'); break;
+                case 'i': e.preventDefault(); format('italic'); break;
+            }
+        }
+    });
 
     // Инициализация
     initConverters();
