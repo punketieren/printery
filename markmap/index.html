@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>WYSIWYG + Коллаборации + Markmap (стабильный)</title>
+    <title>WYSIWYG Markdown Editor with Markmap</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { background: #f5f7fb; font-family: system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-        .toolbar { background: white; padding: 6px 12px; border-bottom: 1px solid #e2e8f0; display: flex; gap: 4px; flex-wrap: wrap; flex-shrink: 0; position: sticky; top: 0; z-index: 10; }
+        .toolbar { background: white; padding: 6px 12px; border-bottom: 1px solid #e2e8f0; display: flex; gap: 4px; flex-wrap: wrap; flex-shrink: 0; }
         .toolbar-group { display: flex; gap: 3px; align-items: center; background: #f8fafc; padding: 3px 6px; border-radius: 6px; }
         .toolbar button { background: white; border: 1px solid #cbd5e1; border-radius: 5px; cursor: pointer; font-size: 13px; min-width: 28px; padding: 4px 8px; }
         .toolbar button.active { background: #3b82f6; color: white; border-color: #3b82f6; }
@@ -26,16 +26,9 @@
         #editor mark { background: #fef08a; }
         #markmap-container { width: 100%; height: 100%; }
         .status-bar { background: white; border-top: 1px solid #e2e8f0; padding: 6px 12px; font-size: 12px; display: flex; justify-content: space-between; }
-        .collab-status { background: #d1fae5; color: #065f46; padding: 2px 8px; border-radius: 20px; font-size: 11px; }
-        .collab-status.off { background: #fee2e2; color: #991b1b; }
     </style>
-    <!-- Yjs и y-websocket (для коллабораций) -->
-    <script src="https://cdn.jsdelivr.net/npm/yjs@13.6.10/dist/yjs.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/y-websocket@2.0.1/dist/y-websocket.min.js"></script>
-    <!-- Конвертеры HTML <-> Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/turndown@7.1.2/dist/turndown.js"></script>
-    <!-- Markmap -->
     <script src="https://cdn.jsdelivr.net/npm/markmap-lib@0.15.3/dist/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/markmap-view@0.15.3/dist/index.min.js"></script>
 </head>
@@ -64,7 +57,6 @@
     <div class="toolbar-group">
         <button id="save-btn">💾 Сохранить</button>
         <button id="load-btn">📂 Загрузить</button>
-        <span id="collab-status" class="collab-status">🔄 Коллаб не подключён</span>
     </div>
 </div>
 <div class="container">
@@ -76,25 +68,21 @@
     </div>
 </div>
 <div class="status-bar">
-    <span>✏️ WYSIWYG (contenteditable) + Коллаборации (Yjs) + Markmap</span>
+    <span>✏️ WYSIWYG Markdown + Markmap</span>
     <span id="status">Готов</span>
 </div>
 
 <script>
-    // --- Глобальные переменные ---
     const editor = document.getElementById('editor');
     const statusSpan = document.getElementById('status');
-    const collabSpan = document.getElementById('collab-status');
-    
-    let currentHtml = '';
     let currentMarkdown = '';
     let turndownService = null;
     let markedLib = null;
     let markmapTransformer = null;
     let markmapView = null;
     let currentMarkmap = null;
-    
-    // --- Инициализация конвертеров (они уже загружены через CDN) ---
+
+    // Инициализация конвертеров
     function initConverters() {
         if (typeof TurndownService !== 'undefined') {
             turndownService = new TurndownService({ headingStyle: 'atx', bulletListMarker: '-' });
@@ -105,26 +93,17 @@
             markedLib.setOptions({ breaks: true, gfm: true });
         }
     }
-    
+
     function htmlToMarkdown(html) {
-        if (!turndownService) return html.replace(/<[^>]*>/g, '');
+        if (!turndownService) return html;
         return turndownService.turndown(html);
     }
-    
+
     function markdownToHtml(md) {
         if (!markedLib) return md;
         return markedLib.parse(md);
     }
-    
-    // --- Markmap ---
-    function initMarkmap() {
-        if (typeof markmap !== 'undefined') {
-            markmapTransformer = markmap.Transformer;
-            markmapView = markmap.Markmap;
-            updateMarkmap();
-        }
-    }
-    
+
     function updateMarkmap() {
         if (!markmapTransformer || !markmapView || !currentMarkdown) return;
         const container = document.getElementById('markmap-container');
@@ -139,10 +118,9 @@
             container.appendChild(svg);
             if (currentMarkmap) currentMarkmap.destroy?.();
             currentMarkmap = markmapView.create(svg, null, root);
-        } catch(e) { console.warn('Markmap error', e); }
+        } catch(e) { console.warn(e); }
     }
-    
-    // --- Форматирование (проверенный рабочий код) ---
+
     function format(command, value = null) {
         editor.focus();
         document.execCommand(command, false, value);
@@ -151,7 +129,7 @@
         statusSpan.innerText = `✅ ${command}`;
         setTimeout(() => statusSpan.innerText = 'Готов', 1000);
     }
-    
+
     function wrapSelection(tag, placeholder) {
         editor.focus();
         const selection = window.getSelection();
@@ -166,7 +144,7 @@
         statusSpan.innerText = `✅ ${tag}`;
         setTimeout(() => statusSpan.innerText = 'Готов', 1000);
     }
-    
+
     function toggleQuote() {
         editor.focus();
         const selection = window.getSelection();
@@ -184,7 +162,7 @@
         }
         updateFromEditor();
     }
-    
+
     function updateButtonStates() {
         document.getElementById('bold').classList.toggle('active', document.queryCommandState('bold'));
         document.getElementById('italic').classList.toggle('active', document.queryCommandState('italic'));
@@ -192,70 +170,15 @@
         document.getElementById('ul').classList.toggle('active', document.queryCommandState('insertUnorderedList'));
         document.getElementById('ol').classList.toggle('active', document.queryCommandState('insertOrderedList'));
     }
-    
+
     function updateFromEditor() {
         const html = editor.innerHTML;
-        if (html === currentHtml) return;
-        currentHtml = html;
-        currentMarkdown = htmlToMarkdown(html);
+        const newMarkdown = htmlToMarkdown(html);
+        if (newMarkdown === currentMarkdown) return;
+        currentMarkdown = newMarkdown;
         updateMarkmap();
-        broadcastChange();
     }
-    
-    // --- Коллаборации (Yjs) ---
-    let collabEnabled = false;
-    let provider = null;
-    let yDoc = null;
-    let yText = null;
-    
-    function initCollab() {
-        if (typeof Y === 'undefined') {
-            collabSpan.innerHTML = '❌ Коллаб не доступен';
-            collabSpan.classList.add('off');
-            return;
-        }
-        try {
-            yDoc = new Y.Doc();
-            provider = new Y.WebsocketProvider('wss://demos.yjs.dev', 'wysiwyg-stable-room', yDoc);
-            yText = yDoc.getText('markdown');
-            
-            yText.observe(() => {
-                if (!editor || yText._local) return;
-                const remoteMd = yText.toString();
-                if (remoteMd !== currentMarkdown) {
-                    currentMarkdown = remoteMd;
-                    const html = markdownToHtml(currentMarkdown);
-                    editor.innerHTML = html;
-                    updateMarkmap();
-                }
-            });
-            
-            provider.on('status', (event) => {
-                if (event.status === 'connected') {
-                    collabEnabled = true;
-                    collabSpan.innerHTML = '🤝 Коллаб: подключено';
-                    collabSpan.classList.remove('off');
-                } else {
-                    collabEnabled = false;
-                    collabSpan.innerHTML = '⚠️ Коллаб: нет связи';
-                    collabSpan.classList.add('off');
-                }
-            });
-        } catch(e) {
-            console.warn('Collab init error', e);
-            collabSpan.innerHTML = '❌ Коллаб: ошибка';
-            collabSpan.classList.add('off');
-        }
-    }
-    
-    function broadcastChange() {
-        if (collabEnabled && yText && !yText._lazySynced) {
-            yText.delete(0, yText.length);
-            yText.insert(0, currentMarkdown);
-        }
-    }
-    
-    // --- Сохранение и загрузка ---
+
     function saveToFile() {
         if (!currentMarkdown) return;
         const blob = new Blob([currentMarkdown], { type: 'text/markdown' });
@@ -268,7 +191,7 @@
         statusSpan.innerText = '✅ Сохранено';
         setTimeout(() => statusSpan.innerText = 'Готов', 1500);
     }
-    
+
     function loadFromFile() {
         const input = document.createElement('input');
         input.type = 'file';
@@ -278,11 +201,11 @@
             if (!file) return;
             const reader = new FileReader();
             reader.onload = (ev) => {
-                currentMarkdown = ev.target.result;
-                const html = markdownToHtml(currentMarkdown);
+                const md = ev.target.result;
+                const html = markdownToHtml(md);
                 editor.innerHTML = html;
+                currentMarkdown = md;
                 updateMarkmap();
-                broadcastChange();
                 statusSpan.innerText = '✅ Загружено';
                 setTimeout(() => statusSpan.innerText = 'Готов', 1500);
             };
@@ -290,8 +213,8 @@
         };
         input.click();
     }
-    
-    // --- Назначение кнопок ---
+
+    // Назначение кнопок
     document.getElementById('heading-select').onchange = (e) => {
         if (e.target.value) format('formatBlock', e.target.value);
         e.target.value = '';
@@ -315,18 +238,18 @@
     document.getElementById('hr').onclick = () => format('insertHorizontalRule');
     document.getElementById('save-btn').onclick = saveToFile;
     document.getElementById('load-btn').onclick = loadFromFile;
-    
-    // --- Горячие клавиши ---
-    editor.addEventListener('keydown', (e) => {
-        if (e.ctrlKey || e.metaKey) {
-            switch (e.key) {
-                case 'b': e.preventDefault(); format('bold'); break;
-                case 'i': e.preventDefault(); format('italic'); break;
-            }
+
+    // Инициализация конвертеров и markmap
+    initConverters();
+    setTimeout(() => {
+        if (typeof markmap !== 'undefined') {
+            markmapTransformer = markmap.Transformer;
+            markmapView = markmap.Markmap;
+            updateMarkmap();
         }
-    });
-    
-    // --- Инициализация ---
+    }, 500);
+
+    // Начальный контент
     const defaultMarkdown = `# Центральная идея
 
 ## Основной раздел 1
@@ -348,21 +271,15 @@
 \`код\`
 
 ---
-
 `;
-    currentMarkdown = defaultMarkdown;
     const initialHtml = markdownToHtml(defaultMarkdown);
     editor.innerHTML = initialHtml;
-    currentHtml = initialHtml;
-    
+    currentMarkdown = defaultMarkdown;
     editor.addEventListener('input', updateFromEditor);
     editor.addEventListener('keyup', updateButtonStates);
     editor.addEventListener('mouseup', updateButtonStates);
-    
-    initConverters();
-    setTimeout(initMarkmap, 500);
-    initCollab();
     updateButtonStates();
+    updateMarkmap();
     statusSpan.innerText = 'Готов';
 </script>
 </body>
