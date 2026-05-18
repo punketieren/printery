@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>WYSIWYG Markdown Editor with Markmap</title>
+    <title>WYSIWYG Markdown Editor with Markmap (стабильная версия)</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { background: #f5f7fb; font-family: system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-        .toolbar { background: white; padding: 6px 12px; border-bottom: 1px solid #e2e8f0; display: flex; gap: 4px; flex-wrap: wrap; flex-shrink: 0; }
+        .toolbar { background: white; padding: 6px 12px; border-bottom: 1px solid #e2e8f0; display: flex; gap: 4px; flex-wrap: wrap; flex-shrink: 0; position: sticky; top: 0; z-index: 10; }
         .toolbar-group { display: flex; gap: 3px; align-items: center; background: #f8fafc; padding: 3px 6px; border-radius: 6px; }
         .toolbar button { background: white; border: 1px solid #cbd5e1; border-radius: 5px; cursor: pointer; font-size: 13px; min-width: 28px; padding: 4px 8px; }
         .toolbar button.active { background: #3b82f6; color: white; border-color: #3b82f6; }
@@ -82,7 +82,6 @@
     let markmapView = null;
     let currentMarkmap = null;
 
-    // Инициализация конвертеров
     function initConverters() {
         if (typeof TurndownService !== 'undefined') {
             turndownService = new TurndownService({ headingStyle: 'atx', bulletListMarker: '-' });
@@ -239,7 +238,7 @@
     document.getElementById('save-btn').onclick = saveToFile;
     document.getElementById('load-btn').onclick = loadFromFile;
 
-    // Инициализация конвертеров и markmap
+    // Инициализация
     initConverters();
     setTimeout(() => {
         if (typeof markmap !== 'undefined') {
@@ -249,7 +248,6 @@
         }
     }, 500);
 
-    // Начальный контент
     const defaultMarkdown = `# Центральная идея
 
 ## Основной раздел 1
