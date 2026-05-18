@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>ProseMirror WYSIWYG + Markmap</title>
+    <title>ProseMirror WYSIWYG + Markmap + Коллаборации</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { background: #f5f7fb; font-family: system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
@@ -12,6 +12,11 @@
         .toolbar button { background: white; border: 1px solid #cbd5e1; border-radius: 5px; cursor: pointer; font-size: 13px; min-width: 28px; padding: 4px 8px; }
         .toolbar button.active { background: #3b82f6; color: white; border-color: #3b82f6; }
         .toolbar select { background: white; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px; padding: 4px 6px; }
+        .dropdown { position: relative; display: inline-block; }
+        .dropdown-content { display: none; position: absolute; top: 100%; left: 0; background: white; min-width: 120px; box-shadow: 0 8px 16px rgba(0,0,0,0.1); border-radius: 6px; z-index: 20; margin-top: 4px; }
+        .dropdown-content button { width: 100%; text-align: left; border: none; background: white; padding: 6px 12px; border-radius: 0; margin: 0; }
+        .dropdown-content button:hover { background: #f1f5f9; }
+        .dropdown:hover .dropdown-content { display: block; }
         .container { flex: 1; display: flex; gap: 10px; padding: 10px; overflow: hidden; }
         .editor-panel { flex: 1; display: flex; flex-direction: column; background: white; border-radius: 12px; overflow: hidden; }
         .viewer-panel { flex: 1; background: white; border-radius: 12px; overflow: hidden; position: relative; }
@@ -19,6 +24,9 @@
         .ProseMirror h1 { font-size: 2em; margin: 0.5em 0; }
         .ProseMirror h2 { font-size: 1.5em; margin: 0.5em 0; }
         .ProseMirror h3 { font-size: 1.25em; margin: 0.5em 0; }
+        .ProseMirror h4 { font-size: 1.1em; margin: 0.5em 0; }
+        .ProseMirror h5 { font-size: 1em; margin: 0.5em 0; color: #555; }
+        .ProseMirror h6 { font-size: 0.9em; margin: 0.5em 0; color: #777; }
         .ProseMirror ul, .ProseMirror ol { padding-left: 2em; margin: 0.5em 0; }
         .ProseMirror blockquote { border-left: 4px solid #3b82f6; margin: 0.5em 0; padding-left: 1em; color: #555; }
         .ProseMirror code { background: #f1f5f9; padding: 2px 4px; border-radius: 4px; font-family: monospace; }
@@ -27,8 +35,10 @@
         .ProseMirror mark { background: #fef08a; }
         #markmap-container { width: 100%; height: 100%; }
         .status-bar { background: white; border-top: 1px solid #e2e8f0; padding: 6px 12px; font-size: 12px; display: flex; justify-content: space-between; }
+        .collab-status { background: #d1fae5; color: #065f46; padding: 2px 8px; border-radius: 20px; font-size: 11px; }
+        .collab-status.off { background: #fee2e2; color: #991b1b; }
     </style>
-    <!-- ProseMirror dependencies -->
+    <!-- ProseMirror и зависимости -->
     <script src="https://cdn.jsdelivr.net/npm/prosemirror-model@1.19.3/dist/index.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/prosemirror-state@1.4.3/dist/index.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/prosemirror-view@1.32.7/dist/index.js"></script>
@@ -39,34 +49,51 @@
     <script src="https://cdn.jsdelivr.net/npm/prosemirror-history@1.3.2/dist/index.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/prosemirror-inputrules@1.3.0/dist/index.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/prosemirror-markdown@1.11.2/dist/index.js"></script>
+    <!-- Yjs и коллаборации -->
+    <script src="https://cdn.jsdelivr.net/npm/yjs@13.6.10/dist/yjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/y-webrtc@10.2.5/dist/y-webrtc.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/y-prosemirror@0.1.1/dist/y-prosemirror.min.js"></script>
+    <!-- Markmap -->
     <script src="https://cdn.jsdelivr.net/npm/markmap-lib@0.15.3/dist/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/markmap-view@0.15.3/dist/index.min.js"></script>
 </head>
 <body>
 <div class="toolbar">
     <div class="toolbar-group">
-        <select id="heading-select"><option value="">Абзац</option><option value="h1">H1</option><option value="h2">H2</option><option value="h3">H3</option></select>
+        <select id="heading-select">
+            <option value="">Абзац</option>
+            <option value="h1">H1</option><option value="h2">H2</option><option value="h3">H3</option>
+            <option value="h4">H4</option><option value="h5">H5</option><option value="h6">H6</option>
+        </select>
     </div>
     <div class="toolbar-group">
-        <button id="bold"><b>B</b></button>
-        <button id="italic"><i>I</i></button>
-        <button id="strike"><s>S</s></button>
-        <button id="code-inline">&lt;/&gt;</button>
-        <button id="highlight"><mark>H</mark></button>
+        <div class="dropdown">
+            <button id="format-menu" title="Форматирование">▼</button>
+            <div class="dropdown-content">
+                <button id="bold" title="Жирный (Ctrl+B)"><b>B</b></button>
+                <button id="italic" title="Курсив (Ctrl+I)"><i>I</i></button>
+                <button id="code-inline" title="Код">&lt;/&gt;</button>
+                <button id="highlight" title="Подсветка"><mark>H</mark></button>
+            </div>
+        </div>
     </div>
     <div class="toolbar-group">
-        <button id="ul">•</button>
-        <button id="ol">1.</button>
-        <button id="quote">"</button>
+        <button id="strike" title="Зачёркнутый"><s>S</s></button>
+        <button id="code-block" title="Блок кода">{ }</button>
+        <button id="quote" title="Цитата">"</button>
     </div>
     <div class="toolbar-group">
-        <button id="link">🔗</button>
-        <button id="image">🖼️</button>
-        <button id="hr">—</button>
+        <button id="ul" title="Маркированный список">•</button>
+        <button id="ol" title="Нумерованный список">1.</button>
     </div>
     <div class="toolbar-group">
-        <button id="save-btn">💾 Сохранить</button>
-        <button id="load-btn">📂 Загрузить</button>
+        <button id="link" title="Ссылка">🔗</button>
+        <button id="image" title="Изображение">🖼️</button>
+        <button id="hr" title="Горизонтальная линия">—</button>
+    </div>
+    <div class="toolbar-group">
+        <button id="save-btn" title="Сохранить">💾</button>
+        <button id="load-btn" title="Загрузить">📂</button>
     </div>
 </div>
 <div class="container">
@@ -78,254 +105,305 @@
     </div>
 </div>
 <div class="status-bar">
-    <span>✏️ ProseMirror WYSIWYG + Markmap (без коллабораций)</span>
-    <span id="status">Готов</span>
+    <span>✏️ ProseMirror + Markmap + Коллаборации (P2P)</span>
+    <span id="collab-status" class="collab-status">🔄 Коллаб не подключён</span>
 </div>
 
 <script>
-    // --- Инициализация ProseMirror ---
-    const { schema } = prosemirrorSchemaBasic;
-    const { addListNodes } = prosemirrorSchemaList;
-    const { EditorState } = prosemirrorState;
-    const { EditorView } = prosemirrorView;
-    const { keymap } = prosemirrorKeymap;
-    const { history } = prosemirrorHistory;
-    const { baseKeymap, toggleMark, wrapIn, setBlockType } = prosemirrorCommands;
-    const { buildInputRules } = prosemirrorInputrules;
+    (function() {
+        // --- 1. Схема ProseMirror ---
+        const { schema } = prosemirrorSchemaBasic;
+        const { addListNodes } = prosemirrorSchemaList;
+        const mySchema = addListNodes(schema, 'paragraph block*', 'block');
 
-    // Расширяем схему поддержкой списков
-    const mySchema = addListNodes(schema, 'paragraph block*', 'block');
+        // --- 2. Коллаборации ---
+        const ydoc = new Y.Doc();
+        const provider = new Y.WebrtcProvider('prosemirror-collab-room', ydoc);
+        const yXmlFragment = ydoc.getXmlFragment('prosemirror');
 
-    // Начальный документ в формате JSON
-    const initialDoc = {
-        type: 'doc',
-        content: [
-            { type: 'heading', attrs: { level: 1 }, content: [{ type: 'text', text: 'Центральная идея' }] },
-            { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'Основной раздел 1' }] },
-            { type: 'heading', attrs: { level: 3 }, content: [{ type: 'text', text: 'Деталь 1.1' }] },
-            { type: 'heading', attrs: { level: 3 }, content: [{ type: 'text', text: 'Деталь 1.2' }] },
-            { type: 'paragraph', content: [
-                { type: 'text', marks: [{ type: 'strong' }], text: 'Жирный' },
-                { type: 'text', text: ' и ' },
-                { type: 'text', marks: [{ type: 'em' }], text: 'курсив' },
-                { type: 'text', text: ' и ' },
-                { type: 'text', marks: [{ type: 'strike' }], text: 'зачёркнутый' }
-            ] },
-            { type: 'bullet_list', content: [
-                { type: 'list_item', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Список 1' }] }] },
-                { type: 'list_item', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Список 2' }] }] }
-            ] },
-            { type: 'ordered_list', content: [
-                { type: 'list_item', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Нумерованный 1' }] }] },
-                { type: 'list_item', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Нумерованный 2' }] }] }
-            ] },
-            { type: 'blockquote', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Цитата' }] }] },
-            { type: 'paragraph', content: [{ type: 'text', marks: [{ type: 'code' }], text: 'код' }] },
-            { type: 'horizontal_rule' }
-        ]
-    };
-
-    let view = null;
-    let markdownCache = '';
-    let markmapTransformer = null;
-    let markmapView = null;
-    let currentMarkmap = null;
-
-    // Конвертация ProseMirror -> Markdown
-    function getMarkdown() {
-        const { defaultMarkdownParser, defaultMarkdownSerializer } = prosemirrorMarkdown;
-        const parser = defaultMarkdownParser;
-        const serializer = defaultMarkdownSerializer;
-        const doc = view.state.doc;
-        return serializer.serialize(doc);
-    }
-
-    // Обновление Markmap
-    function updateMarkmap() {
-        if (!markmapTransformer || !markmapView) return;
-        const md = getMarkdown();
-        if (md === markdownCache) return;
-        markdownCache = md;
-        const container = document.getElementById('markmap-container');
-        if (!container) return;
-        try {
-            const transformer = new markmapTransformer();
-            const { root } = transformer.transform(md || '# Пусто');
-            while (container.firstChild) container.removeChild(container.firstChild);
-            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            svg.style.width = '100%';
-            svg.style.height = '100%';
-            container.appendChild(svg);
-            if (currentMarkmap) currentMarkmap.destroy?.();
-            currentMarkmap = markmapView.create(svg, null, root);
-        } catch(e) { console.warn('Markmap error', e); }
-    }
-
-    // Обработчик изменений
-    function onUpdate() {
-        updateMarkmap();
-        updateActiveButtons();
-    }
-
-    // Команды для кнопок
-    function format(command, value = null) {
-        const { toggleMark, setBlockType, wrapIn } = prosemirrorCommands;
-        const { chainCommands } = prosemirrorCommands;
-        if (command === 'bold') {
-            toggleMark(mySchema.marks.strong)(view.state, view.dispatch);
-        } else if (command === 'italic') {
-            toggleMark(mySchema.marks.em)(view.state, view.dispatch);
-        } else if (command === 'strike') {
-            toggleMark(mySchema.marks.strike)(view.state, view.dispatch);
-        } else if (command === 'code') {
-            toggleMark(mySchema.marks.code)(view.state, view.dispatch);
-        } else if (command === 'heading') {
-            setBlockType(mySchema.nodes.heading, { level: value })(view.state, view.dispatch);
-        } else if (command === 'paragraph') {
-            setBlockType(mySchema.nodes.paragraph)(view.state, view.dispatch);
-        } else if (command === 'bullet_list') {
-            wrapIn(mySchema.nodes.bullet_list)(view.state, view.dispatch);
-        } else if (command === 'ordered_list') {
-            wrapIn(mySchema.nodes.ordered_list)(view.state, view.dispatch);
-        } else if (command === 'blockquote') {
-            wrapIn(mySchema.nodes.blockquote)(view.state, view.dispatch);
-        } else if (command === 'horizontal_rule') {
-            const { EditorState } = prosemirrorState;
-            const tr = view.state.tr.replaceSelectionWith(mySchema.nodes.horizontal_rule.create());
-            view.dispatch(tr);
-        }
-        view.focus();
-        onUpdate();
-    }
-
-    // Обновление активных кнопок
-    function updateActiveButtons() {
-        const { selection } = view.state;
-        const marks = selection.$from.marks();
-        const activeBold = marks.some(m => m.type === mySchema.marks.strong);
-        const activeItalic = marks.some(m => m.type === mySchema.marks.em);
-        const activeStrike = marks.some(m => m.type === mySchema.marks.strike);
-        const activeCode = marks.some(m => m.type === mySchema.marks.code);
-        document.getElementById('bold').classList.toggle('active', activeBold);
-        document.getElementById('italic').classList.toggle('active', activeItalic);
-        document.getElementById('strike').classList.toggle('active', activeStrike);
-        document.getElementById('code-inline').classList.toggle('active', activeCode);
-        // Списки и цитаты — можно добавить позже
-    }
-
-    // Создание редактора
-    const state = EditorState.create({
-        schema: mySchema,
-        doc: mySchema.nodeFromJSON(initialDoc),
-        plugins: [
-            history(),
-            keymap(baseKeymap),
-            buildInputRules(),
-            keymap({
-                'Mod-b': () => toggleMark(mySchema.marks.strong)(view.state, view.dispatch),
-                'Mod-i': () => toggleMark(mySchema.marks.em)(view.state, view.dispatch)
-            })
-        ]
-    });
-
-    view = new EditorView(document.getElementById('editor'), {
-        state: state,
-        dispatchTransaction(tr) {
-            const newState = view.state.apply(tr);
-            view.updateState(newState);
-            onUpdate();
-        }
-    });
-
-    // Назначение кнопок
-    document.getElementById('heading-select').onchange = (e) => {
-        const value = e.target.value;
-        if (value === '') format('paragraph');
-        else if (value === 'h1') format('heading', 1);
-        else if (value === 'h2') format('heading', 2);
-        else if (value === 'h3') format('heading', 3);
-        e.target.value = '';
-    };
-    document.getElementById('bold').onclick = () => format('bold');
-    document.getElementById('italic').onclick = () => format('italic');
-    document.getElementById('strike').onclick = () => format('strike');
-    document.getElementById('code-inline').onclick = () => format('code');
-    document.getElementById('highlight').onclick = () => {
-        // Временная подсветка через атрибут
-        const { toggleMark } = prosemirrorCommands;
-        const mark = mySchema.marks.span;
-        toggleMark(mark)(view.state, view.dispatch);
-        view.focus();
-        onUpdate();
-    };
-    document.getElementById('ul').onclick = () => format('bullet_list');
-    document.getElementById('ol').onclick = () => format('ordered_list');
-    document.getElementById('quote').onclick = () => format('blockquote');
-    document.getElementById('link').onclick = () => {
-        let url = prompt('Введите URL:');
-        if (url) {
-            const { toggleMark } = prosemirrorCommands;
-            const mark = mySchema.marks.link;
-            toggleMark(mark, { href: url })(view.state, view.dispatch);
-            view.focus();
-            onUpdate();
-        }
-    };
-    document.getElementById('image').onclick = () => {
-        let url = prompt('Введите URL изображения:');
-        if (url) {
-            const { insertImage } = prosemirrorCommands;
-            insertImage(view.state, view.dispatch, view, url);
-            view.focus();
-            onUpdate();
-        }
-    };
-    document.getElementById('hr').onclick = () => format('horizontal_rule');
-    document.getElementById('save-btn').onclick = () => {
-        const md = getMarkdown();
-        const blob = new Blob([md], { type: 'text/markdown' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'document.md';
-        a.click();
-        URL.revokeObjectURL(url);
-        document.getElementById('status').innerText = '✅ Сохранено';
-        setTimeout(() => document.getElementById('status').innerText = 'Готов', 1500);
-    };
-    document.getElementById('load-btn').onclick = () => {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.md,.txt';
-        input.onchange = (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-                const md = ev.target.result;
-                const { defaultMarkdownParser } = prosemirrorMarkdown;
-                const doc = defaultMarkdownParser.parse(md);
-                const tr = view.state.tr.replaceWith(0, view.state.doc.content.size, doc);
-                view.dispatch(tr);
-                updateMarkmap();
-                document.getElementById('status').innerText = '✅ Загружено';
-                setTimeout(() => document.getElementById('status').innerText = 'Готов', 1500);
-            };
-            reader.readAsText(file);
+        // --- 3. Редактор ---
+        const { EditorState } = prosemirrorState;
+        const { EditorView } = prosemirrorView;
+        const { keymap } = prosemirrorKeymap;
+        const { history } = prosemirrorHistory;
+        const { baseKeymap } = prosemirrorCommands;
+        
+        const initialDoc = {
+            type: 'doc',
+            content: [
+                { type: 'heading', attrs: { level: 1 }, content: [{ type: 'text', text: 'Центральная идея' }] },
+                { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'Основной раздел 1' }] },
+                { type: 'heading', attrs: { level: 3 }, content: [{ type: 'text', text: 'Деталь 1.1' }] },
+                { type: 'heading', attrs: { level: 3 }, content: [{ type: 'text', text: 'Деталь 1.2' }] },
+                { type: 'paragraph', content: [
+                    { type: 'text', marks: [{ type: 'strong' }], text: 'Жирный' },
+                    { type: 'text', text: ' и ' },
+                    { type: 'text', marks: [{ type: 'em' }], text: 'курсив' },
+                    { type: 'text', text: ' и ' },
+                    { type: 'text', marks: [{ type: 'strike' }], text: 'зачёркнутый' }
+                ] },
+                { type: 'bullet_list', content: [
+                    { type: 'list_item', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Список 1' }] }] },
+                    { type: 'list_item', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Список 2' }] }] }
+                ] },
+                { type: 'ordered_list', content: [
+                    { type: 'list_item', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Нумерованный 1' }] }] },
+                    { type: 'list_item', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Нумерованный 2' }] }] }
+                ] },
+                { type: 'blockquote', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Цитата' }] }] },
+                { type: 'paragraph', content: [{ type: 'text', marks: [{ type: 'code' }], text: 'код' }] },
+                { type: 'horizontal_rule' }
+            ]
         };
-        input.click();
-    };
 
-    // Инициализация Markmap
-    setTimeout(() => {
-        if (typeof markmap !== 'undefined') {
-            markmapTransformer = markmap.Transformer;
-            markmapView = markmap.Markmap;
+        let view = null;
+
+        function initEditor() {
+            const { ySyncPlugin, yCursorPlugin } = window.yProsemirror;
+            
+            const plugins = [
+                history(),
+                keymap(baseKeymap),
+                ySyncPlugin(yXmlFragment),
+                yCursorPlugin(provider.awareness)
+            ];
+            
+            const state = EditorState.create({
+                schema: mySchema,
+                doc: mySchema.nodeFromJSON(initialDoc),
+                plugins: plugins
+            });
+            
+            const editorElement = document.getElementById('editor');
+            if (view) view.destroy();
+            view = new EditorView(editorElement, { state });
+            
+            provider.on('status', (event) => {
+                const statusSpan = document.getElementById('collab-status');
+                if (event.connected) {
+                    statusSpan.innerHTML = '🤝 Коллаб: подключено (P2P)';
+                    statusSpan.classList.remove('off');
+                } else {
+                    statusSpan.innerHTML = '⚠️ Коллаб: поиск участников';
+                    statusSpan.classList.add('off');
+                }
+            });
+            
+            // Обработчик изменений
+            const origDispatch = view.dispatch;
+            view.dispatch = (tr) => {
+                origDispatch(tr);
+                updateMarkmap();
+                updateActiveButtons();
+            };
+            
             updateMarkmap();
+            updateActiveButtons();
         }
-    }, 500);
-    updateActiveButtons();
-    document.getElementById('status').innerText = 'Готов';
+
+        // --- 4. Markmap ---
+        let markmapTransformer = null;
+        let markmapViewLib = null;
+        let currentMarkmap = null;
+        let markdownCache = '';
+
+        function getMarkdown() {
+            const { defaultMarkdownSerializer } = prosemirrorMarkdown;
+            if (!view) return '';
+            return defaultMarkdownSerializer.serialize(view.state.doc);
+        }
+
+        function updateMarkmap() {
+            if (!markmapTransformer || !markmapViewLib || !view) return;
+            const md = getMarkdown();
+            if (md === markdownCache) return;
+            markdownCache = md;
+            const container = document.getElementById('markmap-container');
+            if (!container) return;
+            try {
+                const transformer = new markmapTransformer();
+                const { root } = transformer.transform(md || '# Пусто');
+                while (container.firstChild) container.removeChild(container.firstChild);
+                const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                svg.style.width = '100%';
+                svg.style.height = '100%';
+                container.appendChild(svg);
+                if (currentMarkmap) currentMarkmap.destroy?.();
+                currentMarkmap = markmapViewLib.create(svg, null, root);
+            } catch(e) { console.warn('Markmap error', e); }
+        }
+
+        // --- 5. Команды форматирования ---
+        function applyBlockCommand(command, nodeType, attrs = {}) {
+            if (!view) return;
+            const { state, dispatch } = view;
+            const { selection } = state;
+            const { $from } = selection;
+            const currentBlock = $from.node($from.depth);
+            if (currentBlock && currentBlock.type.name === nodeType) {
+                const { setBlockType } = prosemirrorCommands;
+                setBlockType(state.schema.nodes.paragraph)(state, dispatch);
+            } else {
+                command(state, dispatch);
+            }
+            view.focus();
+            updateActiveButtons();
+        }
+
+        function format(command, value = null) {
+            if (!view) return;
+            const { toggleMark, setBlockType, wrapIn } = prosemirrorCommands;
+            const { state, dispatch } = view;
+            const { schema } = state;
+            
+            switch(command) {
+                case 'bold':
+                    toggleMark(schema.marks.strong)(state, dispatch);
+                    break;
+                case 'italic':
+                    toggleMark(schema.marks.em)(state, dispatch);
+                    break;
+                case 'strike':
+                    toggleMark(schema.marks.strike)(state, dispatch);
+                    break;
+                case 'code':
+                    toggleMark(schema.marks.code)(state, dispatch);
+                    break;
+                case 'highlight':
+                    toggleMark(schema.marks.mark)(state, dispatch);
+                    break;
+                case 'heading':
+                    setBlockType(schema.nodes.heading, { level: value })(state, dispatch);
+                    break;
+                case 'paragraph':
+                    setBlockType(schema.nodes.paragraph)(state, dispatch);
+                    break;
+                case 'bullet_list':
+                    wrapIn(schema.nodes.bullet_list)(state, dispatch);
+                    break;
+                case 'ordered_list':
+                    wrapIn(schema.nodes.ordered_list)(state, dispatch);
+                    break;
+                case 'blockquote':
+                    applyBlockCommand(() => wrapIn(schema.nodes.blockquote)(state, dispatch), 'blockquote');
+                    return;
+                case 'code_block':
+                    applyBlockCommand(() => setBlockType(schema.nodes.code_block)(state, dispatch), 'code_block');
+                    return;
+                case 'horizontal_rule':
+                    const tr = state.tr.replaceSelectionWith(schema.nodes.horizontal_rule.create());
+                    dispatch(tr);
+                    break;
+                case 'link':
+                    const url = prompt('Введите URL:');
+                    if (url) toggleMark(schema.marks.link, { href: url })(state, dispatch);
+                    break;
+                case 'image':
+                    const imgUrl = prompt('Введите URL изображения:');
+                    if (imgUrl) {
+                        const node = schema.nodes.image.create({ src: imgUrl, alt: '' });
+                        const tr = state.tr.replaceSelectionWith(node);
+                        dispatch(tr);
+                    }
+                    break;
+            }
+            view.focus();
+            updateActiveButtons();
+        }
+
+        function updateActiveButtons() {
+            if (!view) return;
+            const { state } = view;
+            const marks = state.selection.$from.marks();
+            const activeBold = marks.some(m => m.type.name === 'strong');
+            const activeItalic = marks.some(m => m.type.name === 'em');
+            const activeStrike = marks.some(m => m.type.name === 'strike');
+            const activeCode = marks.some(m => m.type.name === 'code');
+            const activeHighlight = marks.some(m => m.type.name === 'mark');
+            document.getElementById('bold').classList.toggle('active', activeBold);
+            document.getElementById('italic').classList.toggle('active', activeItalic);
+            document.getElementById('code-inline').classList.toggle('active', activeCode);
+            document.getElementById('highlight').classList.toggle('active', activeHighlight);
+            document.getElementById('strike').classList.toggle('active', activeStrike);
+            
+            const { selection } = state;
+            const $from = selection.$from;
+            const currentBlock = $from.node($from.depth);
+            const activeQuote = currentBlock && currentBlock.type.name === 'blockquote';
+            const activeCodeBlock = currentBlock && currentBlock.type.name === 'code_block';
+            document.getElementById('quote').classList.toggle('active', activeQuote);
+            document.getElementById('code-block').classList.toggle('active', activeCodeBlock);
+        }
+
+        // --- 6. Сохранение и загрузка ---
+        function saveToFile() {
+            const md = getMarkdown();
+            const blob = new Blob([md], { type: 'text/markdown' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'document.md';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function loadFromFile() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.md,.txt';
+            input.onchange = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    const md = ev.target.result;
+                    const { defaultMarkdownParser } = prosemirrorMarkdown;
+                    const doc = defaultMarkdownParser.parse(md);
+                    const tr = view.state.tr.replaceWith(0, view.state.doc.content.size, doc);
+                    view.dispatch(tr);
+                    updateMarkmap();
+                };
+                reader.readAsText(file);
+            };
+            input.click();
+        }
+
+        // --- 7. Назначение кнопок ---
+        document.getElementById('heading-select').onchange = (e) => {
+            const val = e.target.value;
+            if (val === '') format('paragraph');
+            else if (val === 'h1') format('heading', 1);
+            else if (val === 'h2') format('heading', 2);
+            else if (val === 'h3') format('heading', 3);
+            else if (val === 'h4') format('heading', 4);
+            else if (val === 'h5') format('heading', 5);
+            else if (val === 'h6') format('heading', 6);
+            e.target.value = '';
+        };
+        document.getElementById('bold').onclick = () => format('bold');
+        document.getElementById('italic').onclick = () => format('italic');
+        document.getElementById('strike').onclick = () => format('strike');
+        document.getElementById('code-inline').onclick = () => format('code');
+        document.getElementById('highlight').onclick = () => format('highlight');
+        document.getElementById('code-block').onclick = () => format('code_block');
+        document.getElementById('quote').onclick = () => format('blockquote');
+        document.getElementById('ul').onclick = () => format('bullet_list');
+        document.getElementById('ol').onclick = () => format('ordered_list');
+        document.getElementById('link').onclick = () => format('link');
+        document.getElementById('image').onclick = () => format('image');
+        document.getElementById('hr').onclick = () => format('horizontal_rule');
+        document.getElementById('save-btn').onclick = saveToFile;
+        document.getElementById('load-btn').onclick = loadFromFile;
+
+        // --- 8. Инициализация ---
+        setTimeout(() => {
+            if (typeof markmap !== 'undefined') {
+                markmapTransformer = markmap.Transformer;
+                markmapViewLib = markmap.Markmap;
+            }
+            initEditor();
+        }, 500);
+    })();
 </script>
 </body>
 </html>
