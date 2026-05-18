@@ -7,18 +7,110 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { background: #f5f7fb; font-family: system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-        .toolbar { background: white; padding: 8px 16px; border-bottom: 1px solid #e2e8f0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; flex-shrink: 0; }
-        .toolbar-group { display: flex; gap: 4px; align-items: center; background: #f8fafc; padding: 4px 8px; border-radius: 8px; }
-        .toolbar button { background: white; border: 1px solid #cbd5e1; border-radius: 6px; cursor: pointer; font-size: 14px; min-width: 32px; padding: 6px 10px; }
-        .toolbar button.active { background: #3b82f6; color: white; border-color: #3b82f6; }
-        .toolbar button:hover { background: #f1f5f9; transform: translateY(-1px); }
-        .dropdown { position: relative; display: inline-block; }
-        .dropdown-content { display: none; position: absolute; top: 100%; right: 0; background: white; min-width: 100px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); border-radius: 6px; z-index: 20; margin-top: 4px; }
-        .dropdown:hover .dropdown-content { display: block; }
-        .dropdown-content button { width: 100%; text-align: left; border: none; background: white; padding: 6px 12px; border-radius: 0; }
-        .dropdown-content button:hover { background: #f1f5f9; }
+        /* ---- общий статус-бар (глобальные сообщения) ---- */
+        .global-status {
+            background: white;
+            border-top: 1px solid #e2e8f0;
+            padding: 4px 12px;
+            font-size: 12px;
+            color: #475569;
+            flex-shrink: 0;
+        }
         .container { flex: 1; display: flex; gap: 10px; padding: 10px; overflow: hidden; }
-        .editor-panel { flex: 1; background: white; border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
+        /* ---- сворачиваемая панель редактора ---- */
+        .editor-panel {
+            width: 50%;
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            transition: width 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+        .editor-panel.collapsed { width: 0; }
+        .editor-header {
+            display: flex;
+            justify-content: flex-end;
+            padding: 6px 8px;
+            background: #fafafa;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .collapse-btn {
+            background: transparent;
+            border: none;
+            font-size: 18px;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 6px;
+        }
+        .collapse-btn:hover { background: #e2e8f0; }
+        /* ---- тулбар внутри редактора (кнопки вплотную, левое выравнивание) ---- */
+        .editor-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 0;
+            flex-wrap: wrap;
+            padding: 8px 12px;
+            background: white;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .editor-toolbar button {
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            padding: 6px 8px;
+            border-radius: 6px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .editor-toolbar button img { width: 18px; height: 18px; display: block; }
+        .editor-toolbar button:hover { background: #e2e8f0; }
+        .editor-toolbar button.active { background: #3b82f6; }
+        .editor-toolbar button.active img { filter: brightness(0) invert(1); }
+        /* правая группа (меню ▼ и ⋯) */
+        .right-group { margin-left: auto; display: flex; gap: 0; }
+        .dropdown { position: relative; display: inline-block; }
+        .dropdown-content {
+            display: none;
+            position: absolute;
+            top: 100%;
+            right: 0;
+            background: white;
+            min-width: 100px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            border-radius: 6px;
+            z-index: 20;
+            margin-top: 4px;
+        }
+        .dropdown:hover .dropdown-content { display: block; }
+        .dropdown-content button {
+            width: 100%;
+            text-align: left;
+            border: none;
+            background: transparent;
+            padding: 8px 12px;
+            border-radius: 0;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .dropdown-content button img { width: 16px; height: 16px; }
+        .dropdown-content button:hover { background: #f1f5f9; }
+        /* ---- строка состояния редактора (радиокнопки) ---- */
+        .editor-status-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 12px;
+            background: #fafafa;
+            border-top: 1px solid #e2e8f0;
+            font-size: 12px;
+        }
+        .mode-switch { display: flex; gap: 12px; }
+        .mode-switch label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+        /* ---- окно просмотра карты ---- */
         .viewer-panel { flex: 1; background: white; border-radius: 12px; overflow: hidden; }
         .ProseMirror { height: 100%; overflow-y: auto; padding: 20px; outline: none; font-size: 16px; line-height: 1.5; }
         .ProseMirror h1 { font-size: 2em; margin: 0.5em 0; }
@@ -34,132 +126,151 @@
         .ProseMirror pre code { background: none; padding: 0; }
         .ProseMirror mark { background: #fef08a; }
         #markmap-container { width: 100%; height: 100%; }
-        .status-bar { background: white; border-top: 1px solid #e2e8f0; padding: 4px 12px; font-size: 12px; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
-        .status-bar .mode-switch { display: flex; gap: 8px; align-items: center; }
-        .status-bar .mode-switch label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
-        .editor-status { color: #475569; }
     </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/markdown/markdown.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prosemirror-model@1.19.3/dist/index.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prosemirror-state@1.4.3/dist/index.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prosemirror-view@1.32.7/dist/index.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prosemirror-schema-basic@1.2.2/dist/index.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prosemirror-schema-list@1.3.0/dist/index.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prosemirror-commands@1.5.2/dist/index.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prosemirror-keymap@1.2.2/dist/index.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prosemirror-history@1.3.2/dist/index.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prosemirror-inputrules@1.3.0/dist/index.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prosemirror-markdown@1.11.2/dist/index.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markmap-lib@0.15.3/dist/index.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markmap-view@0.15.3/dist/index.min.js"></script>
 </head>
 <body>
-<div class="toolbar">
-    <div class="toolbar-group">
-        <span id="heading-level" style="font-size: 13px; margin-right: 4px;">Абзац</span>
-        <button id="heading-up" title="Повысить уровень">▲</button>
-        <button id="heading-down" title="Понизить уровень">▼</button>
-    </div>
-    <div class="toolbar-group">
-        <button id="undo" title="Отменить (Ctrl+Z)">↩️</button>
-        <button id="redo" title="Повторить (Ctrl+Y)">↪️</button>
-    </div>
-    <div class="toolbar-group" style="margin-left: auto;">
-        <div class="dropdown">
-            <button>▼</button>
-            <div class="dropdown-content">
-                <button id="bold" title="Жирный"><b>B</b></button>
-                <button id="italic" title="Курсив"><i>I</i></button>
-                <button id="code-inline" title="Код">&lt;/&gt;</button>
-                <button id="highlight" title="Подсветка"><mark>H</mark></button>
-            </div>
-        </div>
-        <button id="ul" title="Маркированный список">•</button>
-        <button id="ol" title="Нумерованный список">1.</button>
-        <button id="quote" title="Цитата">"</button>
-        <button id="code-block" title="Блок кода">{ }</button>
-        <button id="strike" title="Зачёркнутый"><s>S</s></button>
-        <div class="dropdown">
-            <button>⋯</button>
-            <div class="dropdown-content">
-                <button id="link" title="Ссылка">🔗</button>
-                <button id="hr" title="Линия">—</button>
-                <button id="save-btn" title="Сохранить">💾</button>
-                <button id="load-btn" title="Загрузить">📂</button>
-            </div>
-        </div>
-    </div>
-</div>
 <div class="container">
-    <div class="editor-panel">
+    <!-- левая панель редактора (сворачиваемая) -->
+    <div class="editor-panel" id="editor-panel">
+        <div class="editor-header">
+            <button class="collapse-btn" id="collapse-editor" title="Свернуть редактор">◀</button>
+        </div>
+        <div class="editor-toolbar">
+            <button id="undo" title="Отменить"><img src="img/undo.svg" alt="undo"></button>
+            <button id="redo" title="Повторить"><img src="img/redo.svg" alt="redo"></button>
+            <span id="heading-level" style="margin:0 8px; font-size:13px;">-</span>
+            <button id="heading-up" title="Повысить уровень"><img src="img/heading-up.svg" alt="▲"></button>
+            <button id="heading-down" title="Понизить уровень"><img src="img/heading-down.svg" alt="▼"></button>
+            <button id="bold" title="Жирный"><img src="img/bold.svg" alt="B"></button>
+            <button id="italic" title="Курсив"><img src="img/italic.svg" alt="I"></button>
+            <button id="code-inline" title="Код"><img src="img/code-inline.svg" alt="< >"></button>
+            <button id="highlight" title="Подсветка"><img src="img/highlight.svg" alt="H"></button>
+            <button id="ul" title="Маркированный список"><img src="img/ul.svg" alt="•"></button>
+            <button id="ol" title="Нумерованный список"><img src="img/ol.svg" alt="1."></button>
+            <button id="quote" title="Цитата"><img src="img/quote.svg" alt='"'></button>
+            <button id="code-block" title="Блок кода"><img src="img/code-block.svg" alt="{ }"></button>
+            <button id="strike" title="Зачёркнутый"><img src="img/strike.svg" alt="S"></button>
+            <div class="right-group">
+                <div class="dropdown">
+                    <button><img src="img/menu-down.svg" alt="▼"></button>
+                    <div class="dropdown-content">
+                        <button id="link"><img src="img/link.svg" alt="🔗"> Ссылка</button>
+                        <button id="hr"><img src="img/hr.svg" alt="—"> Линия</button>
+                        <button id="save-btn"><img src="img/save.svg" alt="💾"> Сохранить</button>
+                        <button id="load-btn"><img src="img/load.svg" alt="📂"> Загрузить</button>
+                    </div>
+                </div>
+                <div class="dropdown">
+                    <button><img src="img/menu-dots.svg" alt="⋯"></button>
+                    <div class="dropdown-content">
+                        <!-- здесь можно разместить дополнительные редкоиспользуемые действия -->
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="editor-status-bar">
+            <div class="mode-switch">
+                <label><input type="radio" name="editor-mode" value="wysiwyg" checked> WYSIWYG</label>
+                <label><input type="radio" name="editor-mode" value="markdown"> Markdown</label>
+            </div>
+            <div class="editor-inline-status" id="editor-inline-status">Редактор готов</div>
+        </div>
         <div id="editor"></div>
     </div>
+    <!-- правая панель карты -->
     <div class="viewer-panel">
         <div id="markmap-container"></div>
     </div>
 </div>
-<div class="status-bar">
-    <div class="mode-switch">
-        <label>
-            <input type="radio" name="editor-mode" value="wysiwyg" checked> WYSIWYG
-        </label>
-        <label>
-            <input type="radio" name="editor-mode" value="markdown"> Markdown
-        </label>
-    </div>
-    <div class="editor-status" id="editor-status">Редактор готов</div>
-</div>
+<div class="global-status" id="global-status">Готов</div>
 
 <script src="bundle.js"></script>
 <script>
     // Элементы
+    const panel = document.getElementById('editor-panel');
+    const collapseBtn = document.getElementById('collapse-editor');
+    const globalStatus = document.getElementById('global-status');
+    const inlineStatus = document.getElementById('editor-inline-status');
     const wysiwygRadio = document.querySelector('input[value="wysiwyg"]');
     const markdownRadio = document.querySelector('input[value="markdown"]');
-    const editorStatus = document.getElementById('editor-status');
-    
-    // Функции переключения режимов (если они есть в bundle.js)
-    // Предполагается, что в bundle.js есть window.switchToWysiwyg и window.switchToMarkdown
-    // Если их нет, то радиокнопки не будут работать — нужно будет добавить эти функции в bundle.js
-    
+
+    // Сворачивание панели
+    collapseBtn.addEventListener('click', () => {
+        panel.classList.toggle('collapsed');
+        collapseBtn.textContent = panel.classList.contains('collapsed') ? '▶' : '◀';
+        if (window.centerMarkmap) setTimeout(() => window.centerMarkmap(), 200);
+    });
+
+    // Радиокнопки (переключение режимов)
     if (wysiwygRadio && markdownRadio) {
-        wysiwygRadio.addEventListener('change', function() {
-            if (this.checked && window.switchToWysiwyg) {
+        wysiwygRadio.addEventListener('change', () => {
+            if (wysiwygRadio.checked && window.switchToWysiwyg) {
                 window.switchToWysiwyg();
-                editorStatus.textContent = 'Режим WYSIWYG';
-            } else if (this.checked && !window.switchToWysiwyg) {
-                editorStatus.textContent = 'Ошибка: функция switchToWysiwyg не найдена';
+                inlineStatus.textContent = 'Режим WYSIWYG';
             }
         });
-        
-        markdownRadio.addEventListener('change', function() {
-            if (this.checked && window.switchToMarkdown) {
+        markdownRadio.addEventListener('change', () => {
+            if (markdownRadio.checked && window.switchToMarkdown) {
                 window.switchToMarkdown();
-                editorStatus.textContent = 'Режим Markdown';
-            } else if (this.checked && !window.switchToMarkdown) {
-                editorStatus.textContent = 'Ошибка: функция switchToMarkdown не найдена';
+                inlineStatus.textContent = 'Режим Markdown';
             }
         });
     }
-    
-    // Обновление отображения уровня заголовка
+
+    // Обновление индикатора уровня заголовка
     function updateHeadingLevelDisplay(level) {
         const span = document.getElementById('heading-level');
         if (!span) return;
-        if (level === 0) span.textContent = 'Абзац';
-        else span.textContent = 'H' + level;
+        span.textContent = (level === 0) ? '-' : 'H' + level;
     }
-    
-    // Назначение кнопок
-    document.getElementById('undo').onclick = () => window.undo && window.undo();
-    document.getElementById('redo').onclick = () => window.redo && window.redo();
-    document.getElementById('heading-up').onclick = () => window.changeHeading && window.changeHeading(1);
-    document.getElementById('heading-down').onclick = () => window.changeHeading && window.changeHeading(-1);
-    document.getElementById('bold').onclick = () => window.format && window.format('bold');
-    document.getElementById('italic').onclick = () => window.format && window.format('italic');
-    document.getElementById('code-inline').onclick = () => window.format && window.format('code');
-    document.getElementById('highlight').onclick = () => window.format && window.format('highlight');
-    document.getElementById('ul').onclick = () => window.format && window.format('bullet_list');
-    document.getElementById('ol').onclick = () => window.format && window.format('ordered_list');
-    document.getElementById('quote').onclick = () => window.format && window.format('blockquote');
-    document.getElementById('code-block').onclick = () => window.format && window.format('code_block');
-    document.getElementById('strike').onclick = () => window.format && window.format('strike');
-    document.getElementById('link').onclick = () => window.format && window.format('link');
-    document.getElementById('hr').onclick = () => window.format && window.format('horizontal_rule');
-    document.getElementById('save-btn').onclick = () => window.saveToFile && window.saveToFile();
-    document.getElementById('load-btn').onclick = () => window.loadFromFile && window.loadFromFile();
-    
-    if (window.updateHeadingLevelDisplay) {
-        window.updateHeadingLevelDisplay = updateHeadingLevelDisplay;
-    } else {
-        window.updateHeadingLevelDisplay = updateHeadingLevelDisplay;
-    }
+
+    // Привязка кнопок к функциям из bundle.js
+    const bind = (id, method, arg = null) => {
+        const btn = document.getElementById(id);
+        if (!btn) return;
+        btn.onclick = () => {
+            if (arg !== null && window[method]) window[method](arg);
+            else if (window[method]) window[method]();
+            if (method === 'saveToFile') globalStatus.textContent = '✅ Сохранено';
+            else if (method === 'loadFromFile') globalStatus.textContent = '✅ Загружено';
+            setTimeout(() => { if (globalStatus.textContent !== 'Готов') globalStatus.textContent = 'Готов'; }, 1500);
+        };
+    };
+    bind('undo', 'undo');
+    bind('redo', 'redo');
+    bind('heading-up', 'changeHeading', 1);
+    bind('heading-down', 'changeHeading', -1);
+    bind('bold', 'format', 'bold');
+    bind('italic', 'format', 'italic');
+    bind('code-inline', 'format', 'code');
+    bind('highlight', 'format', 'highlight');
+    bind('ul', 'format', 'bullet_list');
+    bind('ol', 'format', 'ordered_list');
+    bind('quote', 'format', 'blockquote');
+    bind('code-block', 'format', 'code_block');
+    bind('strike', 'format', 'strike');
+    bind('link', 'format', 'link');
+    bind('hr', 'format', 'horizontal_rule');
+    bind('save-btn', 'saveToFile');
+    bind('load-btn', 'loadFromFile');
+
+    if (window.updateHeadingLevelDisplay) window.updateHeadingLevelDisplay = updateHeadingLevelDisplay;
+    else window.updateHeadingLevelDisplay = updateHeadingLevelDisplay;
 </script>
 </body>
 </html>
