@@ -6950,6 +6950,67 @@
       getState(state) { return state[this.key]; }
   }
 
+  const olDOM = ["ol", 0], ulDOM = ["ul", 0], liDOM = ["li", 0];
+  /**
+  An ordered list [node spec](https://prosemirror.net/docs/ref/#model.NodeSpec). Has a single
+  attribute, `order`, which determines the number at which the list
+  starts counting, and defaults to 1. Represented as an `<ol>`
+  element.
+  */
+  const orderedList = {
+      attrs: { order: { default: 1, validate: "number" } },
+      parseDOM: [{ tag: "ol", getAttrs(dom) {
+                  return { order: dom.hasAttribute("start") ? +dom.getAttribute("start") : 1 };
+              } }],
+      toDOM(node) {
+          return node.attrs.order == 1 ? olDOM : ["ol", { start: node.attrs.order }, 0];
+      }
+  };
+  /**
+  A bullet list node spec, represented in the DOM as `<ul>`.
+  */
+  const bulletList = {
+      parseDOM: [{ tag: "ul" }],
+      toDOM() { return ulDOM; }
+  };
+  /**
+  A list item (`<li>`) spec.
+  */
+  const listItem = {
+      parseDOM: [{ tag: "li" }],
+      toDOM() { return liDOM; },
+      defining: true
+  };
+  function add$1(obj, props) {
+      let copy = {};
+      for (let prop in obj)
+          copy[prop] = obj[prop];
+      for (let prop in props)
+          copy[prop] = props[prop];
+      return copy;
+  }
+  /**
+  Convenience function for adding list-related node types to a map
+  specifying the nodes for a schema. Adds
+  [`orderedList`](https://prosemirror.net/docs/ref/#schema-list.orderedList) as `"ordered_list"`,
+  [`bulletList`](https://prosemirror.net/docs/ref/#schema-list.bulletList) as `"bullet_list"`, and
+  [`listItem`](https://prosemirror.net/docs/ref/#schema-list.listItem) as `"list_item"`.
+
+  `itemContent` determines the content expression for the list items.
+  If you want the commands defined in this module to apply to your
+  list structure, it should have a shape like `"paragraph block*"` or
+  `"paragraph (ordered_list | bullet_list)*"`. `listGroup` can be
+  given to assign a group name to the list node types, for example
+  `"block"`.
+  */
+  function addListNodes(nodes, itemContent, listGroup) {
+      return nodes.append({
+          ordered_list: add$1(orderedList, { content: "list_item+", group: listGroup }),
+          bullet_list: add$1(bulletList, { content: "list_item+", group: listGroup }),
+          list_item: add$1(listItem, { content: itemContent })
+      });
+  }
+
   const domIndex = function (node) {
       for (var index = 0;; index++) {
           node = node.previousSibling;
@@ -13663,7 +13724,7 @@
               handleDOMEvents: {
                   beforeinput(view, e) {
                       let inputType = e.inputType;
-                      let command = inputType == "historyUndo" ? undo : inputType == "historyRedo" ? redo : null;
+                      let command = inputType == "historyUndo" ? undo$1 : inputType == "historyRedo" ? redo$1 : null;
                       if (!command || !view.editable)
                           return false;
                       e.preventDefault();
@@ -13689,11 +13750,11 @@
   /**
   A command function that undoes the last change, if any.
   */
-  const undo = buildCommand(false, true);
+  const undo$1 = buildCommand(false, true);
   /**
   A command function that redoes the last undone change, if any.
   */
-  const redo = buildCommand(true, true);
+  const redo$1 = buildCommand(true, true);
 
   /**
   Delete the selection, if there is one.
@@ -14515,7 +14576,7 @@
   encode$1.defaultChars = ";/?:@&=+$,-_.!~*'()#";
   encode$1.componentChars = "-_.!~*'()";
 
-  function format (url) {
+  function format$1 (url) {
     let result = '';
 
     result += url.protocol || '';
@@ -14848,7 +14909,7 @@
     __proto__: null,
     decode: decode$1,
     encode: encode$1,
-    format: format,
+    format: format$1,
     parse: urlParse
   });
 
@@ -22174,7 +22235,7 @@
       }
     }
 
-    return encode$1(format(parsed))
+    return encode$1(format$1(parsed))
   }
 
   function normalizeLinkText (url) {
@@ -22195,7 +22256,7 @@
     }
 
     // add '%' to exclude list because of https://github.com/markdown-it/markdown-it/issues/720
-    return decode$1(format(parsed), decode$1.defaultChars + '%')
+    return decode$1(format$1(parsed), decode$1.defaultChars + '%')
   }
 
   /**
@@ -25460,7 +25521,7 @@
     }
     return [...parsed.root()[0].children];
   }
-  function root$1() {
+  function root$2() {
     return this(this._root);
   }
   function contains(container, contained) {
@@ -25512,7 +25573,7 @@
     html: html$1,
     merge: merge$1,
     parseHTML,
-    root: root$1,
+    root: root$2,
     text: text$1,
     xml
   }, Symbol.toStringTag, { value: "Module" }));
@@ -118739,7 +118800,7 @@
     }
   }
 
-  var root = [null];
+  var root$1 = [null];
 
   function Selection$1(groups, parents) {
     this._groups = groups;
@@ -118747,7 +118808,7 @@
   }
 
   function selection() {
-    return new Selection$1([[document.documentElement]], root);
+    return new Selection$1([[document.documentElement]], root$1);
   }
 
   function selection_selection() {
@@ -118796,7 +118857,7 @@
   function xt(selector) {
     return typeof selector === "string"
         ? new Selection$1([[document.querySelector(selector)]], [document.documentElement])
-        : new Selection$1([[selector]], root);
+        : new Selection$1([[selector]], root$1);
   }
 
   function sourceEvent(event) {
@@ -122153,20 +122214,80 @@
     }
   }
 
+  // --- расширяем схему (зачёркивание, подсветка) ---
+  const mySchema = addListNodes(schema$4, 'paragraph block*', 'block');
+  mySchema.marks.mark = {
+      attrs: {},
+      parseDOM: [{ tag: 'mark' }],
+      toDOM() { return ['mark', 0]; }
+  };
+  mySchema.marks.strike = {
+      attrs: {},
+      parseDOM: [{ tag: 's' }, { tag: 'del' }, { style: 'text-decoration=line-through' }],
+      toDOM() { return ['s', 0]; }
+  };
+
   let view = null;
   let currentMarkmap = null;
+  let treeData = null;           // дерево Markmap
+  let lastMdForPatch = '';       // для сравнения
 
   function getMarkdown() {
-    return defaultMarkdownSerializer.serialize(view.state.doc);
+      return defaultMarkdownSerializer.serialize(view.state.doc);
   }
 
-  function updateMarkmap() {
-    const md = getMarkdown();
-    const container = document.getElementById('markmap-container');
-    if (!container) return;
-    try {
+  // обновление карты через патч (только изменённые узлы)
+  function applyMarkdownPatch(newMd) {
+      if (!currentMarkmap || !treeData || newMd === lastMdForPatch) return;
+      lastMdForPatch = newMd;
+      
+      // строим новое дерево и находим изменения
+      const transformer = new Transformer();
+      const newTree = transformer.transform(newMd).root;
+      if (!treeData) {
+          treeData = newTree;
+          fullRender(newMd);
+          return;
+      }
+      
+      // функция поиска узла по пути (упрощённо – сравниваем тексты)
+      function findNodeDiff(oldNode, newNode, path = []) {
+          if (!oldNode || !newNode) return null;
+          if (oldNode.content !== newNode.content) {
+              return { path, newNode };
+          }
+          if (oldNode.children && newNode.children) {
+              for (let i = 0; i < Math.min(oldNode.children.length, newNode.children.length); i++) {
+                  const diff = findNodeDiff(oldNode.children[i], newNode.children[i], [...path, i]);
+                  if (diff) return diff;
+              }
+              if (oldNode.children.length !== newNode.children.length) {
+                  return { path, newNode };
+              }
+          }
+          return null;
+      }
+      
+      const diff = findNodeDiff(treeData, newTree);
+      if (diff && currentMarkmap && currentMarkmap.updateNode) {
+          currentMarkmap.updateNode(diff.path, diff.newNode);
+      } else if (diff) {
+          // если нет метода updateNode – пересоздаём с сохранением состояния
+          const zoom = currentMarkmap.viewport.getZoom();
+          const pan = currentMarkmap.viewport.getPan();
+          fullRender(newMd);
+          currentMarkmap.viewport.setZoom(zoom);
+          currentMarkmap.viewport.setPan(pan);
+      }
+      treeData = newTree;
+  }
+
+  function fullRender(md) {
+      const container = document.getElementById('markmap-container');
+      if (!container) return;
       const transformer = new Transformer();
       const { root } = transformer.transform(md || '# Пусто');
+      treeData = root;
       while (container.firstChild) container.removeChild(container.firstChild);
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       svg.style.width = '100%';
@@ -122174,119 +122295,182 @@
       container.appendChild(svg);
       if (currentMarkmap) currentMarkmap.destroy?.();
       currentMarkmap = it.create(svg, null, root);
-    } catch(e) { console.warn(e); }
   }
 
+  function updateMapAfterEdit() {
+      const newMd = getMarkdown();
+      applyMarkdownPatch(newMd);
+  }
+
+  // ---- сворачивание / разворачивание узлов по уровню ----
+  function collapseLevel(level) {
+      if (!currentMarkmap || !currentMarkmap.state || !currentMarkmap.state.data) return;
+      function setCollapse(node, currentDepth) {
+          if (currentDepth >= level) {
+              node.state = node.state || {};
+              node.state.collapsed = true;
+          } else if (node.children) {
+              node.children.forEach(child => setCollapse(child, currentDepth + 1));
+          }
+      }
+      setCollapse(currentMarkmap.state.data, 0);
+      currentMarkmap.render();
+  }
+
+  function expandAll() {
+      if (!currentMarkmap || !currentMarkmap.state || !currentMarkmap.state.data) return;
+      function expand(node) {
+          if (node.children) {
+              node.state = node.state || {};
+              node.state.collapsed = false;
+              node.children.forEach(expand);
+          }
+      }
+      expand(currentMarkmap.state.data);
+      currentMarkmap.render();
+  }
+
+  // ---- экспорт глобальных функций для тулбара ----
+  function format(command, value = null) {
+      const { state, dispatch } = view;
+      const { schema } = state;
+      switch(command) {
+          case 'bold': toggleMark(schema.marks.strong)(state, dispatch); break;
+          case 'italic': toggleMark(schema.marks.em)(state, dispatch); break;
+          case 'strike': toggleMark(schema.marks.strike)(state, dispatch); break;
+          case 'code': toggleMark(schema.marks.code)(state, dispatch); break;
+          case 'highlight': toggleMark(schema.marks.mark)(state, dispatch); break;
+          case 'heading': setBlockType(schema.nodes.heading, { level: value })(state, dispatch); break;
+          case 'paragraph': setBlockType(schema.nodes.paragraph)(state, dispatch); break;
+          case 'bullet_list': wrapIn(schema.nodes.bullet_list)(state, dispatch); break;
+          case 'ordered_list': wrapIn(schema.nodes.ordered_list)(state, dispatch); break;
+          case 'blockquote': wrapIn(schema.nodes.blockquote)(state, dispatch); break;
+          case 'code_block': setBlockType(schema.nodes.code_block)(state, dispatch); break;
+          case 'horizontal_rule':
+              const tr = state.tr.replaceSelectionWith(schema.nodes.horizontal_rule.create());
+              dispatch(tr);
+              break;
+          case 'link': {
+              const url = prompt('Введите URL:');
+              if (url) toggleMark(schema.marks.link, { href: url })(state, dispatch);
+              break;
+          }
+      }
+      view.focus();
+      updateMapAfterEdit();
+  }
+
+  function changeHeading(delta) {
+      const { state, dispatch } = view;
+      const { selection } = state;
+      const $from = selection.$from;
+      const node = $from.node($from.depth);
+      const currentLevel = node.type.name === 'heading' ? node.attrs.level : 0;
+      let newLevel = currentLevel + delta;
+      if (newLevel < 0) newLevel = 0;
+      if (newLevel > 6) newLevel = 6;
+      if (newLevel === 0) {
+          setBlockType(mySchema.nodes.paragraph)(state, dispatch);
+      } else {
+          setBlockType(mySchema.nodes.heading, { level: newLevel })(state, dispatch);
+      }
+      view.focus();
+      updateMapAfterEdit();
+  }
+
+  function undo() {
+      const { undo } = history;
+      undo(view.state, view.dispatch);
+      updateMapAfterEdit();
+  }
+
+  function redo() {
+      const { redo } = history;
+      redo(view.state, view.dispatch);
+      updateMapAfterEdit();
+  }
+
+  function saveToFile() {
+      const md = getMarkdown();
+      const blob = new Blob([md], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'document.md';
+      a.click();
+      URL.revokeObjectURL(url);
+  }
+
+  function loadFromFile() {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.md,.txt';
+      input.onchange = (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = (ev) => {
+              const md = ev.target.result;
+              const doc = defaultMarkdownParser.parse(md);
+              const tr = view.state.tr.replaceWith(0, view.state.doc.content.size, doc);
+              view.dispatch(tr);
+              updateMapAfterEdit();
+          };
+          reader.readAsText(file);
+      };
+      input.click();
+  }
+
+  // ---- инициализация ProseMirror ----
   const initialDoc = {
-    type: 'doc',
-    content: [
-      { type: 'heading', attrs: { level: 1 }, content: [{ type: 'text', text: 'Центральная идея' }] },
-      { type: 'paragraph', content: [{ type: 'text', text: 'Начните писать...' }] }
-    ]
+      type: 'doc',
+      content: [
+          { type: 'heading', attrs: { level: 1 }, content: [{ type: 'text', text: 'Центральная идея' }] },
+          { type: 'paragraph', content: [{ type: 'text', text: 'Начните писать...' }] }
+      ]
   };
 
   const state = EditorState.create({
-    schema: schema$4,
-    doc: schema$4.nodeFromJSON(initialDoc),
-    plugins: [history(), keymap(baseKeymap)]
+      schema: mySchema,
+      doc: mySchema.nodeFromJSON(initialDoc),
+      plugins: [history(), keymap(baseKeymap)]
   });
 
   view = new EditorView(document.getElementById('editor'), {
-    state,
-    dispatchTransaction(tr) {
-      const newState = view.state.apply(tr);
-      view.updateState(newState);
-      updateMarkmap();
-    }
+      state,
+      dispatchTransaction(tr) {
+          const newState = view.state.apply(tr);
+          view.updateState(newState);
+          updateMapAfterEdit();
+      }
   });
 
-  updateMarkmap();
+  // начальная отрисовка карты
+  const startMd = getMarkdown();
+  const transformer = new Transformer();
+  const { root } = transformer.transform(startMd || '# Пусто');
+  treeData = root;
+  const container = document.getElementById('markmap-container');
+  if (container) {
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.style.width = '100%';
+      svg.style.height = '100%';
+      container.appendChild(svg);
+      currentMarkmap = it.create(svg, null, root);
+  }
 
-  window.format = (command, value = null) => {
-    const { state, dispatch } = view;
-    const { schema } = state;
-    switch(command) {
-      case 'bold':
-        toggleMark(schema.marks.strong)(state, dispatch);
-        break;
-      case 'italic':
-        toggleMark(schema.marks.em)(state, dispatch);
-        break;
-      case 'strike':
-        toggleMark(schema.marks.strike)(state, dispatch);
-        break;
-      case 'code':
-        toggleMark(schema.marks.code)(state, dispatch);
-        break;
-      case 'heading':
-        setBlockType(schema.nodes.heading, { level: value })(state, dispatch);
-        break;
-      case 'paragraph':
-        setBlockType(schema.nodes.paragraph)(state, dispatch);
-        break;
-      case 'bullet_list':
-        wrapIn(schema.nodes.bullet_list)(state, dispatch);
-        break;
-      case 'ordered_list':
-        wrapIn(schema.nodes.ordered_list)(state, dispatch);
-        break;
-      case 'blockquote':
-        wrapIn(schema.nodes.blockquote)(state, dispatch);
-        break;
-      case 'code_block':
-        setBlockType(schema.nodes.code_block)(state, dispatch);
-        break;
-      case 'horizontal_rule':
-        const tr = state.tr.replaceSelectionWith(schema.nodes.horizontal_rule.create());
-        dispatch(tr);
-        break;
-      case 'link': {
-        const url = prompt('Введите URL:');
-        if (url) toggleMark(schema.marks.link, { href: url })(state, dispatch);
-        break;
-      }
-    }
-    view.focus();
-    updateMarkmap();
-  };
-
-  window.saveToFile = () => {
-    const md = getMarkdown();
-    const blob = new Blob([md], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'document.md';
-    a.click();
-    URL.revokeObjectURL(url);
-    const statusSpan = document.getElementById('status');
-    if (statusSpan) statusSpan.innerText = '✅ Сохранено';
-  };
-
-  window.loadFromFile = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.md,.txt';
-    input.onchange = (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const md = ev.target.result;
-        const doc = defaultMarkdownParser.parse(md);
-        const tr = view.state.tr.replaceWith(0, view.state.doc.content.size, doc);
-        view.dispatch(tr);
-        updateMarkmap();
-        const statusSpan = document.getElementById('status');
-        if (statusSpan) statusSpan.innerText = '✅ Загружено';
-      };
-      reader.readAsText(file);
-    };
-    input.click();
-  };
-
-  window.init = () => {
-    updateMarkmap();
+  // экспорт для index.html
+  window.format = format;
+  window.changeHeading = changeHeading;
+  window.undo = undo;
+  window.redo = redo;
+  window.saveToFile = saveToFile;
+  window.loadFromFile = loadFromFile;
+  window.collapseLevel = collapseLevel;
+  window.expandAll = expandAll;
+  window.updateHeadingLevelDisplay = (level) => {
+      const span = document.getElementById('heading-level');
+      if (span) span.textContent = (level === 0) ? '-' : 'H' + level;
   };
 
 })();

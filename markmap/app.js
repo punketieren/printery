@@ -9,11 +9,15 @@
     const fitBtn = document.getElementById('fit-btn');
     const fullscreenBtn = document.getElementById('fullscreen-map');
     const savePngBtn = document.getElementById('save-png');
+    const collapseLevel2Btn = document.getElementById('collapse-level2');
+    const expandAllMapBtn = document.getElementById('expand-all-map');
 
     collapseBtn.addEventListener('click', () => {
         panel.classList.toggle('collapsed');
         collapseBtn.textContent = panel.classList.contains('collapsed') ? '▶' : '◀';
-        setTimeout(() => { if (window.currentMarkmap && window.currentMarkmap.fit) window.currentMarkmap.fit(); }, 200);
+        setTimeout(() => {
+            if (window.currentMarkmap && window.currentMarkmap.fit) window.currentMarkmap.fit();
+        }, 200);
     });
 
     if (wysiwygRadio && markdownRadio) {
@@ -75,9 +79,31 @@
         img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(svgStr);
     }
 
+    function collapseLevel(level) {
+        if (window.collapseLevel) {
+            window.collapseLevel(level);
+            globalStatus.textContent = `✅ Узлы свернуты до уровня ${level}`;
+            setTimeout(() => globalStatus.textContent = 'Готов', 1500);
+        } else {
+            globalStatus.textContent = '❌ Функция collapseLevel не найдена';
+        }
+    }
+
+    function expandAll() {
+        if (window.expandAll) {
+            window.expandAll();
+            globalStatus.textContent = '✅ Все узлы развернуты';
+            setTimeout(() => globalStatus.textContent = 'Готов', 1500);
+        } else {
+            globalStatus.textContent = '❌ Функция expandAll не найдена';
+        }
+    }
+
     fitBtn.onclick = fitMap;
     fullscreenBtn.onclick = toggleFullscreen;
     savePngBtn.onclick = saveAsPNG;
+    collapseLevel2Btn.onclick = () => collapseLevel(2);
+    expandAllMapBtn.onclick = expandAll;
 
     function updateHeadingLevelDisplay(level) {
         const span = document.getElementById('heading-level');
