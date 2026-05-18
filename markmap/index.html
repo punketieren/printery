@@ -1,58 +1,312 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>ProseMirror Editor</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>ProseMirror WYSIWYG + Markmap</title>
     <style>
-        body { display: flex; gap: 20px; padding: 20px; }
-        #editor { flex: 1; border: 1px solid #ccc; min-height: 500px; }
-        #markmap-container { flex: 1; border: 1px solid #ccc; min-height: 500px; }
-        .toolbar { margin-bottom: 10px; display: flex; gap: 5px; flex-wrap: wrap; }
-        button { padding: 4px 8px; }
-        select { padding: 4px; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #f5f7fb; font-family: system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        .toolbar { background: white; padding: 8px 16px; border-bottom: 1px solid #e2e8f0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; flex-shrink: 0; justify-content: space-between; }
+        .toolbar-left, .toolbar-right { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .toolbar-group { display: flex; gap: 4px; align-items: center; background: #f8fafc; padding: 4px 8px; border-radius: 8px; }
+        .toolbar button { background: white; border: 1px solid #cbd5e1; border-radius: 6px; cursor: pointer; font-size: 14px; min-width: 32px; padding: 6px 10px; }
+        .toolbar button.active { background: #3b82f6; color: white; border-color: #3b82f6; }
+        .toolbar button:hover { background: #f1f5f9; transform: translateY(-1px); }
+        .dropdown { position: relative; display: inline-block; }
+        .dropdown-content { display: none; position: absolute; top: 100%; right: 0; background: white; min-width: 100px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); border-radius: 6px; z-index: 20; margin-top: 4px; }
+        .dropdown:hover .dropdown-content { display: block; }
+        .dropdown-content button { width: 100%; text-align: left; border: none; background: white; padding: 6px 12px; border-radius: 0; }
+        .dropdown-content button:hover { background: #f1f5f9; }
+        .container { flex: 1; display: flex; gap: 10px; padding: 10px; overflow: hidden; }
+        .editor-panel { flex: 1; background: white; border-radius: 12px; overflow: hidden; }
+        .viewer-panel { flex: 1; background: white; border-radius: 12px; overflow: hidden; }
+        .ProseMirror { height: 100%; overflow-y: auto; padding: 20px; outline: none; font-size: 16px; line-height: 1.5; }
+        .ProseMirror h1 { font-size: 2em; margin: 0.5em 0; }
+        .ProseMirror h2 { font-size: 1.5em; margin: 0.5em 0; }
+        .ProseMirror h3 { font-size: 1.25em; margin: 0.5em 0; }
+        .ProseMirror h4 { font-size: 1.1em; margin: 0.5em 0; }
+        .ProseMirror h5 { font-size: 1em; margin: 0.5em 0; color: #555; }
+        .ProseMirror h6 { font-size: 0.9em; margin: 0.5em 0; color: #777; }
+        .ProseMirror ul, .ProseMirror ol { padding-left: 2em; margin: 0.5em 0; }
+        .ProseMirror blockquote { border-left: 4px solid #3b82f6; padding-left: 1em; color: #555; margin: 0.5em 0; }
+        .ProseMirror code { background: #f1f5f9; padding: 2px 4px; border-radius: 4px; font-family: monospace; }
+        .ProseMirror pre { background: #f1f5f9; padding: 12px; border-radius: 8px; overflow-x: auto; }
+        .ProseMirror pre code { background: none; padding: 0; }
+        .ProseMirror mark { background: #fef08a; }
+        #markmap-container { width: 100%; height: 100%; }
+        .status-bar { background: white; border-top: 1px solid #e2e8f0; padding: 4px 12px; font-size: 11px; display: flex; justify-content: space-between; }
     </style>
+    <!-- Подключаем ProseMirror и markmap через CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/prosemirror-model@1.19.3/dist/index.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prosemirror-state@1.4.3/dist/index.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prosemirror-view@1.32.7/dist/index.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prosemirror-schema-basic@1.2.2/dist/index.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prosemirror-schema-list@1.3.0/dist/index.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prosemirror-commands@1.5.2/dist/index.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prosemirror-keymap@1.2.2/dist/index.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prosemirror-history@1.3.2/dist/index.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prosemirror-inputrules@1.3.0/dist/index.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prosemirror-markdown@1.11.2/dist/index.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markmap-lib@0.15.3/dist/index.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markmap-view@0.15.3/dist/index.min.js"></script>
 </head>
 <body>
-<div style="width: 100%;">
-    <div class="toolbar">
-        <select id="heading-select">
-            <option value="">-</option>
-            <option value="h1">H1</option><option value="h2">H2</option><option value="h3">H3</option>
-        </select>
-        <button id="bold"><b>B</b></button>
-        <button id="italic"><i>I</i></button>
-        <button id="strike"><s>S</s></button>
-        <button id="code-block">{ }</button>
-        <button id="quote">"</button>
-        <button id="ul">•</button>
-        <button id="ol">1.</button>
-        <button id="save-btn">💾</button>
-        <button id="load-btn">📂</button>
+<div class="toolbar">
+    <div class="toolbar-left">
+        <div class="toolbar-group">
+            <button id="heading-down" title="Понизить уровень заголовка">H–</button>
+            <button id="heading-up" title="Повысить уровень заголовка">H+</button>
+        </div>
     </div>
-    <div style="display: flex; gap: 20px;">
+    <div class="toolbar-right">
+        <div class="toolbar-group">
+            <div class="dropdown">
+                <button>▼</button>
+                <div class="dropdown-content">
+                    <button id="bold"><b>B</b> Жирный</button>
+                    <button id="italic"><i>I</i> Курсив</button>
+                    <button id="strike"><s>S</s> Зачёркнутый</button>
+                    <button id="code-inline">&lt;/&gt; Код</button>
+                    <button id="highlight"><mark>H</mark> Подсветка</button>
+                </div>
+            </div>
+            <button id="ul">•</button>
+            <button id="ol">1.</button>
+            <button id="quote">"</button>
+            <button id="code-block">{ }</button>
+            <div class="dropdown">
+                <button>⋯</button>
+                <div class="dropdown-content">
+                    <button id="link">🔗 Ссылка</button>
+                    <button id="hr">— Линия</button>
+                    <button id="save-btn">💾 Сохранить</button>
+                    <button id="load-btn">📂 Загрузить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="container">
+    <div class="editor-panel">
         <div id="editor"></div>
+    </div>
+    <div class="viewer-panel">
         <div id="markmap-container"></div>
     </div>
 </div>
-<script src="bundle.js"></script>
+<div class="status-bar">
+    <span>ProseMirror + Markmap</span>
+    <span id="status">Готов</span>
+</div>
+
 <script>
-    document.getElementById('bold').onclick = () => window.format('bold');
-    document.getElementById('italic').onclick = () => window.format('italic');
-    document.getElementById('strike').onclick = () => window.format('strike');
-    document.getElementById('code-block').onclick = () => window.format('code_block');
-    document.getElementById('quote').onclick = () => window.format('blockquote');
-    document.getElementById('ul').onclick = () => window.format('bullet_list');
-    document.getElementById('ol').onclick = () => window.format('ordered_list');
-    document.getElementById('save-btn').onclick = () => window.saveToFile();
-    document.getElementById('load-btn').onclick = () => window.loadFromFile();
-    document.getElementById('heading-select').onchange = (e) => {
-        const val = e.target.value;
-        if (val === '') window.format('paragraph');
-        else if (val === 'h1') window.format('heading', 1);
-        else if (val === 'h2') window.format('heading', 2);
-        else if (val === 'h3') window.format('heading', 3);
-        e.target.value = '';
-    };
+    (function() {
+        // --- Схема ProseMirror с поддержкой зачёркивания и подсветки ---
+        const { schema } = prosemirrorSchemaBasic;
+        const { addListNodes } = prosemirrorSchemaList;
+        
+        // Расширяем схему: добавляем маркер для подсветки
+        const mySchema = addListNodes(schema, 'paragraph block*', 'block');
+        mySchema.marks.mark = {
+            attrs: {},
+            parseDOM: [{ tag: 'mark' }],
+            toDOM() { return ['mark', 0]; }
+        };
+        mySchema.marks.strike = {
+            attrs: {},
+            parseDOM: [{ tag: 's' }, { tag: 'del' }, { style: 'text-decoration=line-through' }],
+            toDOM() { return ['s', 0]; }
+        };
+        
+        const { EditorState } = prosemirrorState;
+        const { EditorView } = prosemirrorView;
+        const { keymap } = prosemirrorKeymap;
+        const { history } = prosemirrorHistory;
+        const { baseKeymap, toggleMark, setBlockType, wrapIn } = prosemirrorCommands;
+        const { defaultMarkdownSerializer, defaultMarkdownParser } = prosemirrorMarkdown;
+        
+        let view = null;
+        let currentMarkmap = null;
+        
+        function getMarkdown() {
+            return defaultMarkdownSerializer.serialize(view.state.doc);
+        }
+        
+        function updateMarkmap() {
+            const md = getMarkdown();
+            const container = document.getElementById('markmap-container');
+            if (!container || typeof markmap === 'undefined') return;
+            try {
+                const transformer = new markmap.Transformer();
+                const { root } = transformer.transform(md || '# Пусто');
+                while (container.firstChild) container.removeChild(container.firstChild);
+                const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                svg.style.width = '100%';
+                svg.style.height = '100%';
+                container.appendChild(svg);
+                if (currentMarkmap) currentMarkmap.destroy?.();
+                currentMarkmap = markmap.Markmap.create(svg, null, root);
+            } catch(e) { console.warn(e); }
+        }
+        
+        function changeHeading(delta) {
+            const { state, dispatch } = view;
+            const { selection } = state;
+            const $from = selection.$from;
+            const node = $from.node($from.depth);
+            const currentLevel = node.type.name === 'heading' ? node.attrs.level : 0;
+            let newLevel = currentLevel + delta;
+            if (newLevel < 0) newLevel = 0;
+            if (newLevel > 6) newLevel = 6;
+            
+            if (newLevel === 0) {
+                setBlockType(mySchema.nodes.paragraph)(state, dispatch);
+            } else {
+                setBlockType(mySchema.nodes.heading, { level: newLevel })(state, dispatch);
+            }
+            view.focus();
+            updateMarkmap();
+        }
+        
+        function format(command, value = null) {
+            const { state, dispatch } = view;
+            const { schema } = state;
+            switch(command) {
+                case 'bold':
+                    toggleMark(schema.marks.strong)(state, dispatch);
+                    break;
+                case 'italic':
+                    toggleMark(schema.marks.em)(state, dispatch);
+                    break;
+                case 'strike':
+                    toggleMark(schema.marks.strike)(state, dispatch);
+                    break;
+                case 'code':
+                    toggleMark(schema.marks.code)(state, dispatch);
+                    break;
+                case 'highlight':
+                    toggleMark(schema.marks.mark)(state, dispatch);
+                    break;
+                case 'heading_up':
+                    changeHeading(-1);
+                    return;
+                case 'heading_down':
+                    changeHeading(1);
+                    return;
+                case 'bullet_list':
+                    wrapIn(schema.nodes.bullet_list)(state, dispatch);
+                    break;
+                case 'ordered_list':
+                    wrapIn(schema.nodes.ordered_list)(state, dispatch);
+                    break;
+                case 'blockquote':
+                    const { selection } = state;
+                    const $from = selection.$from;
+                    const node = $from.node($from.depth);
+                    if (node.type.name === 'blockquote') {
+                        setBlockType(schema.nodes.paragraph)(state, dispatch);
+                    } else {
+                        wrapIn(schema.nodes.blockquote)(state, dispatch);
+                    }
+                    break;
+                case 'code_block':
+                    setBlockType(schema.nodes.code_block)(state, dispatch);
+                    break;
+                case 'horizontal_rule':
+                    const tr = state.tr.replaceSelectionWith(schema.nodes.horizontal_rule.create());
+                    dispatch(tr);
+                    break;
+                case 'link': {
+                    const url = prompt('Введите URL:');
+                    if (url) toggleMark(schema.marks.link, { href: url })(state, dispatch);
+                    break;
+                }
+            }
+            view.focus();
+            updateMarkmap();
+        }
+        
+        function saveToFile() {
+            const md = getMarkdown();
+            const blob = new Blob([md], { type: 'text/markdown' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'document.md';
+            a.click();
+            URL.revokeObjectURL(url);
+            const statusSpan = document.getElementById('status');
+            if (statusSpan) statusSpan.innerText = '✅ Сохранено';
+        }
+        
+        function loadFromFile() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.md,.txt';
+            input.onchange = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    const md = ev.target.result;
+                    const doc = defaultMarkdownParser.parse(md);
+                    const tr = view.state.tr.replaceWith(0, view.state.doc.content.size, doc);
+                    view.dispatch(tr);
+                    updateMarkmap();
+                    const statusSpan = document.getElementById('status');
+                    if (statusSpan) statusSpan.innerText = '✅ Загружено';
+                };
+                reader.readAsText(file);
+            };
+            input.click();
+        }
+        
+        const initialDoc = {
+            type: 'doc',
+            content: [
+                { type: 'heading', attrs: { level: 1 }, content: [{ type: 'text', text: 'Центральная идея' }] },
+                { type: 'paragraph', content: [{ type: 'text', text: 'Начните писать...' }] }
+            ]
+        };
+        
+        const state = EditorState.create({
+            schema: mySchema,
+            doc: mySchema.nodeFromJSON(initialDoc),
+            plugins: [history(), keymap(baseKeymap)]
+        });
+        
+        view = new EditorView(document.getElementById('editor'), {
+            state,
+            dispatchTransaction(tr) {
+                const newState = view.state.apply(tr);
+                view.updateState(newState);
+                updateMarkmap();
+            }
+        });
+        
+        updateMarkmap();
+        
+        window.format = format;
+        window.saveToFile = saveToFile;
+        window.loadFromFile = loadFromFile;
+        
+        document.getElementById('heading-up').onclick = () => format('heading_up');
+        document.getElementById('heading-down').onclick = () => format('heading_down');
+        document.getElementById('bold').onclick = () => format('bold');
+        document.getElementById('italic').onclick = () => format('italic');
+        document.getElementById('strike').onclick = () => format('strike');
+        document.getElementById('code-inline').onclick = () => format('code');
+        document.getElementById('highlight').onclick = () => format('highlight');
+        document.getElementById('ul').onclick = () => format('bullet_list');
+        document.getElementById('ol').onclick = () => format('ordered_list');
+        document.getElementById('quote').onclick = () => format('blockquote');
+        document.getElementById('code-block').onclick = () => format('code_block');
+        document.getElementById('link').onclick = () => format('link');
+        document.getElementById('hr').onclick = () => format('horizontal_rule');
+        document.getElementById('save-btn').onclick = saveToFile;
+        document.getElementById('load-btn').onclick = loadFromFile;
+    })();
 </script>
 </body>
 </html>
