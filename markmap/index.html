@@ -59,7 +59,7 @@
         .editor-toolbar {
             display: flex;
             align-items: center;
-            gap: 0;
+            gap: 2px;
             flex-wrap: wrap;
             padding: 6px 10px;
             background: white;
@@ -80,11 +80,20 @@
         .editor-toolbar button:hover { background: #e2e8f0; }
         .editor-toolbar button.active { background: #3b82f6; }
         .editor-toolbar button.active img { filter: brightness(0) invert(1); }
-        .right-group {
-            margin-left: auto;
-            display: flex;
-            gap: 0;
+        /* карусель заголовков – две кнопки одна над другой */
+        .heading-stack {
+            display: inline-flex;
+            flex-direction: column;
+            gap: 2px;
+            margin: 0 4px;
         }
+        .heading-stack button {
+            padding: 2px 6px;
+            min-width: 28px;
+            height: 18px;
+            line-height: 1;
+        }
+        .heading-stack button img { width: 12px; height: 12px; }
         .dropdown { position: relative; display: inline-block; }
         .dropdown-content {
             display: none;
@@ -170,8 +179,10 @@
         <div class="panel-content">
             <div class="editor-toolbar">
                 <span id="heading-level" style="margin:0 4px; font-size:13px;">-</span>
-                <button id="heading-up" title="Повысить уровень"><img src="img/heading-up.svg" alt="▲"></button>
-                <button id="heading-down" title="Понизить уровень"><img src="img/heading-down.svg" alt="▼"></button>
+                <div class="heading-stack">
+                    <button id="heading-up" title="Повысить уровень"><img src="img/heading-up.svg" alt="▲"></button>
+                    <button id="heading-down" title="Понизить уровень"><img src="img/heading-down.svg" alt="▼"></button>
+                </div>
                 <button id="undo" title="Отменить (Ctrl+Z)"><img src="img/undo.svg" alt="↩️"></button>
                 <button id="redo" title="Повторить (Ctrl+Y)"><img src="img/redo.svg" alt="↪️"></button>
                 <button id="ul" title="Маркированный список"><img src="img/ul.svg" alt="•"></button>
@@ -179,24 +190,23 @@
                 <button id="quote" title="Цитата"><img src="img/quote.svg" alt='"'> </button>
                 <button id="code-block" title="Блок кода"><img src="img/code-block.svg" alt="{ }"></button>
                 <button id="strike" title="Зачёркнутый"><img src="img/strike.svg" alt="S"></button>
-                <div class="right-group">
-                    <div class="dropdown">
-                        <button><img src="img/menu-down.svg" alt="▼"></button>
-                        <div class="dropdown-content">
-                            <button id="bold"><img src="img/bold.svg" alt="B"></button>
-                            <button id="italic"><img src="img/italic.svg" alt="I"></button>
-                            <button id="code-inline"><img src="img/code-inline.svg" alt="<>"></button>
-                            <button id="highlight"><img src="img/highlight.svg" alt="H"></button>
-                        </div>
+                <!-- меню-кнопки без right-group, просто в потоке -->
+                <div class="dropdown">
+                    <button><img src="img/menu-down.svg" alt="▼"></button>
+                    <div class="dropdown-content">
+                        <button id="bold"><img src="img/bold.svg" alt="B"></button>
+                        <button id="italic"><img src="img/italic.svg" alt="I"></button>
+                        <button id="code-inline"><img src="img/code-inline.svg" alt="<>"></button>
+                        <button id="highlight"><img src="img/highlight.svg" alt="H"></button>
                     </div>
-                    <div class="dropdown">
-                        <button><img src="img/menu-dots.svg" alt="⋯"></button>
-                        <div class="dropdown-content">
-                            <button id="link"><img src="img/link.svg" alt="🔗"></button>
-                            <button id="hr"><img src="img/hr.svg" alt="—"></button>
-                            <button id="save-btn"><img src="img/save.svg" alt="💾"></button>
-                            <button id="load-btn"><img src="img/load.svg" alt="📂"></button>
-                        </div>
+                </div>
+                <div class="dropdown">
+                    <button><img src="img/menu-dots.svg" alt="⋯"></button>
+                    <div class="dropdown-content">
+                        <button id="link"><img src="img/link.svg" alt="🔗"></button>
+                        <button id="hr"><img src="img/hr.svg" alt="—"></button>
+                        <button id="save-btn"><img src="img/save.svg" alt="💾"></button>
+                        <button id="load-btn"><img src="img/load.svg" alt="📂"></button>
                     </div>
                 </div>
             </div>
