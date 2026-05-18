@@ -3,237 +3,348 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Collaborative WYSIWYG Editor (P2P)</title>
+    <title>WYSIWYG Collaborative Editor (самодельный)</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { background: #f5f7fb; font-family: system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-        .toolbar { background: white; padding: 6px 12px; border-bottom: 1px solid #e2e8f0; display: flex; gap: 4px; flex-wrap: wrap; flex-shrink: 0; }
+        .toolbar { background: white; padding: 6px 12px; border-bottom: 1px solid #e2e8f0; display: flex; gap: 4px; flex-wrap: wrap; flex-shrink: 0; position: sticky; top: 0; z-index: 10; }
         .toolbar-group { display: flex; gap: 3px; align-items: center; background: #f8fafc; padding: 3px 6px; border-radius: 6px; }
         .toolbar button { background: white; border: 1px solid #cbd5e1; border-radius: 5px; cursor: pointer; font-size: 13px; min-width: 28px; padding: 4px 8px; }
         .toolbar button.active { background: #3b82f6; color: white; border-color: #3b82f6; }
         .toolbar select { background: white; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px; padding: 4px 6px; }
-        .main-container { flex: 1; display: flex; gap: 10px; padding: 10px; overflow: hidden; }
+        .container { flex: 1; display: flex; gap: 10px; padding: 10px; overflow: hidden; }
         .editor-panel { flex: 1; display: flex; flex-direction: column; background: white; border-radius: 12px; overflow: hidden; }
         .viewer-panel { flex: 1; background: white; border-radius: 12px; overflow: hidden; position: relative; }
-        #editor { height: 100%; }
+        #editor { height: 100%; overflow-y: auto; padding: 20px; outline: none; font-size: 16px; line-height: 1.5; }
+        #editor h1 { font-size: 2em; margin: 0.5em 0; }
+        #editor h2 { font-size: 1.5em; margin: 0.5em 0; }
+        #editor h3 { font-size: 1.25em; margin: 0.5em 0; }
+        #editor ul, #editor ol { padding-left: 2em; margin: 0.5em 0; }
+        #editor blockquote { border-left: 4px solid #3b82f6; margin: 0.5em 0; padding-left: 1em; color: #555; }
+        #editor code { background: #f1f5f9; padding: 2px 4px; border-radius: 4px; font-family: monospace; }
+        #editor pre { background: #f1f5f9; padding: 12px; border-radius: 8px; overflow-x: auto; }
+        #editor mark { background: #fef08a; }
         #markmap-container { width: 100%; height: 100%; }
         .status-bar { background: white; border-top: 1px solid #e2e8f0; padding: 6px 12px; font-size: 12px; display: flex; justify-content: space-between; }
-        .ql-container { font-size: 16px; }
-        .ql-editor { min-height: 100%; padding: 20px; }
+        .collab-status { background: #d1fae5; color: #065f46; padding: 2px 8px; border-radius: 20px; font-size: 11px; }
+        .collab-status.off { background: #fee2e2; color: #991b1b; }
     </style>
-    <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
-    <script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
-    <script src="https://unpkg.com/yjs@13.6.10/dist/yjs.min.js"></script>
-    <script src="https://unpkg.com/y-webrtc@10.2.5/dist/y-webrtc.min.js"></script>
-    <script src="https://unpkg.com/y-quill@0.7.3/dist/y-quill.min.js"></script>
-    <script src="https://unpkg.com/marked@11.1.1/marked.min.js"></script>
-    <script src="https://unpkg.com/turndown@7.1.2/dist/turndown.js"></script>
-    <script src="https://unpkg.com/markmap-lib@0.15.3/dist/index.min.js"></script>
-    <script src="https://unpkg.com/markmap-view@0.15.3/dist/index.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/yjs@13.6.10/dist/yjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/y-websocket@2.0.1/dist/y-websocket.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/turndown@7.1.2/dist/turndown.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markmap-lib@0.15.3/dist/index.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markmap-view@0.15.3/dist/index.min.js"></script>
 </head>
 <body>
-    <div class="toolbar">
-        <div class="toolbar-group">
-            <select id="heading-select"><option value="">Абзац</option><option value="header1">H1</option><option value="header2">H2</option><option value="header3">H3</option></select>
-        </div>
-        <div class="toolbar-group">
-            <button id="bold"><b>B</b></button>
-            <button id="italic"><i>I</i></button>
-            <button id="strike"><s>S</s></button>
-            <button id="code">&lt;/&gt;</button>
-            <button id="highlight"><mark>H</mark></button>
-        </div>
-        <div class="toolbar-group">
-            <button id="ul">•</button>
-            <button id="ol">1.</button>
-            <button id="quote">"</button>
-        </div>
-        <div class="toolbar-group">
-            <button id="link">🔗</button>
-            <button id="image">🖼️</button>
-            <button id="formula">∑</button>
-        </div>
-        <div class="toolbar-group">
-            <button id="save">💾</button>
-            <button id="load">📂</button>
-        </div>
+<div class="toolbar">
+    <div class="toolbar-group">
+        <select id="heading-select"><option value="">Абзац</option><option value="H1">H1</option><option value="H2">H2</option><option value="H3">H3</option></select>
     </div>
-    <div class="main-container">
-        <div class="editor-panel">
-            <div id="editor"></div>
-        </div>
-        <div class="viewer-panel">
-            <div id="markmap-container"></div>
-        </div>
+    <div class="toolbar-group">
+        <button id="bold" title="Жирный"><b>B</b></button>
+        <button id="italic" title="Курсив"><i>I</i></button>
+        <button id="strike" title="Зачёркнутый"><s>S</s></button>
+        <button id="code-inline" title="Код">&lt;/&gt;</button>
+        <button id="highlight" title="Подсветка"><mark>H</mark></button>
     </div>
-    <div class="status-bar">
-        <span>🤝 Совместный редактор (P2P)</span>
-        <span id="status">Подключение...</span>
+    <div class="toolbar-group">
+        <button id="ul" title="Маркированный список">•</button>
+        <button id="ol" title="Нумерованный список">1.</button>
+        <button id="quote" title="Цитата">"</button>
     </div>
+    <div class="toolbar-group">
+        <button id="link" title="Ссылка">🔗</button>
+        <button id="image" title="Изображение">🖼️</button>
+        <button id="hr" title="Горизонтальная линия">—</button>
+    </div>
+    <div class="toolbar-group">
+        <button id="save-btn">💾 Сохранить</button>
+        <button id="load-btn">📂 Загрузить</button>
+        <span id="collab-status" class="collab-status">🔄 Коллаб не подключён</span>
+    </div>
+</div>
+<div class="container">
+    <div class="editor-panel">
+        <div id="editor" contenteditable="true"></div>
+    </div>
+    <div class="viewer-panel">
+        <div id="markmap-container"></div>
+    </div>
+</div>
+<div class="status-bar">
+    <span>✏️ Самодельный WYSIWYG + Коллаборации (Yjs)</span>
+    <span id="status">Готов</span>
+</div>
 
-    <script>
-        // --- Настройка коллабораций через WebRTC (без своего сервера) ---
-        const ydoc = new Y.Doc();
-        // Используем публичный сигнальный сервер y-webrtc
-        const provider = new Y.WebRTCProvider('markmap-room', ydoc, {
-            signaling: ['wss://signaling.yjs.dev']
-        });
-        const yText = ydoc.getText('quill');
-        
-        // --- Инициализация Quill ---
-        const editor = new Quill('#editor', {
-            theme: 'snow',
-            placeholder: 'Начните писать...',
-            modules: { toolbar: false }
-        });
-        
-        const binding = new Y.QuillBinding(yText, editor);
-        
-        // --- Статус подключения ---
-        provider.on('status', (event) => {
-            const statusSpan = document.getElementById('status');
-            if (event.connected) {
-                statusSpan.innerHTML = '🟢 Совместный режим (P2P, подключено)';
-                statusSpan.style.color = 'green';
-            } else {
-                statusSpan.innerHTML = '🟡 Поиск участников...';
-                statusSpan.style.color = 'orange';
-            }
-        });
-        
-        // --- Форматирование ---
-        document.getElementById('bold').onclick = () => editor.format('bold', !editor.getFormat().bold);
-        document.getElementById('italic').onclick = () => editor.format('italic', !editor.getFormat().italic);
-        document.getElementById('strike').onclick = () => editor.format('strike', !editor.getFormat().strike);
-        document.getElementById('code').onclick = () => editor.format('code', !editor.getFormat().code);
-        document.getElementById('highlight').onclick = () => {
-            const range = editor.getSelection();
-            if (range) {
-                const text = editor.getText(range.index, range.length);
-                editor.deleteText(range.index, range.length);
-                editor.insertText(range.index, text, { background: '#fef08a' });
-            }
-        };
-        document.getElementById('ul').onclick = () => editor.format('list', 'bullet');
-        document.getElementById('ol').onclick = () => editor.format('list', 'ordered');
-        document.getElementById('quote').onclick = () => editor.format('blockquote', !editor.getFormat().blockquote);
-        document.getElementById('heading-select').onchange = (e) => {
-            const value = e.target.value;
-            if (value === 'header1') editor.format('header', 1);
-            else if (value === 'header2') editor.format('header', 2);
-            else if (value === 'header3') editor.format('header', 3);
-            else editor.format('header', false);
-            e.target.value = '';
-        };
-        document.getElementById('link').onclick = () => {
-            const url = prompt('Введите URL:');
-            if (url) editor.format('link', url);
-        };
-        document.getElementById('image').onclick = () => {
-            const url = prompt('Введите URL изображения:');
-            if (url) {
-                const range = editor.getSelection();
-                editor.insertEmbed(range.index, 'image', url);
-            }
-        };
-        document.getElementById('formula').onclick = () => {
-            const range = editor.getSelection();
-            editor.insertText(range.index, '$$Формула$$');
-        };
-        
-        // --- Конвертация Quill → Markdown (упрощённая) ---
-        function deltaToMarkdown(delta) {
-            let md = '';
-            for (let op of delta.ops) {
-                if (op.insert) {
-                    let text = op.insert;
-                    if (typeof text !== 'string') continue;
-                    if (op.attributes) {
-                        if (op.attributes.bold) text = `**${text}**`;
-                        if (op.attributes.italic) text = `*${text}*`;
-                        if (op.attributes.strike) text = `~~${text}~~`;
-                        if (op.attributes.code) text = `\`${text}\``;
-                        if (op.attributes.background === '#fef08a') text = `==${text}==`;
-                        if (op.attributes.header === 1) text = `# ${text}`;
-                        if (op.attributes.header === 2) text = `## ${text}`;
-                        if (op.attributes.header === 3) text = `### ${text}`;
-                        if (op.attributes.link) text = `[${text}](${op.attributes.link})`;
-                    }
-                    md += text;
-                } else if (op.attributes && op.attributes.list === 'bullet') {
-                    md += `\n- `;
+<script>
+    // --- Элементы и глобальные переменные ---
+    const editor = document.getElementById('editor');
+    const statusSpan = document.getElementById('status');
+    const collabSpan = document.getElementById('collab-status');
+    
+    let currentHtml = '';
+    let currentMarkdown = '';
+    let turndownService = null;
+    let markedLib = null;
+    let markmapTransformer = null;
+    let markmapView = null;
+    let currentMarkmap = null;
+    
+    // Конвертеры загружаются глобально, они уже подключены через CDN выше.
+    // Проверяем, что они загружены
+    function initConverters() {
+        if (typeof TurndownService !== 'undefined') {
+            turndownService = new TurndownService({ headingStyle: 'atx', bulletListMarker: '-' });
+            turndownService.addRule('highlight', { filter: 'mark', replacement: (c) => `==${c}==` });
+        }
+        if (typeof marked !== 'undefined') {
+            markedLib = marked;
+            markedLib.setOptions({ breaks: true, gfm: true });
+        }
+    }
+    
+    // Markmap
+    function initMarkmap() {
+        if (typeof markmap !== 'undefined') {
+            markmapTransformer = markmap.Transformer;
+            markmapView = markmap.Markmap;
+            updateMarkmap();
+        }
+    }
+    
+    // Конвертация
+    function htmlToMarkdown(html) {
+        if (!turndownService) return html.replace(/<[^>]*>/g, '');
+        return turndownService.turndown(html);
+    }
+    
+    function markdownToHtml(md) {
+        if (!markedLib) return md;
+        return markedLib.parse(md);
+    }
+    
+    function updateMarkmap() {
+        if (!markmapTransformer || !markmapView || !currentMarkdown) return;
+        const container = document.getElementById('markmap-container');
+        if (!container) return;
+        try {
+            const transformer = new markmapTransformer();
+            const { root } = transformer.transform(currentMarkdown || '# Пусто');
+            while (container.firstChild) container.removeChild(container.firstChild);
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.style.width = '100%';
+            svg.style.height = '100%';
+            container.appendChild(svg);
+            if (currentMarkmap) currentMarkmap.destroy?.();
+            currentMarkmap = markmapView.create(svg, null, root);
+        } catch(e) { console.warn('Markmap error', e); }
+    }
+    
+    // --- Форматирование (самодельное) ---
+    function format(command, value = null) {
+        editor.focus();
+        document.execCommand(command, false, value);
+        updateFromEditor();
+        updateButtonStates();
+    }
+    
+    function wrapSelection(tag, placeholder) {
+        editor.focus();
+        const selection = window.getSelection();
+        if (selection.isCollapsed) {
+            document.execCommand('insertHTML', false, `<${tag}>${placeholder}</${tag}>`);
+        } else {
+            const range = selection.getRangeAt(0);
+            const selected = range.toString();
+            document.execCommand('insertHTML', false, `<${tag}>${selected}</${tag}>`);
+        }
+        updateFromEditor();
+        statusSpan.innerText = `✅ ${tag}`;
+        setTimeout(() => statusSpan.innerText = 'Готов', 1000);
+    }
+    
+    function toggleQuote() {
+        editor.focus();
+        const selection = window.getSelection();
+        if (selection.isCollapsed) return;
+        const range = selection.getRangeAt(0);
+        let container = range.commonAncestorContainer;
+        if (container.nodeType === Node.TEXT_NODE) container = container.parentElement;
+        const blockquote = container.closest('blockquote');
+        if (blockquote) {
+            const parent = blockquote.parentNode;
+            while (blockquote.firstChild) parent.insertBefore(blockquote.firstChild, blockquote);
+            parent.removeChild(blockquote);
+        } else {
+            document.execCommand('formatBlock', false, 'blockquote');
+        }
+        updateFromEditor();
+    }
+    
+    function updateButtonStates() {
+        document.getElementById('bold').classList.toggle('active', document.queryCommandState('bold'));
+        document.getElementById('italic').classList.toggle('active', document.queryCommandState('italic'));
+        document.getElementById('strike').classList.toggle('active', document.queryCommandState('strikeThrough'));
+        document.getElementById('ul').classList.toggle('active', document.queryCommandState('insertUnorderedList'));
+        document.getElementById('ol').classList.toggle('active', document.queryCommandState('insertOrderedList'));
+    }
+    
+    function updateFromEditor() {
+        const html = editor.innerHTML;
+        if (html === currentHtml) return;
+        currentHtml = html;
+        currentMarkdown = htmlToMarkdown(html);
+        updateMarkmap();
+        broadcastChange();
+        statusSpan.innerText = '📝 Изменено';
+        setTimeout(() => statusSpan.innerText = 'Готов', 1000);
+    }
+    
+    // --- Коллаборации через Yjs ---
+    let collabEnabled = false;
+    let provider = null;
+    let yDoc = null;
+    let yText = null;
+    
+    function initCollab() {
+        if (typeof Y === 'undefined') {
+            console.warn('Yjs not loaded');
+            collabSpan.innerHTML = '❌ Коллаб не доступен';
+            collabSpan.classList.add('off');
+            return;
+        }
+        try {
+            yDoc = new Y.Doc();
+            provider = new Y.WebsocketProvider('wss://demos.yjs.dev', 'wysiwyg-self-editor', yDoc);
+            yText = yDoc.getText('markdown');
+            
+            yText.observe(() => {
+                if (!editor || yText._local) return;
+                const remoteMd = yText.toString();
+                if (remoteMd !== currentMarkdown) {
+                    currentMarkdown = remoteMd;
+                    const html = markdownToHtml(currentMarkdown);
+                    editor.innerHTML = html;
+                    updateMarkmap();
                 }
-            }
-            return md;
+            });
+            
+            provider.on('status', (event) => {
+                if (event.status === 'connected') {
+                    collabEnabled = true;
+                    collabSpan.innerHTML = '🤝 Коллаб: подключено';
+                    collabSpan.classList.remove('off');
+                } else {
+                    collabEnabled = false;
+                    collabSpan.innerHTML = '⚠️ Коллаб: нет связи';
+                    collabSpan.classList.add('off');
+                }
+            });
+        } catch(e) {
+            console.warn('Collab init error', e);
+            collabSpan.innerHTML = '❌ Коллаб: ошибка';
+            collabSpan.classList.add('off');
         }
-        
-        // --- Обновление Markmap ---
-        let currentMarkmap = null;
-        function updateMarkmap() {
-            const delta = editor.getContents();
-            const markdown = deltaToMarkdown(delta);
-            const container = document.getElementById('markmap-container');
-            if (!container) return;
-            try {
-                const transformer = new markmap.Transformer();
-                const { root } = transformer.transform(markdown || '# Пусто');
-                while (container.firstChild) container.removeChild(container.firstChild);
-                const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-                svg.style.width = '100%';
-                svg.style.height = '100%';
-                container.appendChild(svg);
-                if (currentMarkmap) currentMarkmap.destroy?.();
-                currentMarkmap = markmap.Markmap.create(svg, null, root);
-            } catch(e) { console.warn(e); }
+    }
+    
+    function broadcastChange() {
+        if (collabEnabled && yText && !yText._lazySynced) {
+            yText.delete(0, yText.length);
+            yText.insert(0, currentMarkdown);
         }
-        
-        editor.on('text-change', () => updateMarkmap());
-        setTimeout(updateMarkmap, 500);
-        
-        // --- Сохранение и загрузка ---
-        const turndown = new TurndownService();
-        document.getElementById('save').onclick = () => {
-            const html = editor.root.innerHTML;
-            const md = turndown.turndown(html);
-            const blob = new Blob([md], { type: 'text/markdown' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'document.md';
-            a.click();
-            URL.revokeObjectURL(url);
-        };
-        document.getElementById('load').onclick = () => {
-            const input = document.createElement('input');
-            input.type = 'file';
-            input.accept = '.md,.txt';
-            input.onchange = (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                const reader = new FileReader();
-                reader.onload = (ev) => {
-                    const md = ev.target.result;
-                    const html = marked.parse(md);
-                    editor.root.innerHTML = html;
-                };
-                reader.readAsText(file);
+    }
+    
+    // --- Сохранение и загрузка ---
+    function saveToFile() {
+        if (!currentMarkdown) return;
+        const blob = new Blob([currentMarkdown], { type: 'text/markdown' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'document.md';
+        a.click();
+        URL.revokeObjectURL(url);
+        statusSpan.innerText = '✅ Сохранено';
+        setTimeout(() => statusSpan.innerText = 'Готов', 1500);
+    }
+    
+    function loadFromFile() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.md,.txt';
+        input.onchange = (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                currentMarkdown = ev.target.result;
+                const html = markdownToHtml(currentMarkdown);
+                editor.innerHTML = html;
+                updateMarkmap();
+                broadcastChange();
+                statusSpan.innerText = '✅ Загружено';
+                setTimeout(() => statusSpan.innerText = 'Готов', 1500);
             };
-            input.click();
+            reader.readAsText(file);
         };
-        
-        // Активные кнопки
-        function updateActiveButtons() {
-            const format = editor.getFormat();
-            document.getElementById('bold').classList.toggle('active', format.bold);
-            document.getElementById('italic').classList.toggle('active', format.italic);
-            document.getElementById('strike').classList.toggle('active', format.strike);
-            document.getElementById('code').classList.toggle('active', format.code);
-            document.getElementById('ul').classList.toggle('active', format.list === 'bullet');
-            document.getElementById('ol').classList.toggle('active', format.list === 'ordered');
-            document.getElementById('quote').classList.toggle('active', format.blockquote);
+        input.click();
+    }
+    
+    // --- Инициализация редактора ---
+    const defaultMarkdown = `# Центральная идея\n\n## Основной раздел 1\n\n### Деталь 1.1\n### Деталь 1.2\n\n**Жирный** и *курсив* и ~~зачёркнутый~~\n\n- Список 1\n- Список 2\n\n1. Нумерованный\n2. Второй\n\n> Цитата\n\n\`код\`\n\n---\n`;
+    currentMarkdown = defaultMarkdown;
+    const initialHtml = markdownToHtml(defaultMarkdown);
+    editor.innerHTML = initialHtml;
+    currentHtml = initialHtml;
+    
+    // Обработчики событий редактора
+    editor.addEventListener('input', updateFromEditor);
+    editor.addEventListener('keyup', updateButtonStates);
+    editor.addEventListener('mouseup', updateButtonStates);
+    
+    // Кнопки форматирования
+    document.getElementById('heading-select').onchange = (e) => {
+        if (e.target.value) format('formatBlock', e.target.value);
+        e.target.value = '';
+    };
+    document.getElementById('bold').onclick = () => format('bold');
+    document.getElementById('italic').onclick = () => format('italic');
+    document.getElementById('strike').onclick = () => format('strikeThrough');
+    document.getElementById('code-inline').onclick = () => wrapSelection('code', 'код');
+    document.getElementById('highlight').onclick = () => wrapSelection('mark', 'текст');
+    document.getElementById('ul').onclick = () => format('insertUnorderedList');
+    document.getElementById('ol').onclick = () => format('insertOrderedList');
+    document.getElementById('quote').onclick = toggleQuote;
+    document.getElementById('link').onclick = () => {
+        let url = prompt('Введите URL:');
+        if (url) format('createLink', url);
+    };
+    document.getElementById('image').onclick = () => {
+        let url = prompt('Введите URL изображения:');
+        if (url) format('insertImage', url);
+    };
+    document.getElementById('hr').onclick = () => format('insertHorizontalRule');
+    document.getElementById('save-btn').onclick = saveToFile;
+    document.getElementById('load-btn').onclick = loadFromFile;
+    
+    // Горячие клавиши
+    editor.addEventListener('keydown', (e) => {
+        if (e.ctrlKey || e.metaKey) {
+            switch (e.key) {
+                case 'b': e.preventDefault(); format('bold'); break;
+                case 'i': e.preventDefault(); format('italic'); break;
+            }
         }
-        editor.on('selection-change', updateActiveButtons);
-        editor.on('text-change', updateActiveButtons);
-    </script>
+    });
+    
+    // Загружаем конвертеры и markmap
+    initConverters();
+    // Ждём загрузки markmap
+    setTimeout(() => { initMarkmap(); }, 500);
+    // Инициализация коллабораций
+    initCollab();
+    updateButtonStates();
+</script>
 </body>
 </html>
