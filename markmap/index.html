@@ -4,158 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>ProseMirror WYSIWYG + Markmap</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { background: #f5f7fb; font-family: system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-        .global-status {
-            background: white;
-            border-top: 1px solid #e2e8f0;
-            padding: 4px 12px;
-            font-size: 12px;
-            color: #475569;
-            flex-shrink: 0;
-        }
-        .container { flex: 1; display: flex; gap: 10px; padding: 10px; overflow: hidden; position: relative; }
-        .editor-panel {
-            width: 50%;
-            background: white;
-            border-radius: 12px;
-            overflow: hidden;
-            transition: width 0.3s ease;
-            display: flex;
-            flex-direction: column;
-            position: relative;
-            flex-shrink: 0;
-        }
-        .editor-panel.collapsed { width: 0; min-width: 0; overflow: visible; }
-        .panel-content {
-            width: 100%;
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-            background: white;
-            border-radius: 12px;
-        }
-        .collapse-btn {
-            position: absolute;
-            right: -14px;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 28px;
-            height: 28px;
-            background: white;
-            border: 1px solid #cbd5e1;
-            border-radius: 20px;
-            cursor: pointer;
-            z-index: 25;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 16px;
-            transition: right 0.2s;
-        }
-        .editor-panel.collapsed .collapse-btn { right: -14px; }
-        .editor-toolbar {
-            display: flex;
-            align-items: center;
-            gap: 2px;
-            flex-wrap: wrap;
-            padding: 6px 10px;
-            background: white;
-            border-bottom: 1px solid #e2e8f0;
-            justify-content: flex-start;
-        }
-        .editor-toolbar button {
-            background: transparent;
-            border: none;
-            cursor: pointer;
-            padding: 6px 8px;
-            border-radius: 6px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .editor-toolbar button img { width: 18px; height: 18px; display: block; }
-        .editor-toolbar button:hover { background: #e2e8f0; }
-        .editor-toolbar button.active { background: #3b82f6; }
-        .editor-toolbar button.active img { filter: brightness(0) invert(1); }
-        /* карусель заголовков – две кнопки одна над другой */
-        .heading-stack {
-            display: inline-flex;
-            flex-direction: column;
-            gap: 2px;
-            margin: 0 4px;
-        }
-        .heading-stack button {
-            padding: 2px 6px;
-            min-width: 28px;
-            height: 18px;
-            line-height: 1;
-        }
-        .heading-stack button img { width: 12px; height: 12px; }
-        .dropdown { position: relative; display: inline-block; }
-        .dropdown-content {
-            display: none;
-            position: absolute;
-            top: 100%;
-            right: 0;
-            background: white;
-            min-width: 40px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-            border-radius: 6px;
-            z-index: 30;
-            margin-top: 4px;
-        }
-        .dropdown:hover .dropdown-content { display: block; }
-        .dropdown-content button {
-            width: 100%;
-            text-align: left;
-            border: none;
-            background: transparent;
-            padding: 6px 8px;
-            border-radius: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .dropdown-content button img { width: 18px; height: 18px; }
-        .dropdown-content button:hover { background: #f1f5f9; }
-        .editor-status-bar {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 6px 12px;
-            background: #fafafa;
-            border-top: 1px solid #e2e8f0;
-            font-size: 12px;
-            margin-top: auto;
-        }
-        .mode-switch { display: flex; gap: 12px; }
-        .mode-switch label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
-        .ProseMirror {
-            flex: 1;
-            overflow-y: auto;
-            padding: 20px;
-            outline: none;
-            font-size: 16px;
-            line-height: 1.5;
-        }
-        .ProseMirror h1 { font-size: 2em; margin: 0.5em 0; }
-        .ProseMirror h2 { font-size: 1.5em; margin: 0.5em 0; }
-        .ProseMirror h3 { font-size: 1.25em; margin: 0.5em 0; }
-        .ProseMirror h4 { font-size: 1.1em; margin: 0.5em 0; }
-        .ProseMirror h5 { font-size: 1em; margin: 0.5em 0; color: #555; }
-        .ProseMirror h6 { font-size: 0.9em; margin: 0.5em 0; color: #777; }
-        .ProseMirror ul, .ProseMirror ol { padding-left: 2em; margin: 0.5em 0; }
-        .ProseMirror blockquote { border-left: 4px solid #3b82f6; padding-left: 1em; color: #555; margin: 0.5em 0; }
-        .ProseMirror code { background: #f1f5f9; padding: 2px 4px; border-radius: 4px; font-family: monospace; }
-        .ProseMirror pre { background: #f1f5f9; padding: 12px; border-radius: 8px; overflow-x: auto; }
-        .ProseMirror pre code { background: none; padding: 0; }
-        .ProseMirror mark { background: #fef08a; }
-        .viewer-panel { flex: 1; background: white; border-radius: 12px; overflow: hidden; }
-        #markmap-container { width: 100%; height: 100%; }
-    </style>
+    <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/markdown/markdown.min.js"></script>
@@ -190,7 +39,6 @@
                 <button id="quote" title="Цитата"><img src="img/quote.svg" alt='"'> </button>
                 <button id="code-block" title="Блок кода"><img src="img/code-block.svg" alt="{ }"></button>
                 <button id="strike" title="Зачёркнутый"><img src="img/strike.svg" alt="S"></button>
-                <!-- меню-кнопки без right-group, просто в потоке -->
                 <div class="dropdown">
                     <button><img src="img/menu-down.svg" alt="▼"></button>
                     <div class="dropdown-content">
@@ -220,80 +68,18 @@
             </div>
         </div>
     </div>
-    <div class="viewer-panel">
+    <div class="viewer-panel" id="viewer-panel">
+        <div class="map-toolbar">
+            <button id="fit-btn" title="Подогнать карту"><img src="img/fit.svg" alt="fit"> Подогнать</button>
+            <button id="fullscreen-map" title="Полный экран"><img src="img/fullscreen.svg" alt="⛶"> На весь экран</button>
+            <button id="save-png" title="Сохранить как PNG"><img src="img/save-png.svg" alt="PNG"> PNG</button>
+        </div>
         <div id="markmap-container"></div>
     </div>
 </div>
 <div class="global-status" id="global-status">Готов</div>
 
 <script src="bundle.js"></script>
-<script>
-    (function() {
-        const panel = document.getElementById('editor-panel');
-        const collapseBtn = document.getElementById('collapse-editor');
-        const globalStatus = document.getElementById('global-status');
-        const inlineStatus = document.getElementById('editor-inline-status');
-        const wysiwygRadio = document.querySelector('input[value="wysiwyg"]');
-        const markdownRadio = document.querySelector('input[value="markdown"]');
-
-        collapseBtn.addEventListener('click', () => {
-            panel.classList.toggle('collapsed');
-            collapseBtn.textContent = panel.classList.contains('collapsed') ? '▶' : '◀';
-            if (window.centerMarkmap) setTimeout(() => window.centerMarkmap(), 200);
-        });
-
-        if (wysiwygRadio && markdownRadio) {
-            wysiwygRadio.addEventListener('change', () => {
-                if (wysiwygRadio.checked && window.switchToWysiwyg) {
-                    window.switchToWysiwyg();
-                    inlineStatus.textContent = 'Режим WYSIWYG';
-                }
-            });
-            markdownRadio.addEventListener('change', () => {
-                if (markdownRadio.checked && window.switchToMarkdown) {
-                    window.switchToMarkdown();
-                    inlineStatus.textContent = 'Режим Markdown';
-                }
-            });
-        }
-
-        function updateHeadingLevelDisplay(level) {
-            const span = document.getElementById('heading-level');
-            if (span) span.textContent = (level === 0) ? '-' : 'H' + level;
-        }
-
-        const bind = (id, method, arg = null) => {
-            const btn = document.getElementById(id);
-            if (!btn) return;
-            btn.onclick = () => {
-                if (arg !== null && window[method]) window[method](arg);
-                else if (window[method]) window[method]();
-                if (method === 'saveToFile') globalStatus.textContent = '✅ Сохранено';
-                else if (method === 'loadFromFile') globalStatus.textContent = '✅ Загружено';
-                setTimeout(() => { if (globalStatus.textContent !== 'Готов') globalStatus.textContent = 'Готов'; }, 1500);
-            };
-        };
-
-        bind('undo', 'undo');
-        bind('redo', 'redo');
-        bind('heading-up', 'changeHeading', 1);
-        bind('heading-down', 'changeHeading', -1);
-        bind('bold', 'format', 'bold');
-        bind('italic', 'format', 'italic');
-        bind('code-inline', 'format', 'code');
-        bind('highlight', 'format', 'highlight');
-        bind('ul', 'format', 'bullet_list');
-        bind('ol', 'format', 'ordered_list');
-        bind('quote', 'format', 'blockquote');
-        bind('code-block', 'format', 'code_block');
-        bind('strike', 'format', 'strike');
-        bind('link', 'format', 'link');
-        bind('hr', 'format', 'horizontal_rule');
-        bind('save-btn', 'saveToFile');
-        bind('load-btn', 'loadFromFile');
-
-        window.updateHeadingLevelDisplay = updateHeadingLevelDisplay;
-    })();
-</script>
+<script src="app.js"></script>
 </body>
 </html>
