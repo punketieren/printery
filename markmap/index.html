@@ -71,5 +71,39 @@
 
 <script src="bundle.js"></script>
 <script src="app.js"></script>
+<!-- Добавьте ЭТИ строки перед </body> -->
+<script src="libs/orderedmap.js"></script>
+<script src="libs/prosemirror-model.js"></script>
+<script src="libs/prosemirror-state.js"></script>
+<script src="libs/prosemirror-view.js"></script>
+<script src="libs/prosemirror-schema-basic.js"></script>
+<script src="libs/prosemirror-schema-list.js"></script>
+<script src="libs/prosemirror-commands.js"></script>
+<script src="libs/prosemirror-keymap.js"></script>
+<script src="libs/prosemirror-history.js"></script>
+
+<script>
+// Инициализация редактора (добавить после всех скриптов)
+(function() {
+    function waitForProseMirror() {
+        return new Promise((resolve) => {
+            const check = () => {
+                if (window.ProseMirror && window.ProseMirror.model) {
+                    console.log('ProseMirror загружен');
+                    resolve();
+                } else {
+                    setTimeout(check, 100);
+                }
+            };
+            check();
+        });
+    }
+    
+    waitForProseMirror().then(() => {
+        console.log('Можно создавать редактор');
+        // Здесь будет код создания редактора
+    });
+})();
+</script>
 </body>
 </html>
