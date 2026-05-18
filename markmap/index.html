@@ -18,9 +18,12 @@
         .dropdown:hover .dropdown-content { display: block; }
         .dropdown-content button { width: 100%; text-align: left; border: none; background: white; padding: 6px 12px; border-radius: 0; }
         .dropdown-content button:hover { background: #f1f5f9; }
-        .container { flex: 1; display: flex; gap: 10px; padding: 10px; overflow: hidden; }
-        .editor-panel { flex: 1; background: white; border-radius: 12px; overflow: hidden; }
-        .viewer-panel { flex: 1; background: white; border-radius: 12px; overflow: hidden; }
+        .container { flex: 1; display: flex; gap: 10px; padding: 10px; overflow: hidden; position: relative; }
+        .editor-panel { width: 50%; background: white; border-radius: 12px; overflow: hidden; transition: width 0.3s ease; display: flex; flex-direction: column; }
+        .editor-panel.collapsed { width: 0; min-width: 0; margin-right: 0; padding: 0; overflow: hidden; }
+        .editor-header { display: flex; justify-content: flex-end; padding: 8px; border-bottom: 1px solid #e2e8f0; }
+        .collapse-btn { background: none; border: none; cursor: pointer; font-size: 18px; padding: 4px 8px; }
+        .viewer-panel { flex: 1; background: white; border-radius: 12px; overflow: hidden; position: relative; transition: all 0.3s ease; }
         .ProseMirror { height: 100%; overflow-y: auto; padding: 20px; outline: none; font-size: 16px; line-height: 1.5; }
         .ProseMirror h1 { font-size: 2em; margin: 0.5em 0; }
         .ProseMirror h2 { font-size: 1.5em; margin: 0.5em 0; }
@@ -36,8 +39,11 @@
         .ProseMirror mark { background: #fef08a; }
         #markmap-container { width: 100%; height: 100%; }
         .status-bar { background: white; border-top: 1px solid #e2e8f0; padding: 4px 12px; font-size: 11px; display: flex; justify-content: space-between; }
+        .CodeMirror { height: 100%; font-family: monospace; font-size: 14px; }
     </style>
-    <!-- Подключаем ProseMirror и markmap через CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/markdown/markdown.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/prosemirror-model@1.19.3/dist/index.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/prosemirror-state@1.4.3/dist/index.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/prosemirror-view@1.32.7/dist/index.js"></script>
@@ -54,6 +60,12 @@
 <body>
 <div class="toolbar">
     <div class="toolbar-left">
+        <div class="toolbar-group">
+            <button id="undo" title="Отменить (Ctrl+Z)">↩️</button>
+            <button id="redo" title="Повторить (Ctrl+Y)">↪️</button>
+            <button id="mode-md" title="Режим Markdown">MD</button>
+            <button id="mode-wysiwyg" title="Визуальный режим">WYSIWYG</button>
+        </div>
         <div class="toolbar-group">
             <button id="heading-down" title="Понизить уровень заголовка">H–</button>
             <button id="heading-up" title="Повысить уровень заголовка">H+</button>
@@ -88,7 +100,10 @@
     </div>
 </div>
 <div class="container">
-    <div class="editor-panel">
+    <div class="editor-panel" id="editor-panel">
+        <div class="editor-header">
+            <button id="collapse-editor" class="collapse-btn" title="Свернуть редактор">◀</button>
+        </div>
         <div id="editor"></div>
     </div>
     <div class="viewer-panel">
@@ -102,11 +117,9 @@
 
 <script>
     (function() {
-        // --- Схема ProseMirror с поддержкой зачёркивания и подсветки ---
+        // --- Схема ProseMirror ---
         const { schema } = prosemirrorSchemaBasic;
         const { addListNodes } = prosemirrorSchemaList;
-        
-        // Расширяем схему: добавляем маркер для подсветки
         const mySchema = addListNodes(schema, 'paragraph block*', 'block');
         mySchema.marks.mark = {
             attrs: {},
@@ -128,9 +141,25 @@
         
         let view = null;
         let currentMarkmap = null;
+        let cm = null;
+        let isWysiwyg = true;
+        let isEditorCollapsed = false;
         
         function getMarkdown() {
-            return defaultMarkdownSerializer.serialize(view.state.doc);
+            if (isWysiwyg && view) {
+                return defaultMarkdownSerializer.serialize(view.state.doc);
+            } else if (cm) {
+                return cm.getValue();
+            }
+            return '';
+        }
+        
+        function centerMarkmap() {
+            if (currentMarkmap && currentMarkmap.view) {
+                setTimeout(() => {
+                    currentMarkmap.view.fit();
+                }, 100);
+            }
         }
         
         function updateMarkmap() {
@@ -147,59 +176,156 @@
                 container.appendChild(svg);
                 if (currentMarkmap) currentMarkmap.destroy?.();
                 currentMarkmap = markmap.Markmap.create(svg, null, root);
+                centerMarkmap();
             } catch(e) { console.warn(e); }
         }
         
-        function changeHeading(delta) {
-            const { state, dispatch } = view;
-            const { selection } = state;
-            const $from = selection.$from;
-            const node = $from.node($from.depth);
-            const currentLevel = node.type.name === 'heading' ? node.attrs.level : 0;
-            let newLevel = currentLevel + delta;
-            if (newLevel < 0) newLevel = 0;
-            if (newLevel > 6) newLevel = 6;
-            
-            if (newLevel === 0) {
-                setBlockType(mySchema.nodes.paragraph)(state, dispatch);
+        function centerOnResize() {
+            centerMarkmap();
+        }
+        
+        function toggleEditorCollapse() {
+            const panel = document.getElementById('editor-panel');
+            const btn = document.getElementById('collapse-editor');
+            isEditorCollapsed = !isEditorCollapsed;
+            if (isEditorCollapsed) {
+                panel.classList.add('collapsed');
+                btn.textContent = '▶';
             } else {
-                setBlockType(mySchema.nodes.heading, { level: newLevel })(state, dispatch);
+                panel.classList.remove('collapsed');
+                btn.textContent = '◀';
             }
-            view.focus();
+            centerMarkmap();
+        }
+        
+        function switchToWysiwyg() {
+            if (!view) {
+                const container = document.getElementById('editor');
+                const md = cm ? cm.getValue() : '';
+                const doc = defaultMarkdownParser.parse(md || '# Пусто');
+                const state = EditorState.create({
+                    schema: mySchema,
+                    doc: doc,
+                    plugins: [history(), keymap(baseKeymap)]
+                });
+                view = new EditorView(container, {
+                    state,
+                    dispatchTransaction(tr) {
+                        const newState = view.state.apply(tr);
+                        view.updateState(newState);
+                        updateMarkmap();
+                    }
+                });
+                if (cm) {
+                    cm.toTextArea();
+                    cm = null;
+                }
+                isWysiwyg = true;
+                document.getElementById('mode-wysiwyg').classList.add('active');
+                document.getElementById('mode-md').classList.remove('active');
+                updateMarkmap();
+            } else {
+                const editorDiv = document.getElementById('editor');
+                if (cm) {
+                    const md = cm.getValue();
+                    const doc = defaultMarkdownParser.parse(md || '# Пусто');
+                    const newState = EditorState.create({
+                        schema: mySchema,
+                        doc: doc,
+                        plugins: [history(), keymap(baseKeymap)]
+                    });
+                    view.updateState(newState);
+                    cm.toTextArea();
+                    cm = null;
+                }
+                isWysiwyg = true;
+                document.getElementById('mode-wysiwyg').classList.add('active');
+                document.getElementById('mode-md').classList.remove('active');
+                updateMarkmap();
+            }
+        }
+        
+        function switchToMarkdown() {
+            const md = getMarkdown();
+            const textarea = document.createElement('textarea');
+            textarea.id = 'editor-md';
+            textarea.value = md;
+            const editorDiv = document.getElementById('editor');
+            editorDiv.innerHTML = '';
+            editorDiv.appendChild(textarea);
+            cm = CodeMirror.fromTextArea(textarea, {
+                mode: 'markdown',
+                lineNumbers: true,
+                lineWrapping: true
+            });
+            cm.on('change', () => {
+                updateMarkmap();
+            });
+            if (view) {
+                view.destroy();
+                view = null;
+            }
+            isWysiwyg = false;
+            document.getElementById('mode-md').classList.add('active');
+            document.getElementById('mode-wysiwyg').classList.remove('active');
             updateMarkmap();
         }
         
+        // Инициализация в WYSIWYG режиме
+        const initialDoc = {
+            type: 'doc',
+            content: [
+                { type: 'heading', attrs: { level: 1 }, content: [{ type: 'text', text: 'Центральная идея' }] },
+                { type: 'paragraph', content: [{ type: 'text', text: 'Начните писать...' }] }
+            ]
+        };
+        const state = EditorState.create({
+            schema: mySchema,
+            doc: mySchema.nodeFromJSON(initialDoc),
+            plugins: [history(), keymap(baseKeymap)]
+        });
+        view = new EditorView(document.getElementById('editor'), {
+            state,
+            dispatchTransaction(tr) {
+                const newState = view.state.apply(tr);
+                view.updateState(newState);
+                updateMarkmap();
+            }
+        });
+        updateMarkmap();
+        
+        function undo() {
+            if (isWysiwyg && view) {
+                const { undo } = prosemirrorHistory;
+                undo(view.state, view.dispatch);
+            } else if (cm) {
+                cm.undo();
+            }
+        }
+        
+        function redo() {
+            if (isWysiwyg && view) {
+                const { redo } = prosemirrorHistory;
+                redo(view.state, view.dispatch);
+            } else if (cm) {
+                cm.redo();
+            }
+        }
+        
         function format(command, value = null) {
+            if (!isWysiwyg || !view) return;
             const { state, dispatch } = view;
             const { schema } = state;
             switch(command) {
-                case 'bold':
-                    toggleMark(schema.marks.strong)(state, dispatch);
-                    break;
-                case 'italic':
-                    toggleMark(schema.marks.em)(state, dispatch);
-                    break;
-                case 'strike':
-                    toggleMark(schema.marks.strike)(state, dispatch);
-                    break;
-                case 'code':
-                    toggleMark(schema.marks.code)(state, dispatch);
-                    break;
-                case 'highlight':
-                    toggleMark(schema.marks.mark)(state, dispatch);
-                    break;
-                case 'heading_up':
-                    changeHeading(-1);
-                    return;
-                case 'heading_down':
-                    changeHeading(1);
-                    return;
-                case 'bullet_list':
-                    wrapIn(schema.nodes.bullet_list)(state, dispatch);
-                    break;
-                case 'ordered_list':
-                    wrapIn(schema.nodes.ordered_list)(state, dispatch);
-                    break;
+                case 'bold': toggleMark(schema.marks.strong)(state, dispatch); break;
+                case 'italic': toggleMark(schema.marks.em)(state, dispatch); break;
+                case 'strike': toggleMark(schema.marks.strike)(state, dispatch); break;
+                case 'code': toggleMark(schema.marks.code)(state, dispatch); break;
+                case 'highlight': toggleMark(schema.marks.mark)(state, dispatch); break;
+                case 'heading_up': changeHeading(-1); return;
+                case 'heading_down': changeHeading(1); return;
+                case 'bullet_list': wrapIn(schema.nodes.bullet_list)(state, dispatch); break;
+                case 'ordered_list': wrapIn(schema.nodes.ordered_list)(state, dispatch); break;
                 case 'blockquote':
                     const { selection } = state;
                     const $from = selection.$from;
@@ -210,9 +336,7 @@
                         wrapIn(schema.nodes.blockquote)(state, dispatch);
                     }
                     break;
-                case 'code_block':
-                    setBlockType(schema.nodes.code_block)(state, dispatch);
-                    break;
+                case 'code_block': setBlockType(schema.nodes.code_block)(state, dispatch); break;
                 case 'horizontal_rule':
                     const tr = state.tr.replaceSelectionWith(schema.nodes.horizontal_rule.create());
                     dispatch(tr);
@@ -227,6 +351,25 @@
             updateMarkmap();
         }
         
+        function changeHeading(delta) {
+            if (!isWysiwyg || !view) return;
+            const { state, dispatch } = view;
+            const { selection } = state;
+            const $from = selection.$from;
+            const node = $from.node($from.depth);
+            const currentLevel = node.type.name === 'heading' ? node.attrs.level : 0;
+            let newLevel = currentLevel + delta;
+            if (newLevel < 0) newLevel = 0;
+            if (newLevel > 6) newLevel = 6;
+            if (newLevel === 0) {
+                setBlockType(mySchema.nodes.paragraph)(state, dispatch);
+            } else {
+                setBlockType(mySchema.nodes.heading, { level: newLevel })(state, dispatch);
+            }
+            view.focus();
+            updateMarkmap();
+        }
+        
         function saveToFile() {
             const md = getMarkdown();
             const blob = new Blob([md], { type: 'text/markdown' });
@@ -236,8 +379,8 @@
             a.download = 'document.md';
             a.click();
             URL.revokeObjectURL(url);
-            const statusSpan = document.getElementById('status');
-            if (statusSpan) statusSpan.innerText = '✅ Сохранено';
+            document.getElementById('status').innerText = '✅ Сохранено';
+            setTimeout(() => document.getElementById('status').innerText = 'Готов', 1500);
         }
         
         function loadFromFile() {
@@ -250,47 +393,28 @@
                 const reader = new FileReader();
                 reader.onload = (ev) => {
                     const md = ev.target.result;
-                    const doc = defaultMarkdownParser.parse(md);
-                    const tr = view.state.tr.replaceWith(0, view.state.doc.content.size, doc);
-                    view.dispatch(tr);
+                    if (isWysiwyg && view) {
+                        const doc = defaultMarkdownParser.parse(md);
+                        const tr = view.state.tr.replaceWith(0, view.state.doc.content.size, doc);
+                        view.dispatch(tr);
+                    } else if (cm) {
+                        cm.setValue(md);
+                    }
                     updateMarkmap();
-                    const statusSpan = document.getElementById('status');
-                    if (statusSpan) statusSpan.innerText = '✅ Загружено';
+                    document.getElementById('status').innerText = '✅ Загружено';
+                    setTimeout(() => document.getElementById('status').innerText = 'Готов', 1500);
                 };
                 reader.readAsText(file);
             };
             input.click();
         }
         
-        const initialDoc = {
-            type: 'doc',
-            content: [
-                { type: 'heading', attrs: { level: 1 }, content: [{ type: 'text', text: 'Центральная идея' }] },
-                { type: 'paragraph', content: [{ type: 'text', text: 'Начните писать...' }] }
-            ]
-        };
-        
-        const state = EditorState.create({
-            schema: mySchema,
-            doc: mySchema.nodeFromJSON(initialDoc),
-            plugins: [history(), keymap(baseKeymap)]
-        });
-        
-        view = new EditorView(document.getElementById('editor'), {
-            state,
-            dispatchTransaction(tr) {
-                const newState = view.state.apply(tr);
-                view.updateState(newState);
-                updateMarkmap();
-            }
-        });
-        
-        updateMarkmap();
-        
-        window.format = format;
-        window.saveToFile = saveToFile;
-        window.loadFromFile = loadFromFile;
-        
+        // Назначение обработчиков
+        document.getElementById('collapse-editor').onclick = toggleEditorCollapse;
+        document.getElementById('undo').onclick = undo;
+        document.getElementById('redo').onclick = redo;
+        document.getElementById('mode-md').onclick = switchToMarkdown;
+        document.getElementById('mode-wysiwyg').onclick = switchToWysiwyg;
         document.getElementById('heading-up').onclick = () => format('heading_up');
         document.getElementById('heading-down').onclick = () => format('heading_down');
         document.getElementById('bold').onclick = () => format('bold');
@@ -306,6 +430,8 @@
         document.getElementById('hr').onclick = () => format('horizontal_rule');
         document.getElementById('save-btn').onclick = saveToFile;
         document.getElementById('load-btn').onclick = loadFromFile;
+        
+        window.addEventListener('resize', centerOnResize);
     })();
 </script>
 </body>
