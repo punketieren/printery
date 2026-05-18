@@ -3,48 +3,49 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>WYSIWYG Editor + Markmap + Collab</title>
+    <title>ProseMirror WYSIWYG + Markmap</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { background: #f5f7fb; font-family: system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-        .toolbar { background: white; padding: 6px 12px; border-bottom: 1px solid #e2e8f0; display: flex; gap: 4px; flex-wrap: wrap; flex-shrink: 0; position: sticky; top: 0; z-index: 10; }
-        .toolbar-group { display: flex; gap: 3px; align-items: center; background: #f8fafc; padding: 3px 6px; border-radius: 6px; }
-        .toolbar button { background: white; border: 1px solid #cbd5e1; border-radius: 5px; cursor: pointer; font-size: 13px; min-width: 28px; padding: 4px 8px; }
+        .toolbar { background: white; padding: 4px 8px; border-bottom: 1px solid #e2e8f0; display: flex; gap: 3px; flex-wrap: wrap; flex-shrink: 0; position: sticky; top: 0; z-index: 10; }
+        .toolbar-group { display: flex; gap: 2px; align-items: center; background: #f8fafc; padding: 2px 4px; border-radius: 5px; }
+        .toolbar button { background: white; border: 1px solid #cbd5e1; border-radius: 4px; cursor: pointer; font-size: 12px; min-width: 24px; padding: 3px 6px; }
         .toolbar button.active { background: #3b82f6; color: white; border-color: #3b82f6; }
-        .toolbar select { background: white; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px; padding: 4px 6px; }
+        .toolbar select { background: white; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 11px; padding: 3px 5px; }
         .dropdown { position: relative; display: inline-block; }
-        .dropdown-content { display: none; position: absolute; top: 100%; left: 0; background: white; min-width: 100px; box-shadow: 0 8px 16px rgba(0,0,0,0.1); border-radius: 6px; z-index: 20; margin-top: 4px; }
-        .dropdown-content button { width: 100%; text-align: left; border: none; background: white; padding: 6px 10px; border-radius: 0; margin: 0; }
-        .dropdown-content button:hover { background: #f1f5f9; }
+        .dropdown-content { display: none; position: absolute; top: 100%; left: 0; background: white; min-width: 80px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); border-radius: 5px; z-index: 20; margin-top: 2px; }
         .dropdown:hover .dropdown-content { display: block; }
+        .dropdown-content button { width: 100%; text-align: left; border: none; background: white; padding: 4px 8px; border-radius: 0; margin: 0; }
+        .dropdown-content button:hover { background: #f1f5f9; }
         .container { flex: 1; display: flex; gap: 10px; padding: 10px; overflow: hidden; }
         .editor-panel { flex: 1; display: flex; flex-direction: column; background: white; border-radius: 12px; overflow: hidden; }
         .viewer-panel { flex: 1; background: white; border-radius: 12px; overflow: hidden; position: relative; }
-        #editor { height: 100%; overflow-y: auto; padding: 20px; outline: none; font-size: 16px; line-height: 1.5; }
-        #editor h1 { font-size: 2em; margin: 0.5em 0; }
-        #editor h2 { font-size: 1.5em; margin: 0.5em 0; }
-        #editor h3 { font-size: 1.25em; margin: 0.5em 0; }
-        #editor h4 { font-size: 1.1em; margin: 0.5em 0; }
-        #editor h5 { font-size: 1em; margin: 0.5em 0; color: #555; }
-        #editor h6 { font-size: 0.9em; margin: 0.5em 0; color: #777; }
-        #editor ul, #editor ol { padding-left: 2em; margin: 0.5em 0; }
-        #editor blockquote { border-left: 4px solid #3b82f6; margin: 0.5em 0; padding-left: 1em; color: #555; }
-        #editor code { background: #f1f5f9; padding: 2px 4px; border-radius: 4px; font-family: monospace; }
-        #editor pre { background: #f1f5f9; padding: 12px; border-radius: 8px; overflow-x: auto; }
-        #editor pre code { background: none; padding: 0; }
-        #editor mark { background: #fef08a; }
+        .ProseMirror { height: 100%; overflow-y: auto; padding: 20px; outline: none; font-size: 16px; line-height: 1.5; }
+        .ProseMirror h1 { font-size: 2em; margin: 0.5em 0; }
+        .ProseMirror h2 { font-size: 1.5em; margin: 0.5em 0; }
+        .ProseMirror h3 { font-size: 1.25em; margin: 0.5em 0; }
+        .ProseMirror h4 { font-size: 1.1em; margin: 0.5em 0; }
+        .ProseMirror h5 { font-size: 1em; margin: 0.5em 0; color: #555; }
+        .ProseMirror h6 { font-size: 0.9em; margin: 0.5em 0; color: #777; }
+        .ProseMirror ul, .ProseMirror ol { padding-left: 2em; margin: 0.5em 0; }
+        .ProseMirror blockquote { border-left: 4px solid #3b82f6; margin: 0.5em 0; padding-left: 1em; color: #555; }
+        .ProseMirror code { background: #f1f5f9; padding: 2px 4px; border-radius: 4px; font-family: monospace; }
+        .ProseMirror pre { background: #f1f5f9; padding: 12px; border-radius: 8px; overflow-x: auto; }
+        .ProseMirror pre code { background: none; padding: 0; }
+        .ProseMirror mark { background: #fef08a; }
         #markmap-container { width: 100%; height: 100%; }
-        .status-bar { background: white; border-top: 1px solid #e2e8f0; padding: 6px 12px; font-size: 12px; display: flex; justify-content: space-between; }
-        .collab-status { background: #d1fae5; color: #065f46; padding: 2px 8px; border-radius: 20px; font-size: 11px; }
-        .collab-status.off { background: #fee2e2; color: #991b1b; }
+        .status-bar { background: white; border-top: 1px solid #e2e8f0; padding: 4px 12px; font-size: 11px; display: flex; justify-content: space-between; }
     </style>
-    <!-- Yjs и WebRTC -->
-    <script src="https://cdn.jsdelivr.net/npm/yjs@13.6.10/dist/yjs.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/y-webrtc@10.2.5/dist/y-webrtc.min.js"></script>
-    <!-- Конвертеры Markdown -->
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/turndown@7.1.2/dist/turndown.js"></script>
-    <!-- Markmap -->
+    <script src="https://cdn.jsdelivr.net/npm/prosemirror-model@1.19.3/dist/index.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prosemirror-state@1.4.3/dist/index.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prosemirror-view@1.32.7/dist/index.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prosemirror-schema-basic@1.2.2/dist/index.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prosemirror-schema-list@1.3.0/dist/index.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prosemirror-commands@1.5.2/dist/index.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prosemirror-keymap@1.2.2/dist/index.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prosemirror-history@1.3.2/dist/index.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prosemirror-inputrules@1.3.0/dist/index.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prosemirror-markdown@1.11.2/dist/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/markmap-lib@0.15.3/dist/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/markmap-view@0.15.3/dist/index.min.js"></script>
 </head>
@@ -52,17 +53,17 @@
 <div class="toolbar">
     <div class="toolbar-group">
         <select id="heading-select">
-            <option value="">Абзац</option>
+            <option value="">-</option>
             <option value="h1">H1</option><option value="h2">H2</option><option value="h3">H3</option>
             <option value="h4">H4</option><option value="h5">H5</option><option value="h6">H6</option>
         </select>
     </div>
     <div class="toolbar-group">
         <div class="dropdown">
-            <button id="format-menu" title="Форматирование">▼</button>
+            <button>▼</button>
             <div class="dropdown-content">
-                <button id="bold" title="Жирный (Ctrl+B)"><b>B</b></button>
-                <button id="italic" title="Курсив (Ctrl+I)"><i>I</i></button>
+                <button id="bold" title="Жирный"><b>B</b></button>
+                <button id="italic" title="Курсив"><i>I</i></button>
                 <button id="code-inline" title="Код">&lt;/&gt;</button>
                 <button id="highlight" title="Подсветка"><mark>H</mark></button>
             </div>
@@ -79,7 +80,6 @@
     </div>
     <div class="toolbar-group">
         <button id="link" title="Ссылка">🔗</button>
-        <button id="image" title="Изображение">🖼️</button>
         <button id="hr" title="Горизонтальная линия">—</button>
     </div>
     <div class="toolbar-group">
@@ -89,301 +89,268 @@
 </div>
 <div class="container">
     <div class="editor-panel">
-        <div id="editor" contenteditable="true"></div>
+        <div id="editor"></div>
     </div>
     <div class="viewer-panel">
         <div id="markmap-container"></div>
     </div>
 </div>
 <div class="status-bar">
-    <span>✏️ WYSIWYG + Markmap + Коллаборации (P2P)</span>
-    <span id="collab-status" class="collab-status">🔄 Коллаб не подключён</span>
+    <span>✏️ ProseMirror WYSIWYG + Markmap</span>
+    <span id="status">Готов</span>
 </div>
 
 <script>
-    // --- Элементы ---
-    const editor = document.getElementById('editor');
-    const collabSpan = document.getElementById('collab-status');
-    const statusSpan = document.getElementById('status');
-    
-    let currentMarkdown = '';
-    let turndownService = null;
-    let markedLib = null;
-    let markmapTransformer = null;
-    let markmapView = null;
-    let currentMarkmap = null;
-    
-    // --- Коллаборации через Yjs (текст, не HTML) ---
-    const ydoc = new Y.Doc();
-    const provider = new Y.WebrtcProvider('wysiwyg-collab-room', ydoc);
-    const yText = ydoc.getText('markdown');
-    
-    let ignoreRemoteUpdate = false;
-    
-    // Функция обновления редактора из Markdown
-    function updateEditorFromMarkdown(md) {
-        if (!markedLib) return;
-        ignoreRemoteUpdate = true;
-        editor.innerHTML = markedLib.parse(md || '# Пусто');
-        ignoreRemoteUpdate = false;
-    }
-    
-    // Функция обновления Markdown из редактора
-    function updateMarkdownFromEditor() {
-        if (!turndownService) return;
-        const html = editor.innerHTML;
-        const md = turndownService.turndown(html);
-        if (md !== currentMarkdown) {
-            currentMarkdown = md;
-            if (!ignoreRemoteUpdate) {
-                yText.delete(0, yText.length);
-                yText.insert(0, md);
-            }
-            updateMarkmap();
-        }
-    }
-    
-    // Наблюдение за изменениями в Y.Text
-    yText.observe(() => {
-        if (ignoreRemoteUpdate) return;
-        const remoteMd = yText.toString();
-        if (remoteMd !== currentMarkdown) {
-            currentMarkdown = remoteMd;
-            updateEditorFromMarkdown(remoteMd);
-            updateMarkmap();
-        }
-    });
-    
-    // Статус коллаборации
-    provider.on('status', (event) => {
-        if (event.connected) {
-            collabSpan.innerHTML = '🤝 Коллаб: подключено (P2P)';
-            collabSpan.classList.remove('off');
-        } else {
-            collabSpan.innerHTML = '⚠️ Коллаб: поиск участников';
-            collabSpan.classList.add('off');
-        }
-    });
-    
-    // --- Конвертеры ---
-    function initConverters() {
-        if (typeof TurndownService !== 'undefined') {
-            turndownService = new TurndownService({ headingStyle: 'atx', bulletListMarker: '-' });
-            turndownService.addRule('highlight', { filter: 'mark', replacement: (c) => `==${c}==` });
-        }
-        if (typeof marked !== 'undefined') {
-            markedLib = marked;
-            markedLib.setOptions({ breaks: true, gfm: true });
-        }
-    }
-    
-    // --- Markmap ---
-    function updateMarkmap() {
-        if (!markmapTransformer || !markmapView || !currentMarkdown) return;
-        const container = document.getElementById('markmap-container');
-        if (!container) return;
-        try {
-            const transformer = new markmapTransformer();
-            const { root } = transformer.transform(currentMarkdown || '# Пусто');
-            while (container.firstChild) container.removeChild(container.firstChild);
-            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            svg.style.width = '100%';
-            svg.style.height = '100%';
-            container.appendChild(svg);
-            if (currentMarkmap) currentMarkmap.destroy?.();
-            currentMarkmap = markmapView.create(svg, null, root);
-        } catch(e) { console.warn('Markmap error', e); }
-    }
-    
-    // --- Форматирование (execCommand) ---
-    function format(command, value = null) {
-        editor.focus();
-        document.execCommand(command, false, value);
-        updateMarkdownFromEditor();
-        updateButtonStates();
-        statusSpan.innerText = `✅ ${command}`;
-        setTimeout(() => statusSpan.innerText = 'Готов', 1000);
-    }
-    
-    function wrapSelection(tag, placeholder) {
-        editor.focus();
-        const selection = window.getSelection();
-        if (selection.isCollapsed) {
-            document.execCommand('insertHTML', false, `<${tag}>${placeholder}</${tag}>`);
-        } else {
-            const range = selection.getRangeAt(0);
-            const selected = range.toString();
-            document.execCommand('insertHTML', false, `<${tag}>${selected}</${tag}>`);
-        }
-        updateMarkdownFromEditor();
-        statusSpan.innerText = `✅ ${tag}`;
-        setTimeout(() => statusSpan.innerText = 'Готов', 1000);
-    }
-    
-    function toggleBlock(command, tag, wrapperTag = null) {
-        editor.focus();
-        const selection = window.getSelection();
-        if (selection.isCollapsed) {
-            // Применяем к текущему блоку
-            const range = selection.getRangeAt(0);
-            let container = range.commonAncestorContainer;
-            if (container.nodeType === Node.TEXT_NODE) container = container.parentElement;
-            const block = container.closest(wrapperTag || command);
-            if (block) {
-                // Убираем форматирование
-                const parent = block.parentNode;
-                while (block.firstChild) parent.insertBefore(block.firstChild, block);
-                parent.removeChild(block);
-            } else {
-                document.execCommand('formatBlock', false, command);
-            }
-        } else {
-            document.execCommand('formatBlock', false, command);
-        }
-        updateMarkdownFromEditor();
-        statusSpan.innerText = `✅ ${command}`;
-        setTimeout(() => statusSpan.innerText = 'Готов', 1000);
-    }
-    
-    function updateButtonStates() {
-        document.getElementById('bold').classList.toggle('active', document.queryCommandState('bold'));
-        document.getElementById('italic').classList.toggle('active', document.queryCommandState('italic'));
-        document.getElementById('strike').classList.toggle('active', document.queryCommandState('strikeThrough'));
-        document.getElementById('ul').classList.toggle('active', document.queryCommandState('insertUnorderedList'));
-        document.getElementById('ol').classList.toggle('active', document.queryCommandState('insertOrderedList'));
-        // Цитата и код блок требуют отдельной логики
-        const selection = window.getSelection();
-        if (!selection.isCollapsed) {
-            const range = selection.getRangeAt(0);
-            let container = range.commonAncestorContainer;
-            if (container.nodeType === Node.TEXT_NODE) container = container.parentElement;
-            const isBlockquote = container.closest('blockquote');
-            const isCodeBlock = container.closest('pre');
-            document.getElementById('quote').classList.toggle('active', !!isBlockquote);
-            document.getElementById('code-block').classList.toggle('active', !!isCodeBlock);
-        }
-    }
-    
-    // --- Сохранение и загрузка ---
-    function saveToFile() {
-        if (!currentMarkdown) return;
-        const blob = new Blob([currentMarkdown], { type: 'text/markdown' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'document.md';
-        a.click();
-        URL.revokeObjectURL(url);
-        statusSpan.innerText = '✅ Сохранено';
-        setTimeout(() => statusSpan.innerText = 'Готов', 1500);
-    }
-    
-    function loadFromFile() {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.md,.txt';
-        input.onchange = (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-                const md = ev.target.result;
-                currentMarkdown = md;
-                updateEditorFromMarkdown(md);
-                updateMarkmap();
-                yText.delete(0, yText.length);
-                yText.insert(0, md);
-                statusSpan.innerText = '✅ Загружено';
-                setTimeout(() => statusSpan.innerText = 'Готов', 1500);
-            };
-            reader.readAsText(file);
+    (function() {
+        // --- Схема ProseMirror ---
+        const { schema } = prosemirrorSchemaBasic;
+        const { addListNodes } = prosemirrorSchemaList;
+        const mySchema = addListNodes(schema, 'paragraph block*', 'block');
+        
+        // --- Markmap ---
+        let markmapTransformer = null;
+        let markmapView = null;
+        let currentMarkmap = null;
+        let view = null;
+        
+        // Начальный документ
+        const initialDoc = {
+            type: 'doc',
+            content: [
+                { type: 'heading', attrs: { level: 1 }, content: [{ type: 'text', text: 'Центральная идея' }] },
+                { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'Основной раздел 1' }] },
+                { type: 'heading', attrs: { level: 3 }, content: [{ type: 'text', text: 'Деталь 1.1' }] },
+                { type: 'heading', attrs: { level: 3 }, content: [{ type: 'text', text: 'Деталь 1.2' }] },
+                { type: 'paragraph', content: [
+                    { type: 'text', marks: [{ type: 'strong' }], text: 'Жирный' },
+                    { type: 'text', text: ' и ' },
+                    { type: 'text', marks: [{ type: 'em' }], text: 'курсив' },
+                    { type: 'text', text: ' и ' },
+                    { type: 'text', marks: [{ type: 'strike' }], text: 'зачёркнутый' }
+                ] },
+                { type: 'bullet_list', content: [
+                    { type: 'list_item', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Список 1' }] }] },
+                    { type: 'list_item', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Список 2' }] }] }
+                ] },
+                { type: 'ordered_list', content: [
+                    { type: 'list_item', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Нумерованный 1' }] }] },
+                    { type: 'list_item', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Нумерованный 2' }] }] }
+                ] },
+                { type: 'blockquote', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Цитата' }] }] },
+                { type: 'paragraph', content: [{ type: 'text', marks: [{ type: 'code' }], text: 'код' }] },
+                { type: 'horizontal_rule' }
+            ]
         };
-        input.click();
-    }
-    
-    // --- Назначение кнопок ---
-    document.getElementById('heading-select').onchange = (e) => {
-        const val = e.target.value;
-        if (val === '') format('formatBlock', '<p>');
-        else if (val === 'h1') format('formatBlock', '<h1>');
-        else if (val === 'h2') format('formatBlock', '<h2>');
-        else if (val === 'h3') format('formatBlock', '<h3>');
-        else if (val === 'h4') format('formatBlock', '<h4>');
-        else if (val === 'h5') format('formatBlock', '<h5>');
-        else if (val === 'h6') format('formatBlock', '<h6>');
-        e.target.value = '';
-    };
-    document.getElementById('bold').onclick = () => format('bold');
-    document.getElementById('italic').onclick = () => format('italic');
-    document.getElementById('strike').onclick = () => format('strikeThrough');
-    document.getElementById('code-inline').onclick = () => wrapSelection('code', 'код');
-    document.getElementById('highlight').onclick = () => wrapSelection('mark', 'текст');
-    document.getElementById('code-block').onclick = () => toggleBlock('pre', 'code-block', 'pre');
-    document.getElementById('quote').onclick = () => toggleBlock('blockquote', 'quote', 'blockquote');
-    document.getElementById('ul').onclick = () => format('insertUnorderedList');
-    document.getElementById('ol').onclick = () => format('insertOrderedList');
-    document.getElementById('link').onclick = () => {
-        let url = prompt('Введите URL:');
-        if (url) format('createLink', url);
-    };
-    document.getElementById('image').onclick = () => {
-        let url = prompt('Введите URL изображения:');
-        if (url) format('insertImage', url);
-    };
-    document.getElementById('hr').onclick = () => format('insertHorizontalRule');
-    document.getElementById('save-btn').onclick = saveToFile;
-    document.getElementById('load-btn').onclick = loadFromFile;
-    
-    // Горячие клавиши
-    editor.addEventListener('keydown', (e) => {
-        if (e.ctrlKey || e.metaKey) {
-            switch (e.key) {
-                case 'b': e.preventDefault(); format('bold'); break;
-                case 'i': e.preventDefault(); format('italic'); break;
+        
+        function getMarkdown() {
+            const { defaultMarkdownSerializer } = prosemirrorMarkdown;
+            if (!view) return '';
+            return defaultMarkdownSerializer.serialize(view.state.doc);
+        }
+        
+        function updateMarkmap() {
+            if (!markmapTransformer || !markmapView || !view) return;
+            const md = getMarkdown();
+            const container = document.getElementById('markmap-container');
+            if (!container) return;
+            try {
+                const transformer = new markmapTransformer();
+                const { root } = transformer.transform(md || '# Пусто');
+                while (container.firstChild) container.removeChild(container.firstChild);
+                const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                svg.style.width = '100%';
+                svg.style.height = '100%';
+                container.appendChild(svg);
+                if (currentMarkmap) currentMarkmap.destroy?.();
+                currentMarkmap = markmapView.create(svg, null, root);
+            } catch(e) { console.warn(e); }
+        }
+        
+        function format(command, value = null) {
+            if (!view) return;
+            const { state, dispatch } = view;
+            const { toggleMark, setBlockType, wrapIn } = prosemirrorCommands;
+            const { schema } = state;
+            
+            switch(command) {
+                case 'bold':
+                    toggleMark(schema.marks.strong)(state, dispatch);
+                    break;
+                case 'italic':
+                    toggleMark(schema.marks.em)(state, dispatch);
+                    break;
+                case 'strike':
+                    toggleMark(schema.marks.strike)(state, dispatch);
+                    break;
+                case 'code':
+                    toggleMark(schema.marks.code)(state, dispatch);
+                    break;
+                case 'highlight':
+                    toggleMark(schema.marks.mark)(state, dispatch);
+                    break;
+                case 'heading':
+                    setBlockType(schema.nodes.heading, { level: value })(state, dispatch);
+                    break;
+                case 'paragraph':
+                    setBlockType(schema.nodes.paragraph)(state, dispatch);
+                    break;
+                case 'bullet_list':
+                    wrapIn(schema.nodes.bullet_list)(state, dispatch);
+                    break;
+                case 'ordered_list':
+                    wrapIn(schema.nodes.ordered_list)(state, dispatch);
+                    break;
+                case 'blockquote':
+                    wrapIn(schema.nodes.blockquote)(state, dispatch);
+                    break;
+                case 'code_block':
+                    setBlockType(schema.nodes.code_block)(state, dispatch);
+                    break;
+                case 'horizontal_rule':
+                    const tr = state.tr.replaceSelectionWith(schema.nodes.horizontal_rule.create());
+                    dispatch(tr);
+                    break;
+                case 'link':
+                    const url = prompt('Введите URL:');
+                    if (url) toggleMark(schema.marks.link, { href: url })(state, dispatch);
+                    break;
+                case 'image':
+                    const imgUrl = prompt('Введите URL изображения:');
+                    if (imgUrl) {
+                        const node = schema.nodes.image.create({ src: imgUrl, alt: '' });
+                        const tr = state.tr.replaceSelectionWith(node);
+                        dispatch(tr);
+                    }
+                    break;
             }
+            view.focus();
+            updateButtonStates();
+            updateMarkmap();
         }
-    });
-    editor.addEventListener('input', updateMarkdownFromEditor);
-    editor.addEventListener('keyup', updateButtonStates);
-    editor.addEventListener('mouseup', updateButtonStates);
-    
-    // --- Инициализация ---
-    initConverters();
-    setTimeout(() => {
-        if (typeof markmap !== 'undefined') {
-            markmapTransformer = markmap.Transformer;
-            markmapView = markmap.Markmap;
+        
+        function updateButtonStates() {
+            if (!view) return;
+            const { state } = view;
+            const marks = state.selection.$from.marks();
+            document.getElementById('bold').classList.toggle('active', marks.some(m => m.type.name === 'strong'));
+            document.getElementById('italic').classList.toggle('active', marks.some(m => m.type.name === 'em'));
+            document.getElementById('strike').classList.toggle('active', marks.some(m => m.type.name === 'strike'));
+            document.getElementById('code-inline').classList.toggle('active', marks.some(m => m.type.name === 'code'));
+            document.getElementById('highlight').classList.toggle('active', marks.some(m => m.type.name === 'mark'));
+            const { selection } = state;
+            const $from = selection.$from;
+            const block = $from.node($from.depth);
+            document.getElementById('quote').classList.toggle('active', block && block.type.name === 'blockquote');
+            document.getElementById('code-block').classList.toggle('active', block && block.type.name === 'code_block');
+            document.getElementById('ul').classList.toggle('active', block && block.type.name === 'bullet_list');
+            document.getElementById('ol').classList.toggle('active', block && block.type.name === 'ordered_list');
         }
-        const defaultMarkdown = `# Центральная идея
-
-## Основной раздел 1
-
-### Деталь 1.1
-
-### Деталь 1.2
-
-**Жирный** и *курсив* и ~~зачёркнутый~~
-
-- Список 1
-- Список 2
-
-1. Нумерованный
-2. Второй
-
-> Цитата
-
-\`код\`
-
----
-`;
-        currentMarkdown = defaultMarkdown;
-        updateEditorFromMarkdown(defaultMarkdown);
-        updateMarkmap();
-        yText.delete(0, yText.length);
-        yText.insert(0, defaultMarkdown);
+        
+        function saveToFile() {
+            const md = getMarkdown();
+            const blob = new Blob([md], { type: 'text/markdown' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'document.md';
+            a.click();
+            URL.revokeObjectURL(url);
+            const statusSpan = document.getElementById('status');
+            statusSpan.innerText = '✅ Сохранено';
+            setTimeout(() => statusSpan.innerText = 'Готов', 1500);
+        }
+        
+        function loadFromFile() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.md,.txt';
+            input.onchange = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    const md = ev.target.result;
+                    const { defaultMarkdownParser } = prosemirrorMarkdown;
+                    const doc = defaultMarkdownParser.parse(md);
+                    const tr = view.state.tr.replaceWith(0, view.state.doc.content.size, doc);
+                    view.dispatch(tr);
+                    updateMarkmap();
+                    const statusSpan = document.getElementById('status');
+                    statusSpan.innerText = '✅ Загружено';
+                    setTimeout(() => statusSpan.innerText = 'Готов', 1500);
+                };
+                reader.readAsText(file);
+            };
+            input.click();
+        }
+        
+        // --- Инициализация редактора ---
+        const { EditorState } = prosemirrorState;
+        const { EditorView } = prosemirrorView;
+        const { keymap } = prosemirrorKeymap;
+        const { history } = prosemirrorHistory;
+        const { baseKeymap } = prosemirrorCommands;
+        const { buildInputRules } = prosemirrorInputrules;
+        
+        const state = EditorState.create({
+            schema: mySchema,
+            doc: mySchema.nodeFromJSON(initialDoc),
+            plugins: [
+                history(),
+                keymap(baseKeymap),
+                buildInputRules(),
+                keymap({
+                    'Mod-b': () => { format('bold'); return true; },
+                    'Mod-i': () => { format('italic'); return true; }
+                })
+            ]
+        });
+        
+        view = new EditorView(document.getElementById('editor'), {
+            state: state,
+            dispatchTransaction(tr) {
+                const newState = view.state.apply(tr);
+                view.updateState(newState);
+                updateMarkmap();
+                updateButtonStates();
+            }
+        });
+        
+        // --- Назначение кнопок ---
+        document.getElementById('heading-select').onchange = (e) => {
+            const val = e.target.value;
+            if (val === '') format('paragraph');
+            else if (val === 'h1') format('heading', 1);
+            else if (val === 'h2') format('heading', 2);
+            else if (val === 'h3') format('heading', 3);
+            else if (val === 'h4') format('heading', 4);
+            else if (val === 'h5') format('heading', 5);
+            else if (val === 'h6') format('heading', 6);
+            e.target.value = '';
+        };
+        document.getElementById('bold').onclick = () => format('bold');
+        document.getElementById('italic').onclick = () => format('italic');
+        document.getElementById('strike').onclick = () => format('strike');
+        document.getElementById('code-inline').onclick = () => format('code');
+        document.getElementById('highlight').onclick = () => format('highlight');
+        document.getElementById('code-block').onclick = () => format('code_block');
+        document.getElementById('quote').onclick = () => format('blockquote');
+        document.getElementById('ul').onclick = () => format('bullet_list');
+        document.getElementById('ol').onclick = () => format('ordered_list');
+        document.getElementById('link').onclick = () => format('link');
+        document.getElementById('hr').onclick = () => format('horizontal_rule');
+        document.getElementById('save-btn').onclick = saveToFile;
+        document.getElementById('load-btn').onclick = loadFromFile;
+        
         updateButtonStates();
-        statusSpan.innerText = 'Готов';
-    }, 500);
+        setTimeout(() => {
+            if (typeof markmap !== 'undefined') {
+                markmapTransformer = markmap.Transformer;
+                markmapView = markmap.Markmap;
+                updateMarkmap();
+            }
+        }, 500);
+    })();
 </script>
 </body>
 </html>
