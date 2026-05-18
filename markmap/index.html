@@ -61,18 +61,19 @@
         <button id="strike"><s>S</s></button>
         <button id="code-block">{ }</button>
         <button id="quote">"</button>
-    </div>
-    <div class="toolbar-group">
         <button id="ul">•</button>
         <button id="ol">1.</button>
     </div>
     <div class="toolbar-group">
-        <button id="link">🔗</button>
-        <button id="hr">—</button>
-    </div>
-    <div class="toolbar-group">
-        <button id="save-btn">💾</button>
-        <button id="load-btn">📂</button>
+        <div class="dropdown">
+            <button>⋯</button>
+            <div class="dropdown-content">
+                <button id="link">🔗 Ссылка</button>
+                <button id="hr">— Линия</button>
+                <button id="save-btn">💾 Сохранить</button>
+                <button id="load-btn">📂 Загрузить</button>
+            </div>
+        </div>
     </div>
 </div>
 <div class="container">
@@ -88,32 +89,70 @@
     <span id="status">Готов</span>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/prosemirror-model@1.19.3/dist/index.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/prosemirror-state@1.4.3/dist/index.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/prosemirror-view@1.32.7/dist/index.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/prosemirror-schema-basic@1.2.2/dist/index.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/prosemirror-schema-list@1.3.0/dist/index.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/prosemirror-commands@1.5.2/dist/index.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/prosemirror-keymap@1.2.2/dist/index.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/prosemirror-history@1.3.2/dist/index.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/prosemirror-inputrules@1.3.0/dist/index.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/prosemirror-markdown@1.11.2/dist/index.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/markmap-lib@0.15.3/dist/index.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/markmap-view@0.15.3/dist/index.min.js"></script>
-
-<script>
-    (function() {
-        // Схема ProseMirror
-        const { schema } = prosemirrorSchemaBasic;
-        const { addListNodes } = prosemirrorSchemaList;
+<!-- Библиотеки ProseMirror подключаем как модули -->
+<script type="importmap">
+    {
+        "imports": {
+            "prosemirror-model": "https://cdn.jsdelivr.net/npm/prosemirror-model@1.19.3/dist/index.js",
+            "prosemirror-state": "https://cdn.jsdelivr.net/npm/prosemirror-state@1.4.3/dist/index.js",
+            "prosemirror-view": "https://cdn.jsdelivr.net/npm/prosemirror-view@1.32.7/dist/index.js",
+            "prosemirror-schema-basic": "https://cdn.jsdelivr.net/npm/prosemirror-schema-basic@1.2.2/dist/index.js",
+            "prosemirror-schema-list": "https://cdn.jsdelivr.net/npm/prosemirror-schema-list@1.3.0/dist/index.js",
+            "prosemirror-commands": "https://cdn.jsdelivr.net/npm/prosemirror-commands@1.5.2/dist/index.js",
+            "prosemirror-keymap": "https://cdn.jsdelivr.net/npm/prosemirror-keymap@1.2.2/dist/index.js",
+            "prosemirror-history": "https://cdn.jsdelivr.net/npm/prosemirror-history@1.3.2/dist/index.js",
+            "prosemirror-inputrules": "https://cdn.jsdelivr.net/npm/prosemirror-inputrules@1.3.0/dist/index.js",
+            "prosemirror-markdown": "https://cdn.jsdelivr.net/npm/prosemirror-markdown@1.11.2/dist/index.js"
+        }
+    }
+</script>
+<script type="module">
+    import * as prosemirrorModel from 'prosemirror-model';
+    import * as prosemirrorState from 'prosemirror-state';
+    import * as prosemirrorView from 'prosemirror-view';
+    import * as prosemirrorSchemaBasic from 'prosemirror-schema-basic';
+    import * as prosemirrorSchemaList from 'prosemirror-schema-list';
+    import * as prosemirrorCommands from 'prosemirror-commands';
+    import * as prosemirrorKeymap from 'prosemirror-keymap';
+    import * as prosemirrorHistory from 'prosemirror-history';
+    import * as prosemirrorInputrules from 'prosemirror-inputrules';
+    import * as prosemirrorMarkdown from 'prosemirror-markdown';
+    
+    // Делаем библиотеки доступными глобально
+    window.prosemirrorModel = prosemirrorModel;
+    window.prosemirrorState = prosemirrorState;
+    window.prosemirrorView = prosemirrorView;
+    window.prosemirrorSchemaBasic = prosemirrorSchemaBasic;
+    window.prosemirrorSchemaList = prosemirrorSchemaList;
+    window.prosemirrorCommands = prosemirrorCommands;
+    window.prosemirrorKeymap = prosemirrorKeymap;
+    window.prosemirrorHistory = prosemirrorHistory;
+    window.prosemirrorInputrules = prosemirrorInputrules;
+    window.prosemirrorMarkdown = prosemirrorMarkdown;
+    
+    // Загружаем markmap (обычный скрипт)
+    const markmapScript = document.createElement('script');
+    markmapScript.src = 'https://cdn.jsdelivr.net/npm/markmap-lib@0.15.3/dist/index.min.js';
+    document.head.appendChild(markmapScript);
+    const markmapViewScript = document.createElement('script');
+    markmapViewScript.src = 'https://cdn.jsdelivr.net/npm/markmap-view@0.15.3/dist/index.min.js';
+    markmapViewScript.onload = () => {
+        // Запускаем редактор после загрузки markmap
+        initEditor();
+    };
+    document.head.appendChild(markmapViewScript);
+    
+    function initEditor() {
+        const { schema } = window.prosemirrorSchemaBasic;
+        const { addListNodes } = window.prosemirrorSchemaList;
         const mySchema = addListNodes(schema, 'paragraph block*', 'block');
         
-        let view = null;
-        let markmapTransformer = null;
-        let markmapView = null;
-        let currentMarkmap = null;
+        const { EditorState } = window.prosemirrorState;
+        const { EditorView } = window.prosemirrorView;
+        const { keymap } = window.prosemirrorKeymap;
+        const { history } = window.prosemirrorHistory;
+        const { baseKeymap } = window.prosemirrorCommands;
         
-        // Начальный документ
         const initialDoc = {
             type: 'doc',
             content: [
@@ -142,34 +181,35 @@
             ]
         };
         
+        let view = null;
+        
         function getMarkdown() {
-            const { defaultMarkdownSerializer } = prosemirrorMarkdown;
+            const { defaultMarkdownSerializer } = window.prosemirrorMarkdown;
             if (!view) return '';
             return defaultMarkdownSerializer.serialize(view.state.doc);
         }
         
         function updateMarkmap() {
-            if (!markmapTransformer || !markmapView || !view) return;
             const md = getMarkdown();
             const container = document.getElementById('markmap-container');
-            if (!container) return;
+            if (!container || typeof markmap === 'undefined') return;
             try {
-                const transformer = new markmapTransformer();
+                const transformer = new markmap.Transformer();
                 const { root } = transformer.transform(md || '# Пусто');
                 while (container.firstChild) container.removeChild(container.firstChild);
                 const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
                 svg.style.width = '100%';
                 svg.style.height = '100%';
                 container.appendChild(svg);
-                if (currentMarkmap) currentMarkmap.destroy?.();
-                currentMarkmap = markmapView.create(svg, null, root);
+                if (window.currentMarkmap) window.currentMarkmap.destroy?.();
+                window.currentMarkmap = markmap.Markmap.create(svg, null, root);
             } catch(e) { console.warn(e); }
         }
         
         function format(command, value = null) {
             if (!view) return;
             const { state, dispatch } = view;
-            const { toggleMark, setBlockType, wrapIn } = prosemirrorCommands;
+            const { toggleMark, setBlockType, wrapIn } = window.prosemirrorCommands;
             const { schema } = state;
             
             switch(command) {
@@ -217,26 +257,7 @@
                     break;
             }
             view.focus();
-            updateButtonStates();
             updateMarkmap();
-        }
-        
-        function updateButtonStates() {
-            if (!view) return;
-            const { state } = view;
-            const marks = state.selection.$from.marks();
-            document.getElementById('bold').classList.toggle('active', marks.some(m => m.type.name === 'strong'));
-            document.getElementById('italic').classList.toggle('active', marks.some(m => m.type.name === 'em'));
-            document.getElementById('strike').classList.toggle('active', marks.some(m => m.type.name === 'strike'));
-            document.getElementById('code-inline').classList.toggle('active', marks.some(m => m.type.name === 'code'));
-            
-            const { selection } = state;
-            const $from = selection.$from;
-            const block = $from.node($from.depth);
-            document.getElementById('quote').classList.toggle('active', block && block.type.name === 'blockquote');
-            document.getElementById('code-block').classList.toggle('active', block && block.type.name === 'code_block');
-            document.getElementById('ul').classList.toggle('active', block && block.type.name === 'bullet_list');
-            document.getElementById('ol').classList.toggle('active', block && block.type.name === 'ordered_list');
         }
         
         function saveToFile() {
@@ -262,7 +283,7 @@
                 const reader = new FileReader();
                 reader.onload = (ev) => {
                     const md = ev.target.result;
-                    const { defaultMarkdownParser } = prosemirrorMarkdown;
+                    const { defaultMarkdownParser } = window.prosemirrorMarkdown;
                     const doc = defaultMarkdownParser.parse(md);
                     const tr = view.state.tr.replaceWith(0, view.state.doc.content.size, doc);
                     view.dispatch(tr);
@@ -274,13 +295,6 @@
             };
             input.click();
         }
-        
-        // Создание редактора
-        const { EditorState } = prosemirrorState;
-        const { EditorView } = prosemirrorView;
-        const { keymap } = prosemirrorKeymap;
-        const { history } = prosemirrorHistory;
-        const { baseKeymap } = prosemirrorCommands;
         
         const state = EditorState.create({
             schema: mySchema,
@@ -301,7 +315,6 @@
                 const newState = view.state.apply(tr);
                 view.updateState(newState);
                 updateMarkmap();
-                updateButtonStates();
             }
         });
         
@@ -331,15 +344,8 @@
         document.getElementById('save-btn').onclick = saveToFile;
         document.getElementById('load-btn').onclick = loadFromFile;
         
-        updateButtonStates();
-        setTimeout(() => {
-            if (typeof markmap !== 'undefined') {
-                markmapTransformer = markmap.Transformer;
-                markmapView = markmap.Markmap;
-                updateMarkmap();
-            }
-        }, 500);
-    })();
+        updateMarkmap();
+    }
 </script>
 </body>
 </html>
