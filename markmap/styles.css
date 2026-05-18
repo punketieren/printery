@@ -126,14 +126,14 @@ body {
 .heading-stack {
     display: inline-flex;
     flex-direction: column;
-    gap: 2px;
-    margin: 0 4px 0 2px;
+    gap: 0px;
+    margin: 0 0px 0 0px;
 }
 
 .heading-stack button {
     padding: 2px 4px;
     min-width: 22px;
-    height: 16px;
+    height: 14px;
     line-height: 1;
 }
 
