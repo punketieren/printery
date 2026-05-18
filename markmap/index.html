@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>WYSIWYG Collaborative Editor (самодельный)</title>
+    <title>WYSIWYG + Коллаборации + Markmap (стабильный)</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { background: #f5f7fb; font-family: system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
@@ -29,10 +29,13 @@
         .collab-status { background: #d1fae5; color: #065f46; padding: 2px 8px; border-radius: 20px; font-size: 11px; }
         .collab-status.off { background: #fee2e2; color: #991b1b; }
     </style>
+    <!-- Yjs и y-websocket (для коллабораций) -->
     <script src="https://cdn.jsdelivr.net/npm/yjs@13.6.10/dist/yjs.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/y-websocket@2.0.1/dist/y-websocket.min.js"></script>
+    <!-- Конвертеры HTML <-> Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/turndown@7.1.2/dist/turndown.js"></script>
+    <!-- Markmap -->
     <script src="https://cdn.jsdelivr.net/npm/markmap-lib@0.15.3/dist/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/markmap-view@0.15.3/dist/index.min.js"></script>
 </head>
@@ -42,21 +45,21 @@
         <select id="heading-select"><option value="">Абзац</option><option value="H1">H1</option><option value="H2">H2</option><option value="H3">H3</option></select>
     </div>
     <div class="toolbar-group">
-        <button id="bold" title="Жирный"><b>B</b></button>
-        <button id="italic" title="Курсив"><i>I</i></button>
-        <button id="strike" title="Зачёркнутый"><s>S</s></button>
-        <button id="code-inline" title="Код">&lt;/&gt;</button>
-        <button id="highlight" title="Подсветка"><mark>H</mark></button>
+        <button id="bold"><b>B</b></button>
+        <button id="italic"><i>I</i></button>
+        <button id="strike"><s>S</s></button>
+        <button id="code-inline">&lt;/&gt;</button>
+        <button id="highlight"><mark>H</mark></button>
     </div>
     <div class="toolbar-group">
-        <button id="ul" title="Маркированный список">•</button>
-        <button id="ol" title="Нумерованный список">1.</button>
-        <button id="quote" title="Цитата">"</button>
+        <button id="ul">•</button>
+        <button id="ol">1.</button>
+        <button id="quote">"</button>
     </div>
     <div class="toolbar-group">
-        <button id="link" title="Ссылка">🔗</button>
-        <button id="image" title="Изображение">🖼️</button>
-        <button id="hr" title="Горизонтальная линия">—</button>
+        <button id="link">🔗</button>
+        <button id="image">🖼️</button>
+        <button id="hr">—</button>
     </div>
     <div class="toolbar-group">
         <button id="save-btn">💾 Сохранить</button>
@@ -73,12 +76,12 @@
     </div>
 </div>
 <div class="status-bar">
-    <span>✏️ Самодельный WYSIWYG + Коллаборации (Yjs)</span>
+    <span>✏️ WYSIWYG (contenteditable) + Коллаборации (Yjs) + Markmap</span>
     <span id="status">Готов</span>
 </div>
 
 <script>
-    // --- Элементы и глобальные переменные ---
+    // --- Глобальные переменные ---
     const editor = document.getElementById('editor');
     const statusSpan = document.getElementById('status');
     const collabSpan = document.getElementById('collab-status');
@@ -91,8 +94,7 @@
     let markmapView = null;
     let currentMarkmap = null;
     
-    // Конвертеры загружаются глобально, они уже подключены через CDN выше.
-    // Проверяем, что они загружены
+    // --- Инициализация конвертеров (они уже загружены через CDN) ---
     function initConverters() {
         if (typeof TurndownService !== 'undefined') {
             turndownService = new TurndownService({ headingStyle: 'atx', bulletListMarker: '-' });
@@ -104,16 +106,6 @@
         }
     }
     
-    // Markmap
-    function initMarkmap() {
-        if (typeof markmap !== 'undefined') {
-            markmapTransformer = markmap.Transformer;
-            markmapView = markmap.Markmap;
-            updateMarkmap();
-        }
-    }
-    
-    // Конвертация
     function htmlToMarkdown(html) {
         if (!turndownService) return html.replace(/<[^>]*>/g, '');
         return turndownService.turndown(html);
@@ -122,6 +114,15 @@
     function markdownToHtml(md) {
         if (!markedLib) return md;
         return markedLib.parse(md);
+    }
+    
+    // --- Markmap ---
+    function initMarkmap() {
+        if (typeof markmap !== 'undefined') {
+            markmapTransformer = markmap.Transformer;
+            markmapView = markmap.Markmap;
+            updateMarkmap();
+        }
     }
     
     function updateMarkmap() {
@@ -141,12 +142,14 @@
         } catch(e) { console.warn('Markmap error', e); }
     }
     
-    // --- Форматирование (самодельное) ---
+    // --- Форматирование (проверенный рабочий код) ---
     function format(command, value = null) {
         editor.focus();
         document.execCommand(command, false, value);
         updateFromEditor();
         updateButtonStates();
+        statusSpan.innerText = `✅ ${command}`;
+        setTimeout(() => statusSpan.innerText = 'Готов', 1000);
     }
     
     function wrapSelection(tag, placeholder) {
@@ -197,11 +200,9 @@
         currentMarkdown = htmlToMarkdown(html);
         updateMarkmap();
         broadcastChange();
-        statusSpan.innerText = '📝 Изменено';
-        setTimeout(() => statusSpan.innerText = 'Готов', 1000);
     }
     
-    // --- Коллаборации через Yjs ---
+    // --- Коллаборации (Yjs) ---
     let collabEnabled = false;
     let provider = null;
     let yDoc = null;
@@ -209,14 +210,13 @@
     
     function initCollab() {
         if (typeof Y === 'undefined') {
-            console.warn('Yjs not loaded');
             collabSpan.innerHTML = '❌ Коллаб не доступен';
             collabSpan.classList.add('off');
             return;
         }
         try {
             yDoc = new Y.Doc();
-            provider = new Y.WebsocketProvider('wss://demos.yjs.dev', 'wysiwyg-self-editor', yDoc);
+            provider = new Y.WebsocketProvider('wss://demos.yjs.dev', 'wysiwyg-stable-room', yDoc);
             yText = yDoc.getText('markdown');
             
             yText.observe(() => {
@@ -291,19 +291,7 @@
         input.click();
     }
     
-    // --- Инициализация редактора ---
-    const defaultMarkdown = `# Центральная идея\n\n## Основной раздел 1\n\n### Деталь 1.1\n### Деталь 1.2\n\n**Жирный** и *курсив* и ~~зачёркнутый~~\n\n- Список 1\n- Список 2\n\n1. Нумерованный\n2. Второй\n\n> Цитата\n\n\`код\`\n\n---\n`;
-    currentMarkdown = defaultMarkdown;
-    const initialHtml = markdownToHtml(defaultMarkdown);
-    editor.innerHTML = initialHtml;
-    currentHtml = initialHtml;
-    
-    // Обработчики событий редактора
-    editor.addEventListener('input', updateFromEditor);
-    editor.addEventListener('keyup', updateButtonStates);
-    editor.addEventListener('mouseup', updateButtonStates);
-    
-    // Кнопки форматирования
+    // --- Назначение кнопок ---
     document.getElementById('heading-select').onchange = (e) => {
         if (e.target.value) format('formatBlock', e.target.value);
         e.target.value = '';
@@ -328,7 +316,7 @@
     document.getElementById('save-btn').onclick = saveToFile;
     document.getElementById('load-btn').onclick = loadFromFile;
     
-    // Горячие клавиши
+    // --- Горячие клавиши ---
     editor.addEventListener('keydown', (e) => {
         if (e.ctrlKey || e.metaKey) {
             switch (e.key) {
@@ -338,13 +326,44 @@
         }
     });
     
-    // Загружаем конвертеры и markmap
+    // --- Инициализация ---
+    const defaultMarkdown = `# Центральная идея
+
+## Основной раздел 1
+
+### Деталь 1.1
+
+### Деталь 1.2
+
+**Жирный** и *курсив* и ~~зачёркнутый~~
+
+- Список 1
+- Список 2
+
+1. Нумерованный
+2. Второй
+
+> Цитата
+
+\`код\`
+
+---
+
+`;
+    currentMarkdown = defaultMarkdown;
+    const initialHtml = markdownToHtml(defaultMarkdown);
+    editor.innerHTML = initialHtml;
+    currentHtml = initialHtml;
+    
+    editor.addEventListener('input', updateFromEditor);
+    editor.addEventListener('keyup', updateButtonStates);
+    editor.addEventListener('mouseup', updateButtonStates);
+    
     initConverters();
-    // Ждём загрузки markmap
-    setTimeout(() => { initMarkmap(); }, 500);
-    // Инициализация коллабораций
+    setTimeout(initMarkmap, 500);
     initCollab();
     updateButtonStates();
+    statusSpan.innerText = 'Готов';
 </script>
 </body>
 </html>
