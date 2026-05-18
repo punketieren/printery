@@ -4806,6 +4806,45 @@
           }
       tr.step(new ReplaceAroundStep(start, end, gapStart, gapEnd, new Slice(before.append(after), openStart, openEnd), before.size - openStart, true));
   }
+  /**
+  Try to find a valid way to wrap the content in the given range in a
+  node of the given type. May introduce extra nodes around and inside
+  the wrapper node, if necessary. Returns null if no valid wrapping
+  could be found. When `innerRange` is given, that range's content is
+  used as the content to fit into the wrapping, instead of the
+  content of `range`.
+  */
+  function findWrapping(range, nodeType, attrs = null, innerRange = range) {
+      let around = findWrappingOutside(range, nodeType);
+      let inner = around && findWrappingInside(innerRange, nodeType);
+      if (!inner)
+          return null;
+      return around.map(withAttrs)
+          .concat({ type: nodeType, attrs }).concat(inner.map(withAttrs));
+  }
+  function withAttrs(type) { return { type, attrs: null }; }
+  function findWrappingOutside(range, type) {
+      let { parent, startIndex, endIndex } = range;
+      let around = parent.contentMatchAt(startIndex).findWrapping(type);
+      if (!around)
+          return null;
+      let outer = around.length ? around[0] : type;
+      return parent.canReplaceWith(startIndex, endIndex, outer) ? around : null;
+  }
+  function findWrappingInside(range, type) {
+      let { parent, startIndex, endIndex } = range;
+      let inner = parent.child(startIndex);
+      let inside = type.contentMatch.findWrapping(inner.type);
+      if (!inside)
+          return null;
+      let lastType = inside.length ? inside[inside.length - 1] : type;
+      let innerMatch = lastType.contentMatch;
+      for (let i = startIndex; innerMatch && i < endIndex; i++)
+          innerMatch = innerMatch.matchType(parent.child(i).type);
+      if (!innerMatch || !innerMatch.validEnd)
+          return null;
+      return inside;
+  }
   function wrap$1(tr, range, wrappers) {
       let content = Fragment.empty;
       for (let i = wrappers.length - 1; i >= 0; i--) {
@@ -4819,7 +4858,7 @@
       let start = range.start, end = range.end;
       tr.step(new ReplaceAroundStep(start, end, start, end, new Slice(content, 0, 0), wrappers.length, true));
   }
-  function setBlockType(tr, from, to, type, attrs) {
+  function setBlockType$1(tr, from, to, type, attrs) {
       if (!type.isTextblock)
           throw new RangeError("Type given to setBlockType should be a textblock");
       let mapFrom = tr.steps.length;
@@ -5816,7 +5855,7 @@
       the given node type with the given attributes.
       */
       setBlockType(from, to = from, type, attrs = null) {
-          setBlockType(this, from, to, type, attrs);
+          setBlockType$1(this, from, to, type, attrs);
           return this;
       }
       /**
@@ -6909,67 +6948,6 @@
       Get the plugin's state from an editor state.
       */
       getState(state) { return state[this.key]; }
-  }
-
-  const olDOM = ["ol", 0], ulDOM = ["ul", 0], liDOM = ["li", 0];
-  /**
-  An ordered list [node spec](https://prosemirror.net/docs/ref/#model.NodeSpec). Has a single
-  attribute, `order`, which determines the number at which the list
-  starts counting, and defaults to 1. Represented as an `<ol>`
-  element.
-  */
-  const orderedList = {
-      attrs: { order: { default: 1, validate: "number" } },
-      parseDOM: [{ tag: "ol", getAttrs(dom) {
-                  return { order: dom.hasAttribute("start") ? +dom.getAttribute("start") : 1 };
-              } }],
-      toDOM(node) {
-          return node.attrs.order == 1 ? olDOM : ["ol", { start: node.attrs.order }, 0];
-      }
-  };
-  /**
-  A bullet list node spec, represented in the DOM as `<ul>`.
-  */
-  const bulletList = {
-      parseDOM: [{ tag: "ul" }],
-      toDOM() { return ulDOM; }
-  };
-  /**
-  A list item (`<li>`) spec.
-  */
-  const listItem = {
-      parseDOM: [{ tag: "li" }],
-      toDOM() { return liDOM; },
-      defining: true
-  };
-  function add$1(obj, props) {
-      let copy = {};
-      for (let prop in obj)
-          copy[prop] = obj[prop];
-      for (let prop in props)
-          copy[prop] = props[prop];
-      return copy;
-  }
-  /**
-  Convenience function for adding list-related node types to a map
-  specifying the nodes for a schema. Adds
-  [`orderedList`](https://prosemirror.net/docs/ref/#schema-list.orderedList) as `"ordered_list"`,
-  [`bulletList`](https://prosemirror.net/docs/ref/#schema-list.bulletList) as `"bullet_list"`, and
-  [`listItem`](https://prosemirror.net/docs/ref/#schema-list.listItem) as `"list_item"`.
-
-  `itemContent` determines the content expression for the list items.
-  If you want the commands defined in this module to apply to your
-  list structure, it should have a shape like `"paragraph block*"` or
-  `"paragraph (ordered_list | bullet_list)*"`. `listGroup` can be
-  given to assign a group name to the list node types, for example
-  `"block"`.
-  */
-  function addListNodes(nodes, itemContent, listGroup) {
-      return nodes.append({
-          ordered_list: add$1(orderedList, { content: "list_item+", group: listGroup }),
-          bullet_list: add$1(bulletList, { content: "list_item+", group: listGroup }),
-          list_item: add$1(listItem, { content: itemContent })
-      });
   }
 
   const domIndex = function (node) {
@@ -14160,6 +14138,120 @@
   Moves the cursor to the end of current text block.
   */
   const selectTextblockEnd = selectTextblockSide(1);
+  // Parameterized commands
+  /**
+  Wrap the selection in a node of the given type with the given
+  attributes.
+  */
+  function wrapIn(nodeType, attrs = null) {
+      return function (state, dispatch) {
+          let { $from, $to } = state.selection;
+          let range = $from.blockRange($to), wrapping = range && findWrapping(range, nodeType, attrs);
+          if (!wrapping)
+              return false;
+          if (dispatch)
+              dispatch(state.tr.wrap(range, wrapping).scrollIntoView());
+          return true;
+      };
+  }
+  /**
+  Returns a command that tries to set the selected textblocks to the
+  given node type with the given attributes.
+  */
+  function setBlockType(nodeType, attrs = null) {
+      return function (state, dispatch) {
+          let applicable = false;
+          for (let i = 0; i < state.selection.ranges.length && !applicable; i++) {
+              let { $from: { pos: from }, $to: { pos: to } } = state.selection.ranges[i];
+              state.doc.nodesBetween(from, to, (node, pos) => {
+                  if (applicable)
+                      return false;
+                  if (!node.isTextblock || node.hasMarkup(nodeType, attrs))
+                      return;
+                  if (node.type == nodeType) {
+                      applicable = true;
+                  }
+                  else {
+                      let $pos = state.doc.resolve(pos), index = $pos.index();
+                      applicable = $pos.parent.canReplaceWith(index, index + 1, nodeType);
+                  }
+              });
+          }
+          if (!applicable)
+              return false;
+          if (dispatch) {
+              let tr = state.tr;
+              for (let i = 0; i < state.selection.ranges.length; i++) {
+                  let { $from: { pos: from }, $to: { pos: to } } = state.selection.ranges[i];
+                  tr.setBlockType(from, to, nodeType, attrs);
+              }
+              dispatch(tr.scrollIntoView());
+          }
+          return true;
+      };
+  }
+  function markApplies(doc, ranges, type, enterAtoms) {
+      for (let i = 0; i < ranges.length; i++) {
+          let { $from, $to } = ranges[i];
+          let can = $from.depth == 0 ? doc.inlineContent && doc.type.allowsMarkType(type) : false;
+          doc.nodesBetween($from.pos, $to.pos, (node, pos) => {
+              if (can || false)
+                  return false;
+              can = node.inlineContent && node.type.allowsMarkType(type);
+          });
+          if (can)
+              return true;
+      }
+      return false;
+  }
+  /**
+  Create a command function that toggles the given mark with the
+  given attributes. Will return `false` when the current selection
+  doesn't support that mark. This will remove the mark if any marks
+  of that type exist in the selection, or add it otherwise. If the
+  selection is empty, this applies to the [stored
+  marks](https://prosemirror.net/docs/ref/#state.EditorState.storedMarks) instead of a range of the
+  document.
+  */
+  function toggleMark(markType, attrs = null, options) {
+      return function (state, dispatch) {
+          let { empty, $cursor, ranges } = state.selection;
+          if ((empty && !$cursor) || !markApplies(state.doc, ranges, markType))
+              return false;
+          if (dispatch) {
+              if ($cursor) {
+                  if (markType.isInSet(state.storedMarks || $cursor.marks()))
+                      dispatch(state.tr.removeStoredMark(markType));
+                  else
+                      dispatch(state.tr.addStoredMark(markType.create(attrs)));
+              }
+              else {
+                  let add, tr = state.tr;
+                  {
+                      add = !ranges.some(r => state.doc.rangeHasMark(r.$from.pos, r.$to.pos, markType));
+                  }
+                  for (let i = 0; i < ranges.length; i++) {
+                      let { $from, $to } = ranges[i];
+                      if (!add) {
+                          tr.removeMark($from.pos, $to.pos, markType);
+                      }
+                      else {
+                          let from = $from.pos, to = $to.pos, start = $from.nodeAfter, end = $to.nodeBefore;
+                          let spaceStart = start && start.isText ? /^\s*/.exec(start.text)[0].length : 0;
+                          let spaceEnd = end && end.isText ? /\s*$/.exec(end.text)[0].length : 0;
+                          if (from + spaceStart < to) {
+                              from += spaceStart;
+                              to -= spaceEnd;
+                          }
+                          tr.addMark(from, to, markType.create(attrs));
+                      }
+                  }
+                  dispatch(tr.scrollIntoView());
+              }
+          }
+          return true;
+      };
+  }
   /**
   Combine a number of command functions into a single function (which
   calls them one by one until one returns true).
@@ -22931,7 +23023,7 @@
   A parser parsing unextended [CommonMark](http://commonmark.org/),
   without inline HTML, and producing a document in the basic schema.
   */
-  new MarkdownParser(schema$3, MarkdownIt("commonmark", { html: false }), {
+  const defaultMarkdownParser = new MarkdownParser(schema$3, MarkdownIt("commonmark", { html: false }), {
       blockquote: { block: "blockquote" },
       paragraph: { block: "paragraph" },
       list_item: { block: "list_item" },
@@ -122061,8 +122153,6 @@
     }
   }
 
-  const mySchema = addListNodes(schema$4, 'paragraph block*', 'block');
-
   let view = null;
   let currentMarkmap = null;
 
@@ -122096,8 +122186,8 @@
   };
 
   const state = EditorState.create({
-    schema: mySchema,
-    doc: mySchema.nodeFromJSON(initialDoc),
+    schema: schema$4,
+    doc: schema$4.nodeFromJSON(initialDoc),
     plugins: [history(), keymap(baseKeymap)]
   });
 
@@ -122112,29 +122202,49 @@
 
   updateMarkmap();
 
-  window.format = (command, value) => {
-    const { toggleMark, setBlockType, wrapIn } = require('prosemirror-commands');
+  window.format = (command, value = null) => {
     const { state, dispatch } = view;
     const { schema } = state;
     switch(command) {
-      case 'bold': toggleMark(schema.marks.strong)(state, dispatch); break;
-      case 'italic': toggleMark(schema.marks.em)(state, dispatch); break;
-      case 'strike': toggleMark(schema.marks.strike)(state, dispatch); break;
-      case 'code': toggleMark(schema.marks.code)(state, dispatch); break;
-      case 'heading': setBlockType(schema.nodes.heading, { level: value })(state, dispatch); break;
-      case 'paragraph': setBlockType(schema.nodes.paragraph)(state, dispatch); break;
-      case 'bullet_list': wrapIn(schema.nodes.bullet_list)(state, dispatch); break;
-      case 'ordered_list': wrapIn(schema.nodes.ordered_list)(state, dispatch); break;
-      case 'blockquote': wrapIn(schema.nodes.blockquote)(state, dispatch); break;
-      case 'code_block': setBlockType(schema.nodes.code_block)(state, dispatch); break;
+      case 'bold':
+        toggleMark(schema.marks.strong)(state, dispatch);
+        break;
+      case 'italic':
+        toggleMark(schema.marks.em)(state, dispatch);
+        break;
+      case 'strike':
+        toggleMark(schema.marks.strike)(state, dispatch);
+        break;
+      case 'code':
+        toggleMark(schema.marks.code)(state, dispatch);
+        break;
+      case 'heading':
+        setBlockType(schema.nodes.heading, { level: value })(state, dispatch);
+        break;
+      case 'paragraph':
+        setBlockType(schema.nodes.paragraph)(state, dispatch);
+        break;
+      case 'bullet_list':
+        wrapIn(schema.nodes.bullet_list)(state, dispatch);
+        break;
+      case 'ordered_list':
+        wrapIn(schema.nodes.ordered_list)(state, dispatch);
+        break;
+      case 'blockquote':
+        wrapIn(schema.nodes.blockquote)(state, dispatch);
+        break;
+      case 'code_block':
+        setBlockType(schema.nodes.code_block)(state, dispatch);
+        break;
       case 'horizontal_rule':
         const tr = state.tr.replaceSelectionWith(schema.nodes.horizontal_rule.create());
         dispatch(tr);
         break;
-      case 'link':
+      case 'link': {
         const url = prompt('Введите URL:');
         if (url) toggleMark(schema.marks.link, { href: url })(state, dispatch);
         break;
+      }
     }
     view.focus();
     updateMarkmap();
@@ -122149,6 +122259,8 @@
     a.download = 'document.md';
     a.click();
     URL.revokeObjectURL(url);
+    const statusSpan = document.getElementById('status');
+    if (statusSpan) statusSpan.innerText = '✅ Сохранено';
   };
 
   window.loadFromFile = () => {
@@ -122161,15 +122273,20 @@
       const reader = new FileReader();
       reader.onload = (ev) => {
         const md = ev.target.result;
-        const { defaultMarkdownParser } = require('prosemirror-markdown');
         const doc = defaultMarkdownParser.parse(md);
         const tr = view.state.tr.replaceWith(0, view.state.doc.content.size, doc);
         view.dispatch(tr);
         updateMarkmap();
+        const statusSpan = document.getElementById('status');
+        if (statusSpan) statusSpan.innerText = '✅ Загружено';
       };
       reader.readAsText(file);
     };
     input.click();
+  };
+
+  window.init = () => {
+    updateMarkmap();
   };
 
 })();
