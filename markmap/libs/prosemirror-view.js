@@ -1,1 +1,1 @@
-404: Not Found
+Failed to fetch version info for @prosemirror/view.
