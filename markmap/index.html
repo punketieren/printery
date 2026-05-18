@@ -69,9 +69,10 @@
 </div>
 <div class="global-status" id="global-status">Готов</div>
 
-<script src="bundle.js"></script>
+<!--script src="bundle.js"></script-->
 <script src="app.js"></script>
 <!-- Добавьте ЭТИ строки перед </body> -->
+<!-- Вместо bundle.js подключаем наши библиотеки -->
 <script src="libs/orderedmap.js"></script>
 <script src="libs/prosemirror-model.js"></script>
 <script src="libs/prosemirror-state.js"></script>
@@ -83,14 +84,20 @@
 <script src="libs/prosemirror-history.js"></script>
 
 <script>
-// Инициализация редактора (добавить после всех скриптов)
+// Полная инициализация ProseMirror редактора
 (function() {
+    console.log('🚀 Инициализация ProseMirror...');
+    
     function waitForProseMirror() {
         return new Promise((resolve) => {
             const check = () => {
-                if (window.ProseMirror && window.ProseMirror.model) {
-                    console.log('ProseMirror загружен');
-                    resolve();
+                // Проверяем глобальные переменные, которые создают UMD-сборки
+                if (window.ProseMirror && window.ProseMirror.model && window.ProseMirror.view) {
+                    console.log('✅ ProseMirror загружен');
+                    resolve(window.ProseMirror);
+                } else if (window.pm && window.pm.model) {
+                    // Альтернативное имя
+                    resolve(window.pm);
                 } else {
                     setTimeout(check, 100);
                 }
@@ -99,9 +106,70 @@
         });
     }
     
-    waitForProseMirror().then(() => {
-        console.log('Можно создавать редактор');
-        // Здесь будет код создания редактора
+    waitForProseMirror().then((pm) => {
+        console.log('Создаём редактор...');
+        
+        const { Schema } = pm.model;
+        const { EditorState } = pm.state;
+        const { EditorView } = pm.view;
+        
+        // Простая схема для начала
+        const mySchema = new Schema({
+            nodes: {
+                doc: { content: "block+" },
+                paragraph: { 
+                    group: "block", 
+                    content: "inline*", 
+                    toDOM: () => ["p", 0] 
+                },
+                text: { group: "inline" }
+            },
+            marks: {
+                strong: { toDOM: () => ["strong", 0] },
+                em: { toDOM: () => ["em", 0] }
+            }
+        });
+        
+        const editorElement = document.getElementById('editor');
+        if (!editorElement) {
+            console.error('Контейнер #editor не найден!');
+            return;
+        }
+        
+        editorElement.innerHTML = '';
+        
+        const view = new EditorView(editorElement, {
+            state: EditorState.create({
+                schema: mySchema,
+                doc: mySchema.node("doc", null, [
+                    mySchema.node("paragraph", null, mySchema.text("Редактор работает!"))
+                ])
+            })
+        });
+        
+        window.editorView = view;
+        console.log('✅ Редактор создан!');
+        
+        // Простая привязка кнопок
+        const boldBtn = document.getElementById('bold');
+        if (boldBtn) {
+            boldBtn.onclick = () => {
+                const { state, dispatch } = view;
+                const { toggleMark } = pm.commands;
+                toggleMark(mySchema.marks.strong)(state, dispatch);
+                view.focus();
+            };
+        }
+        
+        const italicBtn = document.getElementById('italic');
+        if (italicBtn) {
+            italicBtn.onclick = () => {
+                const { state, dispatch } = view;
+                const { toggleMark } = pm.commands;
+                toggleMark(mySchema.marks.em)(state, dispatch);
+                view.focus();
+            };
+        }
     });
 })();
 </script>
