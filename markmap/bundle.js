@@ -137,7 +137,7 @@
     return new OrderedMap(content)
   };
 
-  function findDiffStart(a, b, pos) {
+  function findDiffStart$1(a, b, pos) {
       for (let i = 0;; i++) {
           if (i == a.childCount || i == b.childCount)
               return a.childCount == b.childCount ? null : pos;
@@ -154,14 +154,14 @@
               return pos;
           }
           if (childA.content.size || childB.content.size) {
-              let inner = findDiffStart(childA.content, childB.content, pos + 1);
+              let inner = findDiffStart$1(childA.content, childB.content, pos + 1);
               if (inner != null)
                   return inner;
           }
           pos += childA.nodeSize;
       }
   }
-  function findDiffEnd(a, b, posA, posB) {
+  function findDiffEnd$1(a, b, posA, posB) {
       for (let iA = a.childCount, iB = b.childCount;;) {
           if (iA == 0 || iB == 0)
               return iA == iB ? null : { a: posA, b: posB };
@@ -183,7 +183,7 @@
               return { a: posA, b: posB };
           }
           if (childA.content.size || childB.content.size) {
-              let inner = findDiffEnd(childA.content, childB.content, posA - 1, posB - 1);
+              let inner = findDiffEnd$1(childA.content, childB.content, posA - 1, posB - 1);
               if (inner)
                   return inner;
           }
@@ -199,7 +199,7 @@
   should not mutate them or their content. Rather, you create new
   instances whenever needed. The API tries to make this easy.
   */
-  class Fragment {
+  let Fragment$1 = class Fragment {
       /**
       @internal
       */
@@ -398,7 +398,7 @@
       fragment differ, or `null` if they are the same.
       */
       findDiffStart(other, pos = 0) {
-          return findDiffStart(this, other, pos);
+          return findDiffStart$1(this, other, pos);
       }
       /**
       Find the first position, searching from the end, at which this
@@ -407,7 +407,7 @@
       nodes, an object with two separate positions is returned.
       */
       findDiffEnd(other, pos = this.size, otherPos = other.size) {
-          return findDiffEnd(this, other, pos, otherPos);
+          return findDiffEnd$1(this, other, pos, otherPos);
       }
       /**
       Find the index and inner offset corresponding to a given relative
@@ -416,17 +416,17 @@
       */
       findIndex(pos, round = -1) {
           if (pos == 0)
-              return retIndex(0, pos);
+              return retIndex$1(0, pos);
           if (pos == this.size)
-              return retIndex(this.content.length, pos);
+              return retIndex$1(this.content.length, pos);
           if (pos > this.size || pos < 0)
               throw new RangeError(`Position ${pos} outside of fragment (${this})`);
           for (let i = 0, curPos = 0;; i++) {
               let cur = this.child(i), end = curPos + cur.nodeSize;
               if (end >= pos) {
                   if (end == pos || round > 0)
-                      return retIndex(i + 1, end);
-                  return retIndex(i, curPos);
+                      return retIndex$1(i + 1, end);
+                  return retIndex$1(i, curPos);
               }
               curPos = end;
           }
@@ -496,21 +496,21 @@
           throw new RangeError("Can not convert " + nodes + " to a Fragment" +
               (nodes.nodesBetween ? " (looks like multiple versions of prosemirror-model were loaded)" : ""));
       }
-  }
+  };
   /**
   An empty fragment. Intended to be reused whenever a node doesn't
   contain anything (rather than allocating a new empty fragment for
   each leaf node).
   */
-  Fragment.empty = new Fragment([], 0);
-  const found = { index: 0, offset: 0 };
-  function retIndex(index, offset) {
-      found.index = index;
-      found.offset = offset;
-      return found;
+  Fragment$1.empty = new Fragment$1([], 0);
+  const found$1 = { index: 0, offset: 0 };
+  function retIndex$1(index, offset) {
+      found$1.index = index;
+      found$1.offset = offset;
+      return found$1;
   }
 
-  function compareDeep(a, b) {
+  function compareDeep$1(a, b) {
       if (a === b)
           return true;
       if (!(a && typeof a == "object") ||
@@ -523,12 +523,12 @@
           if (a.length != b.length)
               return false;
           for (let i = 0; i < a.length; i++)
-              if (!compareDeep(a[i], b[i]))
+              if (!compareDeep$1(a[i], b[i]))
                   return false;
       }
       else {
           for (let p in a)
-              if (!(p in b) || !compareDeep(a[p], b[p]))
+              if (!(p in b) || !compareDeep$1(a[p], b[p]))
                   return false;
           for (let p in b)
               if (!(p in a))
@@ -545,7 +545,7 @@
   through a `Schema`, which controls which types exist and which
   attributes they have.
   */
-  class Mark {
+  let Mark$1 = class Mark {
       /**
       @internal
       */
@@ -623,7 +623,7 @@
       */
       eq(other) {
           return this == other ||
-              (this.type == other.type && compareDeep(this.attrs, other.attrs));
+              (this.type == other.type && compareDeep$1(this.attrs, other.attrs));
       }
       /**
       Convert this mark to a JSON-serializeable representation.
@@ -673,18 +673,18 @@
           copy.sort((a, b) => a.type.rank - b.type.rank);
           return copy;
       }
-  }
+  };
   /**
   The empty set of marks.
   */
-  Mark.none = [];
+  Mark$1.none = [];
 
   /**
   Error type raised by [`Node.replace`](https://prosemirror.net/docs/ref/#model.Node.replace) when
   given an invalid replacement.
   */
-  class ReplaceError extends Error {
-  }
+  let ReplaceError$1 = class ReplaceError extends Error {
+  };
   /*
   ReplaceError = function(this: any, message: string) {
     let err = Error.call(this, message)
@@ -701,7 +701,7 @@
   stores not only a fragment, but also the depth up to which nodes on
   both side are ‘open’ (cut through).
   */
-  class Slice {
+  let Slice$1 = class Slice {
       /**
       Create a slice. When specifying a non-zero open depth, you must
       make sure that there are nodes of at least that depth at the
@@ -741,14 +741,14 @@
       @internal
       */
       insertAt(pos, fragment) {
-          let content = insertInto(this.content, pos + this.openStart, fragment);
+          let content = insertInto$1(this.content, pos + this.openStart, fragment);
           return content && new Slice(content, this.openStart, this.openEnd);
       }
       /**
       @internal
       */
       removeBetween(from, to) {
-          return new Slice(removeRange(this.content, from + this.openStart, to + this.openStart), this.openStart, this.openEnd);
+          return new Slice(removeRange$1(this.content, from + this.openStart, to + this.openStart), this.openStart, this.openEnd);
       }
       /**
       Tests whether this slice is equal to another slice.
@@ -784,7 +784,7 @@
           let openStart = json.openStart || 0, openEnd = json.openEnd || 0;
           if (typeof openStart != "number" || typeof openEnd != "number")
               throw new RangeError("Invalid input for Slice.fromJSON");
-          return new Slice(Fragment.fromJSON(schema, json.content), openStart, openEnd);
+          return new Slice(Fragment$1.fromJSON(schema, json.content), openStart, openEnd);
       }
       /**
       Create a slice from a fragment by taking the maximum possible
@@ -798,12 +798,12 @@
               openEnd++;
           return new Slice(fragment, openStart, openEnd);
       }
-  }
+  };
   /**
   The empty slice.
   */
-  Slice.empty = new Slice(Fragment.empty, 0, 0);
-  function removeRange(content, from, to) {
+  Slice$1.empty = new Slice$1(Fragment$1.empty, 0, 0);
+  function removeRange$1(content, from, to) {
       let { index, offset } = content.findIndex(from), child = content.maybeChild(index);
       let { index: indexTo, offset: offsetTo } = content.findIndex(to);
       if (offset == from || child.isText) {
@@ -813,21 +813,21 @@
       }
       if (index != indexTo)
           throw new RangeError("Removing non-flat range");
-      return content.replaceChild(index, child.copy(removeRange(child.content, from - offset - 1, to - offset - 1)));
+      return content.replaceChild(index, child.copy(removeRange$1(child.content, from - offset - 1, to - offset - 1)));
   }
-  function insertInto(content, dist, insert, parent) {
+  function insertInto$1(content, dist, insert, parent) {
       let { index, offset } = content.findIndex(dist), child = content.maybeChild(index);
       if (offset == dist || child.isText) {
           return content.cut(0, dist).append(insert).append(content.cut(dist));
       }
-      let inner = insertInto(child.content, dist - offset - 1, insert);
+      let inner = insertInto$1(child.content, dist - offset - 1, insert);
       return inner && content.replaceChild(index, child.copy(inner));
   }
   function replace($from, $to, slice) {
       if (slice.openStart > $from.depth)
-          throw new ReplaceError("Inserted content deeper than insertion position");
+          throw new ReplaceError$1("Inserted content deeper than insertion position");
       if ($from.depth - slice.openStart != $to.depth - slice.openEnd)
-          throw new ReplaceError("Inconsistent open depths");
+          throw new ReplaceError$1("Inconsistent open depths");
       return replaceOuter($from, $to, slice, 0);
   }
   function replaceOuter($from, $to, slice, depth) {
@@ -850,7 +850,7 @@
   }
   function checkJoin(main, sub) {
       if (!sub.type.compatibleContent(main.type))
-          throw new ReplaceError("Cannot join " + sub.type.name + " onto " + main.type.name);
+          throw new ReplaceError$1("Cannot join " + sub.type.name + " onto " + main.type.name);
   }
   function joinable$1($before, $after, depth) {
       let node = $before.node(depth);
@@ -903,7 +903,7 @@
               addNode(close(openEnd, replaceTwoWay($end, $to, depth + 1)), content);
       }
       addRange($to, null, depth, content);
-      return new Fragment(content);
+      return new Fragment$1(content);
   }
   function replaceTwoWay($from, $to, depth) {
       let content = [];
@@ -913,13 +913,13 @@
           addNode(close(type, replaceTwoWay($from, $to, depth + 1)), content);
       }
       addRange($to, null, depth, content);
-      return new Fragment(content);
+      return new Fragment$1(content);
   }
   function prepareSliceForReplace(slice, $along) {
       let extra = $along.depth - slice.openStart, parent = $along.node(extra);
       let node = parent.copy(slice.content);
       for (let i = extra - 1; i >= 0; i--)
-          node = $along.node(i).copy(Fragment.from(node));
+          node = $along.node(i).copy(Fragment$1.from(node));
       return { start: node.resolveNoCache(slice.openStart + extra),
           end: node.resolveNoCache(node.content.size - slice.openEnd - extra) };
   }
@@ -1083,7 +1083,7 @@
           let parent = this.parent, index = this.index();
           // In an empty parent, return the empty array
           if (parent.content.size == 0)
-              return Mark.none;
+              return Mark$1.none;
           // When inside a text node, just return the text node's marks
           if (this.textOffset)
               return parent.child(index).marks;
@@ -1301,11 +1301,11 @@
       The marks (things like whether it is emphasized or part of a
       link) applied to this node.
       */
-      marks = Mark.none) {
+      marks = Mark$1.none) {
           this.type = type;
           this.attrs = attrs;
           this.marks = marks;
-          this.content = content || Fragment.empty;
+          this.content = content || Fragment$1.empty;
       }
       /**
       The size of this node, as defined by the integer-based [indexing
@@ -1401,8 +1401,8 @@
       */
       hasMarkup(type, attrs, marks) {
           return this.type == type &&
-              compareDeep(this.attrs, attrs || type.defaultAttrs || emptyAttrs) &&
-              Mark.sameSet(this.marks, marks || Mark.none);
+              compareDeep$1(this.attrs, attrs || type.defaultAttrs || emptyAttrs) &&
+              Mark$1.sameSet(this.marks, marks || Mark$1.none);
       }
       /**
       Create a new node with the same markup as this node, containing
@@ -1436,12 +1436,12 @@
       */
       slice(from, to = this.content.size, includeParents = false) {
           if (from == to)
-              return Slice.empty;
+              return Slice$1.empty;
           let $from = this.resolve(from), $to = this.resolve(to);
           let depth = includeParents ? 0 : $from.sharedDepth(to);
           let start = $from.start(depth), node = $from.node(depth);
           let content = node.content.cut($from.pos - start, $to.pos - start);
-          return new Slice(content, $from.depth - depth, $to.depth - depth);
+          return new Slice$1(content, $from.depth - depth, $to.depth - depth);
       }
       /**
       Replace the part of the document between the given positions with
@@ -1576,7 +1576,7 @@
       can optionally pass `start` and `end` indices into the
       replacement fragment.
       */
-      canReplace(from, to, replacement = Fragment.empty, start = 0, end = replacement.childCount) {
+      canReplace(from, to, replacement = Fragment$1.empty, start = 0, end = replacement.childCount) {
           let one = this.contentMatchAt(from).matchFragment(replacement, start, end);
           let two = one && one.matchFragment(this.content, to);
           if (!two || !two.validEnd)
@@ -1615,10 +1615,10 @@
       */
       check() {
           this.type.checkContent(this.content);
-          let copy = Mark.none;
+          let copy = Mark$1.none;
           for (let i = 0; i < this.marks.length; i++)
               copy = this.marks[i].addToSet(copy);
-          if (!Mark.sameSet(copy, this.marks))
+          if (!Mark$1.sameSet(copy, this.marks))
               throw new RangeError(`Invalid collection of marks for node ${this.type.name}: ${this.marks.map(m => m.type.name)}`);
           this.content.forEach(node => node.check());
       }
@@ -1654,7 +1654,7 @@
                   throw new RangeError("Invalid text node in JSON");
               return schema.text(json.text, marks);
           }
-          let content = Fragment.fromJSON(schema, json.content);
+          let content = Fragment$1.fromJSON(schema, json.content);
           return schema.nodeType(json.type).create(json.attrs, content, marks);
       }
   }
@@ -1805,7 +1805,7 @@
           function search(match, types) {
               let finished = match.matchFragment(after, startIndex);
               if (finished && (!toEnd || finished.validEnd))
-                  return Fragment.from(types.map(tp => tp.createAndFill()));
+                  return Fragment$1.from(types.map(tp => tp.createAndFill()));
               for (let i = 0; i < match.next.length; i++) {
                   let { type, next } = match.next[i];
                   if (!(type.isText || type.hasRequiredAttrs()) && seen.indexOf(next) == -1) {
@@ -2147,7 +2147,7 @@
   // have any attributes), build up a single reusable default attribute
   // object, and use it for all nodes that don't specify specific
   // attributes.
-  function defaultAttrs(attrs) {
+  function defaultAttrs$1(attrs) {
       let defaults = Object.create(null);
       for (let attrName in attrs) {
           let attr = attrs[attrName];
@@ -2157,7 +2157,7 @@
       }
       return defaults;
   }
-  function computeAttrs(attrs, value) {
+  function computeAttrs$1(attrs, value) {
       let built = Object.create(null);
       for (let name in attrs) {
           let given = value && value[name];
@@ -2172,11 +2172,11 @@
       }
       return built;
   }
-  function initAttrs(attrs) {
+  function initAttrs$1(attrs) {
       let result = Object.create(null);
       if (attrs)
           for (let name in attrs)
-              result[name] = new Attribute(attrs[name]);
+              result[name] = new Attribute$1(attrs[name]);
       return result;
   }
   /**
@@ -2211,8 +2211,8 @@
           */
           this.markSet = null;
           this.groups = spec.group ? spec.group.split(" ") : [];
-          this.attrs = initAttrs(spec.attrs);
-          this.defaultAttrs = defaultAttrs(this.attrs);
+          this.attrs = initAttrs$1(spec.attrs);
+          this.defaultAttrs = defaultAttrs$1(this.attrs);
           this.contentMatch = null;
           this.inlineContent = null;
           this.isBlock = !(spec.inline || name == "text");
@@ -2265,7 +2265,7 @@
           if (!attrs && this.defaultAttrs)
               return this.defaultAttrs;
           else
-              return computeAttrs(this.attrs, attrs);
+              return computeAttrs$1(this.attrs, attrs);
       }
       /**
       Create a `Node` of this type. The given attributes are
@@ -2278,7 +2278,7 @@
       create(attrs = null, content, marks) {
           if (this.isText)
               throw new Error("NodeType.create can't construct text nodes");
-          return new Node(this, this.computeAttrs(attrs), Fragment.from(content), Mark.setFrom(marks));
+          return new Node(this, this.computeAttrs(attrs), Fragment$1.from(content), Mark$1.setFrom(marks));
       }
       /**
       Like [`create`](https://prosemirror.net/docs/ref/#model.NodeType.create), but check the given content
@@ -2286,9 +2286,9 @@
       if it doesn't match.
       */
       createChecked(attrs = null, content, marks) {
-          content = Fragment.from(content);
+          content = Fragment$1.from(content);
           this.checkContent(content);
-          return new Node(this, this.computeAttrs(attrs), content, Mark.setFrom(marks));
+          return new Node(this, this.computeAttrs(attrs), content, Mark$1.setFrom(marks));
       }
       /**
       Like [`create`](https://prosemirror.net/docs/ref/#model.NodeType.create), but see if it is
@@ -2300,7 +2300,7 @@
       */
       createAndFill(attrs = null, content, marks) {
           attrs = this.computeAttrs(attrs);
-          content = Fragment.from(content);
+          content = Fragment$1.from(content);
           if (content.size) {
               let before = this.contentMatch.fillBefore(content);
               if (!before)
@@ -2308,10 +2308,10 @@
               content = before.append(content);
           }
           let matched = this.contentMatch.matchFragment(content);
-          let after = matched && matched.fillBefore(Fragment.empty, true);
+          let after = matched && matched.fillBefore(Fragment$1.empty, true);
           if (!after)
               return null;
-          return new Node(this, attrs, content.append(after), Mark.setFrom(marks));
+          return new Node(this, attrs, content.append(after), Mark$1.setFrom(marks));
       }
       /**
       Returns true if the given fragment is valid content for this node
@@ -2368,7 +2368,7 @@
                   copy.push(marks[i]);
               }
           }
-          return !copy ? marks : copy.length ? copy : Mark.none;
+          return !copy ? marks : copy.length ? copy : Mark$1.none;
       }
       /**
       @internal
@@ -2387,7 +2387,7 @@
       }
   };
   // Attribute descriptors
-  class Attribute {
+  let Attribute$1 = class Attribute {
       constructor(options) {
           this.hasDefault = Object.prototype.hasOwnProperty.call(options, "default");
           this.default = options.default;
@@ -2395,7 +2395,7 @@
       get isRequired() {
           return !this.hasDefault;
       }
-  }
+  };
   // Marks
   /**
   Like nodes, marks (which are associated with nodes to signify
@@ -2403,7 +2403,7 @@
   [tagged](https://prosemirror.net/docs/ref/#model.Mark.type) with type objects, which are
   instantiated once per `Schema`.
   */
-  class MarkType {
+  let MarkType$1 = class MarkType {
       /**
       @internal
       */
@@ -2428,10 +2428,10 @@
           this.rank = rank;
           this.schema = schema;
           this.spec = spec;
-          this.attrs = initAttrs(spec.attrs);
+          this.attrs = initAttrs$1(spec.attrs);
           this.excluded = null;
-          let defaults = defaultAttrs(this.attrs);
-          this.instance = defaults ? new Mark(this, defaults) : null;
+          let defaults = defaultAttrs$1(this.attrs);
+          this.instance = defaults ? new Mark$1(this, defaults) : null;
       }
       /**
       Create a mark of this type. `attrs` may be `null` or an object
@@ -2441,7 +2441,7 @@
       create(attrs = null) {
           if (!attrs && this.instance)
               return this.instance;
-          return new Mark(this, computeAttrs(this.attrs, attrs));
+          return new Mark$1(this, computeAttrs$1(this.attrs, attrs));
       }
       /**
       @internal
@@ -2478,7 +2478,7 @@
       excludes(other) {
           return this.excluded.indexOf(other) > -1;
       }
-  }
+  };
   /**
   A document schema. Holds [node](https://prosemirror.net/docs/ref/#model.NodeType) and [mark
   type](https://prosemirror.net/docs/ref/#model.MarkType) objects for the nodes and marks that may
@@ -2505,7 +2505,7 @@
           instanceSpec.nodes = OrderedMap.from(spec.nodes),
               instanceSpec.marks = OrderedMap.from(spec.marks || {}),
               this.nodes = NodeType$1.compile(this.spec.nodes, this);
-          this.marks = MarkType.compile(this.spec.marks, this);
+          this.marks = MarkType$1.compile(this.spec.marks, this);
           let contentExprCache = Object.create(null);
           for (let prop in this.nodes) {
               if (prop in this.marks)
@@ -2548,7 +2548,7 @@
       */
       text(text, marks) {
           let type = this.nodes.text;
-          return new TextNode(type, type.defaultAttrs, text, Mark.setFrom(marks));
+          return new TextNode(type, type.defaultAttrs, text, Mark$1.setFrom(marks));
       }
       /**
       Create a mark with the given type and attributes.
@@ -2570,7 +2570,7 @@
       bound.
       */
       markFromJSON(json) {
-          return Mark.fromJSON(this, json);
+          return Mark$1.fromJSON(this, json);
       }
       /**
       @internal
@@ -2665,7 +2665,7 @@
       parseSlice(dom, options = {}) {
           let context = new ParseContext(this, options, true);
           context.addAll(dom, options.from, options.to);
-          return Slice.maxOpen(context.finish());
+          return Slice$1.maxOpen(context.finish());
       }
       /**
       @internal
@@ -2786,7 +2786,7 @@
           this.options = options;
           this.content = [];
           // Marks applied to the node's children
-          this.activeMarks = Mark.none;
+          this.activeMarks = Mark$1.none;
           // Nested Marks with same type
           this.stashMarks = [];
           this.match = match || (options & OPT_OPEN_LEFT ? null : type.contentMatch);
@@ -2795,7 +2795,7 @@
           if (!this.match) {
               if (!this.type)
                   return [];
-              let fill = this.type.contentMatch.fillBefore(Fragment.from(node));
+              let fill = this.type.contentMatch.fillBefore(Fragment$1.from(node));
               if (fill) {
                   this.match = this.type.contentMatch.matchFragment(fill);
               }
@@ -2823,9 +2823,9 @@
                       this.content[this.content.length - 1] = text.withText(text.text.slice(0, text.text.length - m[0].length));
               }
           }
-          let content = Fragment.from(this.content);
+          let content = Fragment$1.from(this.content);
           if (!openEnd && this.match)
-              content = content.append(this.match.fillBefore(Fragment.empty, true));
+              content = content.append(this.match.fillBefore(Fragment$1.empty, true));
           return this.type ? this.type.create(this.attrs, content, this.marks) : content;
       }
       popFromStashMark(mark) {
@@ -2864,11 +2864,11 @@
           let topNode = options.topNode, topContext;
           let topOptions = wsOptionsFor(null, options.preserveWhitespace, 0) | (isOpen ? OPT_OPEN_LEFT : 0);
           if (topNode)
-              topContext = new NodeContext(topNode.type, topNode.attrs, Mark.none, Mark.none, true, options.topMatch || topNode.type.contentMatch, topOptions);
+              topContext = new NodeContext(topNode.type, topNode.attrs, Mark$1.none, Mark$1.none, true, options.topMatch || topNode.type.contentMatch, topOptions);
           else if (isOpen)
-              topContext = new NodeContext(null, null, Mark.none, Mark.none, true, null, topOptions);
+              topContext = new NodeContext(null, null, Mark$1.none, Mark$1.none, true, null, topOptions);
           else
-              topContext = new NodeContext(parser.schema.topNodeType, null, Mark.none, Mark.none, true, null, topOptions);
+              topContext = new NodeContext(parser.schema.topNodeType, null, Mark$1.none, Mark$1.none, true, null, topOptions);
           this.nodes = [topContext];
           this.find = options.findPositions;
           this.needsBlock = false;
@@ -2997,7 +2997,7 @@
       // return an array of marks, or null to indicate some of the styles
       // had a rule with `ignore` set.
       readStyles(styles) {
-          let add = Mark.none, remove = Mark.none;
+          let add = Mark$1.none, remove = Mark$1.none;
           for (let i = 0; i < styles.length; i += 2) {
               for (let after = undefined;;) {
                   let rule = this.parser.matchStyle(styles[i], styles[i + 1], this, after);
@@ -3715,6 +3715,836 @@
   `spec.nodes` and `spec.marks` [properties](https://prosemirror.net/docs/ref/#model.Schema.spec).
   */
   const schema$2 = new Schema$2({ nodes: nodes$1, marks: marks$1 });
+
+  function findDiffStart(a, b, pos) {
+      for (let i = 0;; i++) {
+          if (i == a.childCount || i == b.childCount)
+              return a.childCount == b.childCount ? null : pos;
+          let childA = a.child(i), childB = b.child(i);
+          if (childA == childB) {
+              pos += childA.nodeSize;
+              continue;
+          }
+          if (!childA.sameMarkup(childB))
+              return pos;
+          if (childA.isText && childA.text != childB.text) {
+              for (let j = 0; childA.text[j] == childB.text[j]; j++)
+                  pos++;
+              return pos;
+          }
+          if (childA.content.size || childB.content.size) {
+              let inner = findDiffStart(childA.content, childB.content, pos + 1);
+              if (inner != null)
+                  return inner;
+          }
+          pos += childA.nodeSize;
+      }
+  }
+  function findDiffEnd(a, b, posA, posB) {
+      for (let iA = a.childCount, iB = b.childCount;;) {
+          if (iA == 0 || iB == 0)
+              return iA == iB ? null : { a: posA, b: posB };
+          let childA = a.child(--iA), childB = b.child(--iB), size = childA.nodeSize;
+          if (childA == childB) {
+              posA -= size;
+              posB -= size;
+              continue;
+          }
+          if (!childA.sameMarkup(childB))
+              return { a: posA, b: posB };
+          if (childA.isText && childA.text != childB.text) {
+              let same = 0, minSize = Math.min(childA.text.length, childB.text.length);
+              while (same < minSize && childA.text[childA.text.length - same - 1] == childB.text[childB.text.length - same - 1]) {
+                  same++;
+                  posA--;
+                  posB--;
+              }
+              return { a: posA, b: posB };
+          }
+          if (childA.content.size || childB.content.size) {
+              let inner = findDiffEnd(childA.content, childB.content, posA - 1, posB - 1);
+              if (inner)
+                  return inner;
+          }
+          posA -= size;
+          posB -= size;
+      }
+  }
+
+  /**
+  A fragment represents a node's collection of child nodes.
+
+  Like nodes, fragments are persistent data structures, and you
+  should not mutate them or their content. Rather, you create new
+  instances whenever needed. The API tries to make this easy.
+  */
+  class Fragment {
+      /**
+      @internal
+      */
+      constructor(
+      /**
+      The child nodes in this fragment.
+      */
+      content, size) {
+          this.content = content;
+          this.size = size || 0;
+          if (size == null)
+              for (let i = 0; i < content.length; i++)
+                  this.size += content[i].nodeSize;
+      }
+      /**
+      Invoke a callback for all descendant nodes between the given two
+      positions (relative to start of this fragment). Doesn't descend
+      into a node when the callback returns `false`.
+      */
+      nodesBetween(from, to, f, nodeStart = 0, parent) {
+          for (let i = 0, pos = 0; pos < to; i++) {
+              let child = this.content[i], end = pos + child.nodeSize;
+              if (end > from && f(child, nodeStart + pos, parent || null, i) !== false && child.content.size) {
+                  let start = pos + 1;
+                  child.nodesBetween(Math.max(0, from - start), Math.min(child.content.size, to - start), f, nodeStart + start);
+              }
+              pos = end;
+          }
+      }
+      /**
+      Call the given callback for every descendant node. `pos` will be
+      relative to the start of the fragment. The callback may return
+      `false` to prevent traversal of a given node's children.
+      */
+      descendants(f) {
+          this.nodesBetween(0, this.size, f);
+      }
+      /**
+      Extract the text between `from` and `to`. See the same method on
+      [`Node`](https://prosemirror.net/docs/ref/#model.Node.textBetween).
+      */
+      textBetween(from, to, blockSeparator, leafText) {
+          let text = "", first = true;
+          this.nodesBetween(from, to, (node, pos) => {
+              let nodeText = node.isText ? node.text.slice(Math.max(from, pos) - pos, to - pos)
+                  : !node.isLeaf ? ""
+                      : leafText ? (typeof leafText === "function" ? leafText(node) : leafText)
+                          : node.type.spec.leafText ? node.type.spec.leafText(node)
+                              : "";
+              if (node.isBlock && (node.isLeaf && nodeText || node.isTextblock) && blockSeparator) {
+                  if (first)
+                      first = false;
+                  else
+                      text += blockSeparator;
+              }
+              text += nodeText;
+          }, 0);
+          return text;
+      }
+      /**
+      Create a new fragment containing the combined content of this
+      fragment and the other.
+      */
+      append(other) {
+          if (!other.size)
+              return this;
+          if (!this.size)
+              return other;
+          let last = this.lastChild, first = other.firstChild, content = this.content.slice(), i = 0;
+          if (last.isText && last.sameMarkup(first)) {
+              content[content.length - 1] = last.withText(last.text + first.text);
+              i = 1;
+          }
+          for (; i < other.content.length; i++)
+              content.push(other.content[i]);
+          return new Fragment(content, this.size + other.size);
+      }
+      /**
+      Cut out the sub-fragment between the two given positions.
+      */
+      cut(from, to = this.size) {
+          if (from == 0 && to == this.size)
+              return this;
+          let result = [], size = 0;
+          if (to > from)
+              for (let i = 0, pos = 0; pos < to; i++) {
+                  let child = this.content[i], end = pos + child.nodeSize;
+                  if (end > from) {
+                      if (pos < from || end > to) {
+                          if (child.isText)
+                              child = child.cut(Math.max(0, from - pos), Math.min(child.text.length, to - pos));
+                          else
+                              child = child.cut(Math.max(0, from - pos - 1), Math.min(child.content.size, to - pos - 1));
+                      }
+                      result.push(child);
+                      size += child.nodeSize;
+                  }
+                  pos = end;
+              }
+          return new Fragment(result, size);
+      }
+      /**
+      @internal
+      */
+      cutByIndex(from, to) {
+          if (from == to)
+              return Fragment.empty;
+          if (from == 0 && to == this.content.length)
+              return this;
+          return new Fragment(this.content.slice(from, to));
+      }
+      /**
+      Create a new fragment in which the node at the given index is
+      replaced by the given node.
+      */
+      replaceChild(index, node) {
+          let current = this.content[index];
+          if (current == node)
+              return this;
+          let copy = this.content.slice();
+          let size = this.size + node.nodeSize - current.nodeSize;
+          copy[index] = node;
+          return new Fragment(copy, size);
+      }
+      /**
+      Create a new fragment by prepending the given node to this
+      fragment.
+      */
+      addToStart(node) {
+          return new Fragment([node].concat(this.content), this.size + node.nodeSize);
+      }
+      /**
+      Create a new fragment by appending the given node to this
+      fragment.
+      */
+      addToEnd(node) {
+          return new Fragment(this.content.concat(node), this.size + node.nodeSize);
+      }
+      /**
+      Compare this fragment to another one.
+      */
+      eq(other) {
+          if (this.content.length != other.content.length)
+              return false;
+          for (let i = 0; i < this.content.length; i++)
+              if (!this.content[i].eq(other.content[i]))
+                  return false;
+          return true;
+      }
+      /**
+      The first child of the fragment, or `null` if it is empty.
+      */
+      get firstChild() { return this.content.length ? this.content[0] : null; }
+      /**
+      The last child of the fragment, or `null` if it is empty.
+      */
+      get lastChild() { return this.content.length ? this.content[this.content.length - 1] : null; }
+      /**
+      The number of child nodes in this fragment.
+      */
+      get childCount() { return this.content.length; }
+      /**
+      Get the child node at the given index. Raise an error when the
+      index is out of range.
+      */
+      child(index) {
+          let found = this.content[index];
+          if (!found)
+              throw new RangeError("Index " + index + " out of range for " + this);
+          return found;
+      }
+      /**
+      Get the child node at the given index, if it exists.
+      */
+      maybeChild(index) {
+          return this.content[index] || null;
+      }
+      /**
+      Call `f` for every child node, passing the node, its offset
+      into this parent node, and its index.
+      */
+      forEach(f) {
+          for (let i = 0, p = 0; i < this.content.length; i++) {
+              let child = this.content[i];
+              f(child, p, i);
+              p += child.nodeSize;
+          }
+      }
+      /**
+      Find the first position at which this fragment and another
+      fragment differ, or `null` if they are the same.
+      */
+      findDiffStart(other, pos = 0) {
+          return findDiffStart(this, other, pos);
+      }
+      /**
+      Find the first position, searching from the end, at which this
+      fragment and the given fragment differ, or `null` if they are
+      the same. Since this position will not be the same in both
+      nodes, an object with two separate positions is returned.
+      */
+      findDiffEnd(other, pos = this.size, otherPos = other.size) {
+          return findDiffEnd(this, other, pos, otherPos);
+      }
+      /**
+      Find the index and inner offset corresponding to a given relative
+      position in this fragment. The result object will be reused
+      (overwritten) the next time the function is called. @internal
+      */
+      findIndex(pos) {
+          if (pos == 0)
+              return retIndex(0, pos);
+          if (pos == this.size)
+              return retIndex(this.content.length, pos);
+          if (pos > this.size || pos < 0)
+              throw new RangeError(`Position ${pos} outside of fragment (${this})`);
+          for (let i = 0, curPos = 0;; i++) {
+              let cur = this.child(i), end = curPos + cur.nodeSize;
+              if (end >= pos) {
+                  if (end == pos)
+                      return retIndex(i + 1, end);
+                  return retIndex(i, curPos);
+              }
+              curPos = end;
+          }
+      }
+      /**
+      Return a debugging string that describes this fragment.
+      */
+      toString() { return "<" + this.toStringInner() + ">"; }
+      /**
+      @internal
+      */
+      toStringInner() { return this.content.join(", "); }
+      /**
+      Create a JSON-serializeable representation of this fragment.
+      */
+      toJSON() {
+          return this.content.length ? this.content.map(n => n.toJSON()) : null;
+      }
+      /**
+      Deserialize a fragment from its JSON representation.
+      */
+      static fromJSON(schema, value) {
+          if (!value)
+              return Fragment.empty;
+          if (!Array.isArray(value))
+              throw new RangeError("Invalid input for Fragment.fromJSON");
+          return Fragment.fromArray(value.map(schema.nodeFromJSON));
+      }
+      /**
+      Build a fragment from an array of nodes. Ensures that adjacent
+      text nodes with the same marks are joined together.
+      */
+      static fromArray(array) {
+          if (!array.length)
+              return Fragment.empty;
+          let joined, size = 0;
+          for (let i = 0; i < array.length; i++) {
+              let node = array[i];
+              size += node.nodeSize;
+              if (i && node.isText && array[i - 1].sameMarkup(node)) {
+                  if (!joined)
+                      joined = array.slice(0, i);
+                  joined[joined.length - 1] = node
+                      .withText(joined[joined.length - 1].text + node.text);
+              }
+              else if (joined) {
+                  joined.push(node);
+              }
+          }
+          return new Fragment(joined || array, size);
+      }
+      /**
+      Create a fragment from something that can be interpreted as a
+      set of nodes. For `null`, it returns the empty fragment. For a
+      fragment, the fragment itself. For a node or array of nodes, a
+      fragment containing those nodes.
+      */
+      static from(nodes) {
+          if (!nodes)
+              return Fragment.empty;
+          if (nodes instanceof Fragment)
+              return nodes;
+          if (Array.isArray(nodes))
+              return this.fromArray(nodes);
+          if (nodes.attrs)
+              return new Fragment([nodes], nodes.nodeSize);
+          throw new RangeError("Can not convert " + nodes + " to a Fragment" +
+              (nodes.nodesBetween ? " (looks like multiple versions of prosemirror-model were loaded)" : ""));
+      }
+  }
+  /**
+  An empty fragment. Intended to be reused whenever a node doesn't
+  contain anything (rather than allocating a new empty fragment for
+  each leaf node).
+  */
+  Fragment.empty = new Fragment([], 0);
+  const found = { index: 0, offset: 0 };
+  function retIndex(index, offset) {
+      found.index = index;
+      found.offset = offset;
+      return found;
+  }
+
+  function compareDeep(a, b) {
+      if (a === b)
+          return true;
+      if (!(a && typeof a == "object") ||
+          !(b && typeof b == "object"))
+          return false;
+      let array = Array.isArray(a);
+      if (Array.isArray(b) != array)
+          return false;
+      if (array) {
+          if (a.length != b.length)
+              return false;
+          for (let i = 0; i < a.length; i++)
+              if (!compareDeep(a[i], b[i]))
+                  return false;
+      }
+      else {
+          for (let p in a)
+              if (!(p in b) || !compareDeep(a[p], b[p]))
+                  return false;
+          for (let p in b)
+              if (!(p in a))
+                  return false;
+      }
+      return true;
+  }
+
+  /**
+  A mark is a piece of information that can be attached to a node,
+  such as it being emphasized, in code font, or a link. It has a
+  type and optionally a set of attributes that provide further
+  information (such as the target of the link). Marks are created
+  through a `Schema`, which controls which types exist and which
+  attributes they have.
+  */
+  class Mark {
+      /**
+      @internal
+      */
+      constructor(
+      /**
+      The type of this mark.
+      */
+      type, 
+      /**
+      The attributes associated with this mark.
+      */
+      attrs) {
+          this.type = type;
+          this.attrs = attrs;
+      }
+      /**
+      Given a set of marks, create a new set which contains this one as
+      well, in the right position. If this mark is already in the set,
+      the set itself is returned. If any marks that are set to be
+      [exclusive](https://prosemirror.net/docs/ref/#model.MarkSpec.excludes) with this mark are present,
+      those are replaced by this one.
+      */
+      addToSet(set) {
+          let copy, placed = false;
+          for (let i = 0; i < set.length; i++) {
+              let other = set[i];
+              if (this.eq(other))
+                  return set;
+              if (this.type.excludes(other.type)) {
+                  if (!copy)
+                      copy = set.slice(0, i);
+              }
+              else if (other.type.excludes(this.type)) {
+                  return set;
+              }
+              else {
+                  if (!placed && other.type.rank > this.type.rank) {
+                      if (!copy)
+                          copy = set.slice(0, i);
+                      copy.push(this);
+                      placed = true;
+                  }
+                  if (copy)
+                      copy.push(other);
+              }
+          }
+          if (!copy)
+              copy = set.slice();
+          if (!placed)
+              copy.push(this);
+          return copy;
+      }
+      /**
+      Remove this mark from the given set, returning a new set. If this
+      mark is not in the set, the set itself is returned.
+      */
+      removeFromSet(set) {
+          for (let i = 0; i < set.length; i++)
+              if (this.eq(set[i]))
+                  return set.slice(0, i).concat(set.slice(i + 1));
+          return set;
+      }
+      /**
+      Test whether this mark is in the given set of marks.
+      */
+      isInSet(set) {
+          for (let i = 0; i < set.length; i++)
+              if (this.eq(set[i]))
+                  return true;
+          return false;
+      }
+      /**
+      Test whether this mark has the same type and attributes as
+      another mark.
+      */
+      eq(other) {
+          return this == other ||
+              (this.type == other.type && compareDeep(this.attrs, other.attrs));
+      }
+      /**
+      Convert this mark to a JSON-serializeable representation.
+      */
+      toJSON() {
+          let obj = { type: this.type.name };
+          for (let _ in this.attrs) {
+              obj.attrs = this.attrs;
+              break;
+          }
+          return obj;
+      }
+      /**
+      Deserialize a mark from JSON.
+      */
+      static fromJSON(schema, json) {
+          if (!json)
+              throw new RangeError("Invalid input for Mark.fromJSON");
+          let type = schema.marks[json.type];
+          if (!type)
+              throw new RangeError(`There is no mark type ${json.type} in this schema`);
+          let mark = type.create(json.attrs);
+          type.checkAttrs(mark.attrs);
+          return mark;
+      }
+      /**
+      Test whether two sets of marks are identical.
+      */
+      static sameSet(a, b) {
+          if (a == b)
+              return true;
+          if (a.length != b.length)
+              return false;
+          for (let i = 0; i < a.length; i++)
+              if (!a[i].eq(b[i]))
+                  return false;
+          return true;
+      }
+      /**
+      Create a properly sorted mark set from null, a single mark, or an
+      unsorted array of marks.
+      */
+      static setFrom(marks) {
+          if (!marks || Array.isArray(marks) && marks.length == 0)
+              return Mark.none;
+          if (marks instanceof Mark)
+              return [marks];
+          let copy = marks.slice();
+          copy.sort((a, b) => a.type.rank - b.type.rank);
+          return copy;
+      }
+  }
+  /**
+  The empty set of marks.
+  */
+  Mark.none = [];
+
+  /**
+  Error type raised by [`Node.replace`](https://prosemirror.net/docs/ref/#model.Node.replace) when
+  given an invalid replacement.
+  */
+  class ReplaceError extends Error {
+  }
+  /**
+  A slice represents a piece cut out of a larger document. It
+  stores not only a fragment, but also the depth up to which nodes on
+  both side are ‘open’ (cut through).
+  */
+  class Slice {
+      /**
+      Create a slice. When specifying a non-zero open depth, you must
+      make sure that there are nodes of at least that depth at the
+      appropriate side of the fragment—i.e. if the fragment is an
+      empty paragraph node, `openStart` and `openEnd` can't be greater
+      than 1.
+      
+      It is not necessary for the content of open nodes to conform to
+      the schema's content constraints, though it should be a valid
+      start/end/middle for such a node, depending on which sides are
+      open.
+      */
+      constructor(
+      /**
+      The slice's content.
+      */
+      content, 
+      /**
+      The open depth at the start of the fragment.
+      */
+      openStart, 
+      /**
+      The open depth at the end.
+      */
+      openEnd) {
+          this.content = content;
+          this.openStart = openStart;
+          this.openEnd = openEnd;
+      }
+      /**
+      The size this slice would add when inserted into a document.
+      */
+      get size() {
+          return this.content.size - this.openStart - this.openEnd;
+      }
+      /**
+      @internal
+      */
+      insertAt(pos, fragment) {
+          let content = insertInto(this.content, pos + this.openStart, fragment, this.openStart + 1, this.openEnd + 1);
+          return content && new Slice(content, this.openStart, this.openEnd);
+      }
+      /**
+      @internal
+      */
+      removeBetween(from, to) {
+          return new Slice(removeRange(this.content, from + this.openStart, to + this.openStart), this.openStart, this.openEnd);
+      }
+      /**
+      Tests whether this slice is equal to another slice.
+      */
+      eq(other) {
+          return this.content.eq(other.content) && this.openStart == other.openStart && this.openEnd == other.openEnd;
+      }
+      /**
+      @internal
+      */
+      toString() {
+          return this.content + "(" + this.openStart + "," + this.openEnd + ")";
+      }
+      /**
+      Convert a slice to a JSON-serializable representation.
+      */
+      toJSON() {
+          if (!this.content.size)
+              return null;
+          let json = { content: this.content.toJSON() };
+          if (this.openStart > 0)
+              json.openStart = this.openStart;
+          if (this.openEnd > 0)
+              json.openEnd = this.openEnd;
+          return json;
+      }
+      /**
+      Deserialize a slice from its JSON representation.
+      */
+      static fromJSON(schema, json) {
+          if (!json)
+              return Slice.empty;
+          let openStart = json.openStart || 0, openEnd = json.openEnd || 0;
+          if (typeof openStart != "number" || typeof openEnd != "number")
+              throw new RangeError("Invalid input for Slice.fromJSON");
+          return new Slice(Fragment.fromJSON(schema, json.content), openStart, openEnd);
+      }
+      /**
+      Create a slice from a fragment by taking the maximum possible
+      open value on both side of the fragment.
+      */
+      static maxOpen(fragment, openIsolating = true) {
+          let openStart = 0, openEnd = 0;
+          for (let n = fragment.firstChild; n && !n.isLeaf && (openIsolating || !n.type.spec.isolating); n = n.firstChild)
+              openStart++;
+          for (let n = fragment.lastChild; n && !n.isLeaf && (openIsolating || !n.type.spec.isolating); n = n.lastChild)
+              openEnd++;
+          return new Slice(fragment, openStart, openEnd);
+      }
+  }
+  /**
+  The empty slice.
+  */
+  Slice.empty = new Slice(Fragment.empty, 0, 0);
+  function removeRange(content, from, to) {
+      let { index, offset } = content.findIndex(from), child = content.maybeChild(index);
+      let { index: indexTo, offset: offsetTo } = content.findIndex(to);
+      if (offset == from || child.isText) {
+          if (offsetTo != to && !content.child(indexTo).isText)
+              throw new RangeError("Removing non-flat range");
+          return content.cut(0, from).append(content.cut(to));
+      }
+      if (index != indexTo)
+          throw new RangeError("Removing non-flat range");
+      return content.replaceChild(index, child.copy(removeRange(child.content, from - offset - 1, to - offset - 1)));
+  }
+  function insertInto(content, dist, insert, openStart, openEnd, parent) {
+      let { index, offset } = content.findIndex(dist), child = content.maybeChild(index);
+      if (offset == dist || child.isText) {
+          if (parent && openStart <= 0 && openEnd <= 0 && !parent.canReplace(index, index, insert))
+              return null;
+          return content.cut(0, dist).append(insert).append(content.cut(dist));
+      }
+      let inner = insertInto(child.content, dist - offset - 1, insert, index == 0 ? openStart - 1 : 0, index == content.childCount - 1 ? openEnd - 1 : 0, child);
+      return inner && content.replaceChild(index, child.copy(inner));
+  }
+
+  // For node types where all attrs have a default value (or which don't
+  // have any attributes), build up a single reusable default attribute
+  // object, and use it for all nodes that don't specify specific
+  // attributes.
+  function defaultAttrs(attrs) {
+      let defaults = Object.create(null);
+      for (let attrName in attrs) {
+          let attr = attrs[attrName];
+          if (!attr.hasDefault)
+              return null;
+          defaults[attrName] = attr.default;
+      }
+      return defaults;
+  }
+  function computeAttrs(attrs, value) {
+      let built = Object.create(null);
+      for (let name in attrs) {
+          let given = value && value[name];
+          if (given === undefined) {
+              let attr = attrs[name];
+              if (attr.hasDefault)
+                  given = attr.default;
+              else
+                  throw new RangeError("No value supplied for attribute " + name);
+          }
+          built[name] = given;
+      }
+      return built;
+  }
+  function checkAttrs(attrs, values, type, name) {
+      for (let name in values)
+          if (!(name in attrs))
+              throw new RangeError(`Unsupported attribute ${name} for ${type} of type ${name}`);
+      for (let name in attrs) {
+          let attr = attrs[name];
+          if (attr.validate)
+              attr.validate(values[name]);
+      }
+  }
+  function initAttrs(typeName, attrs) {
+      let result = Object.create(null);
+      if (attrs)
+          for (let name in attrs)
+              result[name] = new Attribute(typeName, name, attrs[name]);
+      return result;
+  }
+  function validateType(typeName, attrName, type) {
+      let types = type.split("|");
+      return (value) => {
+          let name = value === null ? "null" : typeof value;
+          if (types.indexOf(name) < 0)
+              throw new RangeError(`Expected value of type ${types} for attribute ${attrName} on type ${typeName}, got ${name}`);
+      };
+  }
+  // Attribute descriptors
+  class Attribute {
+      constructor(typeName, attrName, options) {
+          this.hasDefault = Object.prototype.hasOwnProperty.call(options, "default");
+          this.default = options.default;
+          this.validate = typeof options.validate == "string" ? validateType(typeName, attrName, options.validate) : options.validate;
+      }
+      get isRequired() {
+          return !this.hasDefault;
+      }
+  }
+  // Marks
+  /**
+  Like nodes, marks (which are associated with nodes to signify
+  things like emphasis or being part of a link) are
+  [tagged](https://prosemirror.net/docs/ref/#model.Mark.type) with type objects, which are
+  instantiated once per `Schema`.
+  */
+  class MarkType {
+      /**
+      @internal
+      */
+      constructor(
+      /**
+      The name of the mark type.
+      */
+      name, 
+      /**
+      @internal
+      */
+      rank, 
+      /**
+      The schema that this mark type instance is part of.
+      */
+      schema, 
+      /**
+      The spec on which the type is based.
+      */
+      spec) {
+          this.name = name;
+          this.rank = rank;
+          this.schema = schema;
+          this.spec = spec;
+          this.attrs = initAttrs(name, spec.attrs);
+          this.excluded = null;
+          let defaults = defaultAttrs(this.attrs);
+          this.instance = defaults ? new Mark(this, defaults) : null;
+      }
+      /**
+      Create a mark of this type. `attrs` may be `null` or an object
+      containing only some of the mark's attributes. The others, if
+      they have defaults, will be added.
+      */
+      create(attrs = null) {
+          if (!attrs && this.instance)
+              return this.instance;
+          return new Mark(this, computeAttrs(this.attrs, attrs));
+      }
+      /**
+      @internal
+      */
+      static compile(marks, schema) {
+          let result = Object.create(null), rank = 0;
+          marks.forEach((name, spec) => result[name] = new MarkType(name, rank++, schema, spec));
+          return result;
+      }
+      /**
+      When there is a mark of this type in the given set, a new set
+      without it is returned. Otherwise, the input set is returned.
+      */
+      removeFromSet(set) {
+          for (var i = 0; i < set.length; i++)
+              if (set[i].type == this) {
+                  set = set.slice(0, i).concat(set.slice(i + 1));
+                  i--;
+              }
+          return set;
+      }
+      /**
+      Tests whether there is a mark of this type in the given set.
+      */
+      isInSet(set) {
+          for (let i = 0; i < set.length; i++)
+              if (set[i].type == this)
+                  return set[i];
+      }
+      /**
+      @internal
+      */
+      checkAttrs(attrs) {
+          checkAttrs(this.attrs, attrs, "mark", this.name);
+      }
+      /**
+      Queries whether a given mark type is
+      [excluded](https://prosemirror.net/docs/ref/#model.MarkSpec.excludes) by this one.
+      */
+      excludes(other) {
+          return this.excluded.indexOf(other) > -1;
+      }
+  }
 
   // Recovery values encode a range index and an offset. They are
   // represented as numbers, because tons of them will be created when
@@ -5968,7 +6798,7 @@
       Replace the selection with a slice or, if no slice is given,
       delete the selection. Will append to the given transaction.
       */
-      replace(tr, content = Slice.empty) {
+      replace(tr, content = Slice$1.empty) {
           // Put the new selection at the position after the inserted
           // content. When that ended in an inline node, search backwards,
           // to get the position after that node. If not, search forward.
@@ -5980,7 +6810,7 @@
           let mapFrom = tr.steps.length, ranges = this.ranges;
           for (let i = 0; i < ranges.length; i++) {
               let { $from, $to } = ranges[i], mapping = tr.mapping.slice(mapFrom);
-              tr.replaceRange(mapping.map($from.pos), mapping.map($to.pos), i ? Slice.empty : content);
+              tr.replaceRange(mapping.map($from.pos), mapping.map($to.pos), i ? Slice$1.empty : content);
               if (i == 0)
                   selectionToInsertionEnd(tr, mapFrom, (lastNode ? lastNode.isInline : lastParent && lastParent.isTextblock) ? -1 : 1);
           }
@@ -6141,9 +6971,9 @@
           let $anchor = doc.resolve(mapping.map(this.anchor));
           return new TextSelection($anchor.parent.inlineContent ? $anchor : $head, $head);
       }
-      replace(tr, content = Slice.empty) {
+      replace(tr, content = Slice$1.empty) {
           super.replace(tr, content);
-          if (content == Slice.empty) {
+          if (content == Slice$1.empty) {
               let marks = this.$from.marksAcross(this.$to);
               if (marks)
                   tr.ensureMarks(marks);
@@ -6244,7 +7074,7 @@
           return new NodeSelection($pos);
       }
       content() {
-          return new Slice(Fragment.from(this.node), 0, 0);
+          return new Slice$1(Fragment$1.from(this.node), 0, 0);
       }
       eq(other) {
           return other instanceof NodeSelection && other.anchor == this.anchor;
@@ -6305,8 +7135,8 @@
       constructor(doc) {
           super(doc.resolve(0), doc.resolve(doc.content.size));
       }
-      replace(tr, content = Slice.empty) {
-          if (content == Slice.empty) {
+      replace(tr, content = Slice$1.empty) {
+          if (content == Slice$1.empty) {
               tr.delete(0, tr.doc.content.size);
               let sel = Selection$2.atStart(tr.doc);
               if (!sel.eq(tr.selection))
@@ -6450,7 +7280,7 @@
       this is already the case.
       */
       ensureMarks(marks) {
-          if (!Mark.sameSet(this.storedMarks || this.selection.$from.marks(), marks))
+          if (!Mark$1.sameSet(this.storedMarks || this.selection.$from.marks(), marks))
               this.setStoredMarks(marks);
           return this;
       }
@@ -6502,7 +7332,7 @@
       replaceSelectionWith(node, inheritMarks = true) {
           let selection = this.selection;
           if (inheritMarks)
-              node = node.mark(this.storedMarks || (selection.empty ? selection.$from.marks() : (selection.$from.marksAcross(selection.$to) || Mark.none)));
+              node = node.mark(this.storedMarks || (selection.empty ? selection.$from.marks() : (selection.$from.marksAcross(selection.$to) || Mark$1.none)));
           selection.replaceWith(this, node);
           return this;
       }
@@ -8155,7 +8985,7 @@
                   }
               }
               if (!rule.contentElement)
-                  rule.getContent = () => Fragment.empty;
+                  rule.getContent = () => Fragment$1.empty;
           }
           return rule;
       }
@@ -8179,7 +9009,7 @@
               if (widget.spec.marks)
                   updater.syncToMarks(widget.spec.marks, inline, view);
               else if (widget.type.side >= 0 && !insideNode)
-                  updater.syncToMarks(i == this.node.childCount ? Mark.none : this.node.child(i).marks, inline, view);
+                  updater.syncToMarks(i == this.node.childCount ? Mark$1.none : this.node.child(i).marks, inline, view);
               // If the next node is a desc matching this widget, reuse it,
               // otherwise insert the widget as a new view desc.
               updater.placeWidget(widget, view, off);
@@ -9627,7 +10457,7 @@
       if (asText) {
           view.someProp("transformPastedText", f => { text = f(text, inCode || plainText, view); });
           if (inCode)
-              return text ? new Slice(Fragment.from(view.state.schema.text(text.replace(/\r\n?/g, "\n"))), 0, 0) : Slice.empty;
+              return text ? new Slice$1(Fragment$1.from(view.state.schema.text(text.replace(/\r\n?/g, "\n"))), 0, 0) : Slice$1.empty;
           let parsed = view.someProp("clipboardTextParser", f => f(text, $context, plainText, view));
           if (parsed) {
               slice = parsed;
@@ -9677,7 +10507,7 @@
           slice = addContext(closeSlice(slice, +sliceData[1], +sliceData[2]), sliceData[4]);
       }
       else { // HTML wasn't created by ProseMirror. Make sure top-level siblings are coherent
-          slice = Slice.maxOpen(normalizeSiblings(slice.content, $context), true);
+          slice = Slice$1.maxOpen(normalizeSiblings(slice.content, $context), true);
           if (slice.openStart || slice.openEnd) {
               let openStart = 0, openEnd = 0;
               for (let node = slice.content.firstChild; openStart < slice.openStart && !node.type.spec.isolating; openStart++, node = node.firstChild) { }
@@ -9723,13 +10553,13 @@
               }
           });
           if (result)
-              return Fragment.from(result);
+              return Fragment$1.from(result);
       }
       return fragment;
   }
   function withWrappers(node, wrap, from = 0) {
       for (let i = wrap.length - 1; i >= from; i--)
-          node = wrap[i].create(null, Fragment.from(node));
+          node = wrap[i].create(null, Fragment$1.from(node));
       return node;
   }
   // Used to group adjacent nodes wrapped in similar parents by
@@ -9741,14 +10571,14 @@
               return sibling.copy(sibling.content.replaceChild(sibling.childCount - 1, inner));
           let match = sibling.contentMatchAt(sibling.childCount);
           if (match.matchType(depth == wrap.length - 1 ? node.type : wrap[depth + 1]))
-              return sibling.copy(sibling.content.append(Fragment.from(withWrappers(node, wrap, depth + 1))));
+              return sibling.copy(sibling.content.append(Fragment$1.from(withWrappers(node, wrap, depth + 1))));
       }
   }
   function closeRight(node, depth) {
       if (depth == 0)
           return node;
       let fragment = node.content.replaceChild(node.childCount - 1, closeRight(node.lastChild, depth - 1));
-      let fill = node.contentMatchAt(node.childCount).fillBefore(Fragment.empty, true);
+      let fill = node.contentMatchAt(node.childCount).fillBefore(Fragment$1.empty, true);
       return node.copy(fragment.append(fill));
   }
   function closeRange(fragment, side, from, to, depth, openEnd) {
@@ -9759,14 +10589,14 @@
           inner = closeRange(inner, side, from, to, depth + 1, openEnd);
       if (depth >= from)
           inner = side < 0 ? node.contentMatchAt(0).fillBefore(inner, openEnd <= depth).append(inner)
-              : inner.append(node.contentMatchAt(node.childCount).fillBefore(Fragment.empty, true));
+              : inner.append(node.contentMatchAt(node.childCount).fillBefore(Fragment$1.empty, true));
       return fragment.replaceChild(side < 0 ? 0 : fragment.childCount - 1, node.copy(inner));
   }
   function closeSlice(slice, openStart, openEnd) {
       if (openStart < slice.openStart)
-          slice = new Slice(closeRange(slice.content, -1, openStart, slice.openStart, 0, slice.openEnd), openStart, slice.openEnd);
+          slice = new Slice$1(closeRange(slice.content, -1, openStart, slice.openStart, 0, slice.openEnd), openStart, slice.openEnd);
       if (openEnd < slice.openEnd)
-          slice = new Slice(closeRange(slice.content, 1, openEnd, slice.openEnd, 0, 0), slice.openStart, openEnd);
+          slice = new Slice$1(closeRange(slice.content, 1, openEnd, slice.openEnd, 0, 0), slice.openStart, openEnd);
       return slice;
   }
   // Trick from jQuery -- some elements must be wrapped in other
@@ -9829,11 +10659,11 @@
           let type = schema.nodes[array[i]];
           if (!type || type.hasRequiredAttrs())
               break;
-          content = Fragment.from(type.create(array[i + 1], content));
+          content = Fragment$1.from(type.create(array[i + 1], content));
           openStart++;
           openEnd++;
       }
-      return new Slice(content, openStart, openEnd);
+      return new Slice$1(content, openStart, openEnd);
   }
 
   // A collection of DOM events that occur within the editor, and callback functions
@@ -10405,7 +11235,7 @@
   }
   function doPaste(view, text, html, preferPlain, event) {
       let slice = parseFromClipboard(view, text, html, preferPlain, view.state.selection.$from);
-      if (view.someProp("handlePaste", f => f(view, event, slice || Slice.empty)))
+      if (view.someProp("handlePaste", f => f(view, event, slice || Slice$1.empty)))
           return true;
       if (!slice)
           return false;
@@ -10500,7 +11330,7 @@
           slice = parseFromClipboard(view, getText(event.dataTransfer), brokenClipboardAPI ? null : event.dataTransfer.getData("text/html"), false, $mouse);
       }
       let move = !!(dragging && !event[dragCopyModifier]);
-      if (view.someProp("handleDrop", f => f(view, event, slice || Slice.empty, move))) {
+      if (view.someProp("handleDrop", f => f(view, event, slice || Slice$1.empty, move))) {
           event.preventDefault();
           return;
       }
@@ -11876,7 +12706,7 @@
       let updated = [];
       for (let i = 0; i < prev.childCount; i++)
           updated.push(update(prev.child(i)));
-      if (Fragment.from(updated).eq(cur))
+      if (Fragment$1.from(updated).eq(cur))
           return { mark, type };
   }
   function looksLikeJoin(old, start, end, $newStart, $newEnd) {
@@ -13418,7 +14248,7 @@
       // selectable, delete the node below and select the one above.
       if ($cursor.parent.content.size == 0 &&
           (textblockAt(before, "end") || NodeSelection.isSelectable(before))) {
-          let delStep = replaceStep(state.doc, $cursor.before(), $cursor.after(), Slice.empty);
+          let delStep = replaceStep(state.doc, $cursor.before(), $cursor.after(), Slice$1.empty);
           if (delStep && delStep.slice.size < delStep.to - delStep.from) {
               if (dispatch) {
                   let tr = state.tr.step(delStep);
@@ -13510,7 +14340,7 @@
       // selectable, delete the node above and select the one below.
       if ($cursor.parent.content.size == 0 &&
           (textblockAt(after, "start") || NodeSelection.isSelectable(after))) {
-          let delStep = replaceStep(state.doc, $cursor.before(), $cursor.after(), Slice.empty);
+          let delStep = replaceStep(state.doc, $cursor.before(), $cursor.after(), Slice$1.empty);
           if (delStep && delStep.slice.size < delStep.to - delStep.from) {
               if (dispatch) {
                   let tr = state.tr.step(delStep);
@@ -13730,11 +14560,11 @@
           (conn = (match = before.contentMatchAt(before.childCount)).findWrapping(after.type)) &&
           match.matchType(conn[0] || after.type).validEnd) {
           if (dispatch) {
-              let end = $cut.pos + after.nodeSize, wrap = Fragment.empty;
+              let end = $cut.pos + after.nodeSize, wrap = Fragment$1.empty;
               for (let i = conn.length - 1; i >= 0; i--)
-                  wrap = Fragment.from(conn[i].create(null, wrap));
-              wrap = Fragment.from(before.copy(wrap));
-              let tr = state.tr.step(new ReplaceAroundStep($cut.pos - 1, end, $cut.pos, end, new Slice(wrap, 1, 0), conn.length, true));
+                  wrap = Fragment$1.from(conn[i].create(null, wrap));
+              wrap = Fragment$1.from(before.copy(wrap));
+              let tr = state.tr.step(new ReplaceAroundStep($cut.pos - 1, end, $cut.pos, end, new Slice$1(wrap, 1, 0), conn.length, true));
               let joinAt = end + 2 * conn.length;
               if (canJoin(tr.doc, joinAt))
                   tr.join(joinAt);
@@ -13762,10 +14592,10 @@
               afterDepth++;
           if (at.canReplace(at.childCount, at.childCount, afterText.content)) {
               if (dispatch) {
-                  let end = Fragment.empty;
+                  let end = Fragment$1.empty;
                   for (let i = wrap.length - 1; i >= 0; i--)
-                      end = Fragment.from(wrap[i].copy(end));
-                  let tr = state.tr.step(new ReplaceAroundStep($cut.pos - wrap.length, $cut.pos + after.nodeSize, $cut.pos + afterDepth, $cut.pos + after.nodeSize - afterDepth, new Slice(end, wrap.length, 0), 0, true));
+                      end = Fragment$1.from(wrap[i].copy(end));
+                  let tr = state.tr.step(new ReplaceAroundStep($cut.pos - wrap.length, $cut.pos + after.nodeSize, $cut.pos + afterDepth, $cut.pos + after.nodeSize - afterDepth, new Slice$1(end, wrap.length, 0), 0, true));
                   dispatch(tr.scrollIntoView());
               }
               return true;
@@ -25915,7 +26745,7 @@
 
   // @ts-ignore
   function maybeMerge(a, b) {
-      if (a.isText && b.isText && Mark.sameSet(a.marks, b.marks))
+      if (a.isText && b.isText && Mark$1.sameSet(a.marks, b.marks))
           return a.withText(a.text + b.text);
   }
   // Object used to track the context of a running parse.
@@ -25923,7 +26753,7 @@
       constructor(schema, tokenHandlers) {
           this.schema = schema;
           this.tokenHandlers = tokenHandlers;
-          this.stack = [{ type: schema.topNodeType, attrs: null, content: [], marks: Mark.none }];
+          this.stack = [{ type: schema.topNodeType, attrs: null, content: [], marks: Mark$1.none }];
       }
       top() {
           return this.stack[this.stack.length - 1];
@@ -25974,7 +26804,7 @@
       }
       // Wrap subsequent content in a node of the given type.
       openNode(type, attrs) {
-          this.stack.push({ type: type, attrs: attrs, content: [], marks: Mark.none });
+          this.stack.push({ type: type, attrs: attrs, content: [], marks: Mark$1.none });
       }
       // Close and return the node that is currently on top of the stack.
       closeNode() {
@@ -30532,7 +31362,7 @@
 
   Transform.prototype;
 
-  /*! markmap-view v0.15.3 | MIT License */
+  /*! markmap-view v0.15.4 | MIT License */
 
   function count(node) {
     var sum = 0,
@@ -45927,7 +46757,7 @@
         const tr = this._tr.replace(
           0,
           this.prosemirrorView.state.doc.content.size,
-          new Slice(Fragment.from(fragmentContent), 0, 0)
+          new Slice$1(Fragment$1.from(fragmentContent), 0, 0)
         );
         tr.setMeta(ySyncPluginKey, { snapshot: null, prevSnapshot: null });
         this.prosemirrorView.dispatch(tr);
@@ -45948,7 +46778,7 @@
         const tr = this._tr.replace(
           0,
           this.prosemirrorView.state.doc.content.size,
-          new Slice(Fragment.from(fragmentContent), 0, 0)
+          new Slice$1(Fragment$1.from(fragmentContent), 0, 0)
         );
         this.prosemirrorView.dispatch(
           tr.setMeta(ySyncPluginKey, { isChangeOrigin: true })
@@ -46022,7 +46852,7 @@
           const tr = this._tr.replace(
             0,
             this.prosemirrorView.state.doc.content.size,
-            new Slice(Fragment.from(fragmentContent), 0, 0)
+            new Slice$1(Fragment$1.from(fragmentContent), 0, 0)
           );
           this.prosemirrorView.dispatch(
             tr.setMeta(ySyncPluginKey, { isChangeOrigin: true })
@@ -46074,7 +46904,7 @@
         let tr = this._tr.replace(
           0,
           this.prosemirrorView.state.doc.content.size,
-          new Slice(Fragment.from(fragmentContent), 0, 0)
+          new Slice$1(Fragment$1.from(fragmentContent), 0, 0)
         );
         restoreRelativeSelection(tr, this.beforeTransactionSelection, this);
         tr = tr.setMeta(ySyncPluginKey, { isChangeOrigin: true, isUndoRedoOperation: transaction.origin instanceof UndoManager });
@@ -47316,5 +48146,5 @@
       console.log('Collab status:', event.connected ? 'connected' : 'disconnected');
   });
 
-})(punycode);
+})(require$$8);
 //# sourceMappingURL=bundle.js.map
