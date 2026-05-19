@@ -48146,5 +48146,5 @@
       console.log('Collab status:', event.connected ? 'connected' : 'disconnected');
   });
 
-})(require$$8);
+})(punycode);
 //# sourceMappingURL=bundle.js.map
