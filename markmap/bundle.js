@@ -47099,6 +47099,8 @@
       }
     });
 
+  window.punycode = require$$8;
+
   // --- схема с поддержкой списков, зачёркивания, подсветки ---
   const nodes = schema$2.spec.nodes;
   const marks = schema$2.spec.marks;
