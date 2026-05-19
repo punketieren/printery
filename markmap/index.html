@@ -72,29 +72,31 @@
 <script src="bundle.js"></script>
 <script>
     (function() {
-        // --- Отладка ---
-        const debugPanel = document.createElement('div');
-        debugPanel.id = 'debug-panel';
-        debugPanel.style.cssText = 'position: fixed; bottom: 10px; right: 10px; background: #1e1e1e; color: #0f0; font-family: monospace; font-size: 11px; padding: 8px; border-radius: 8px; z-index: 9999; max-width: 400px; max-height: 200px; overflow: auto; opacity: 0.9; pointer-events: none;';
-        document.body.appendChild(debugPanel);
+        // --- Только консольный отладчик ---
         function log(msg, type = 'info') {
             const time = new Date().toLocaleTimeString();
-            const line = `[${time}] ${msg}`;
-            console.log(`%c${line}`, type === 'error' ? 'color: red; font-weight: bold' : 'color: #0f0');
-            const div = document.createElement('div');
-            div.textContent = line;
-            div.style.color = type === 'error' ? '#f66' : '#0f0';
-            debugPanel.appendChild(div);
-            if (debugPanel.children.length > 15) debugPanel.removeChild(debugPanel.children[0]);
+            const prefix = `[${time}]`;
+            if (type === 'error') {
+                console.error(`${prefix} ${msg}`);
+            } else {
+                console.log(`${prefix} ${msg}`);
+            }
         }
+
         log('Скрипт инициализации запущен');
 
         // --- Проверка глобальных функций из bundle.js ---
         setTimeout(() => {
-            log(`window.format: ${typeof window.format}, window.saveToFile: ${typeof window.saveToFile}, window.loadFromFile: ${typeof window.loadFromFile}, window.collapseLevel: ${typeof window.collapseLevel}, window.expandAll: ${typeof window.expandAll}`);
+            log(`window.format: ${typeof window.format}`);
+            log(`window.saveToFile: ${typeof window.saveToFile}`);
+            log(`window.loadFromFile: ${typeof window.loadFromFile}`);
+            log(`window.collapseLevel: ${typeof window.collapseLevel}`);
+            log(`window.expandAll: ${typeof window.expandAll}`);
+            log(`window.switchToWysiwyg: ${typeof window.switchToWysiwyg}`);
+            log(`window.switchToMarkdown: ${typeof window.switchToMarkdown}`);
         }, 500);
 
-        // --- Элементы ---
+        // --- Элементы DOM ---
         const panel = document.getElementById('editor-panel');
         const collapseBtn = document.getElementById('collapse-editor');
         const globalStatus = document.getElementById('global-status');
@@ -123,7 +125,7 @@
             });
         }
 
-        // --- Переключение режимов ---
+        // --- Переключение режимов WYSIWYG / Markdown ---
         if (wysiwygRadio && markdownRadio) {
             wysiwygRadio.addEventListener('change', () => {
                 if (wysiwygRadio.checked && window.switchToWysiwyg) {
@@ -145,7 +147,7 @@
             });
         }
 
-        // --- Кнопки карты ---
+        // --- Кнопки управления картой ---
         function fitMap() {
             log('fitMap вызван');
             if (window.currentMarkmap && window.currentMarkmap.fit) {
@@ -215,7 +217,7 @@
         if (collapseLevel2Btn) collapseLevel2Btn.onclick = () => collapseLevel(2);
         if (expandAllMapBtn) expandAllMapBtn.onclick = expandAll;
 
-        // --- Кнопки редактора (привязка к глобальным функциям) ---
+        // --- Привязка кнопок редактора к глобальным функциям из bundle.js ---
         const bind = (id, method, arg = null) => {
             const btn = document.getElementById(id);
             if (!btn) return;
@@ -229,6 +231,7 @@
                 setTimeout(() => { if (globalStatus && globalStatus.textContent !== 'Готов') globalStatus.textContent = 'Готов'; }, 1500);
             };
         };
+
         bind('undo', 'undo');
         bind('redo', 'redo');
         bind('heading-up', 'changeHeading', 1);
@@ -247,16 +250,18 @@
         bind('save-btn', 'saveToFile');
         bind('load-btn', 'loadFromFile');
 
-        // --- Обновление уровня заголовка ---
+        // --- Обновление отображения уровня заголовка ---
         window.updateHeadingLevelDisplay = (level) => {
             const span = document.getElementById('heading-level');
             if (span) span.textContent = (level === 0) ? '-' : 'H' + level;
             log(`Уровень заголовка: ${span.textContent}`);
         };
+
         window.addEventListener('resize', () => {
             log('Resize окна, fitMap');
             fitMap();
         });
+
         log('Инициализация скрипта завершена');
     })();
 </script>
