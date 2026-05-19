@@ -5,9 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>ProseMirror WYSIWYG + Markmap</title>
     <link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/markdown/markdown.min.js"></script>
 </head>
 <body>
 <div class="container">
@@ -68,24 +65,18 @@
     </div>
 </div>
 <div class="global-status" id="global-status">Готов</div>
- 
+
 <script src="bundle.js"></script>
 <script>
     (function() {
-        // --- Только консольный отладчик ---
         function log(msg, type = 'info') {
             const time = new Date().toLocaleTimeString();
             const prefix = `[${time}]`;
-            if (type === 'error') {
-                console.error(`${prefix} ${msg}`);
-            } else {
-                console.log(`${prefix} ${msg}`);
-            }
+            if (type === 'error') console.error(`${prefix} ${msg}`);
+            else console.log(`${prefix} ${msg}`);
         }
-
         log('Скрипт инициализации запущен');
 
-        // --- Проверка глобальных функций из bundle.js ---
         setTimeout(() => {
             log(`window.format: ${typeof window.format}`);
             log(`window.saveToFile: ${typeof window.saveToFile}`);
@@ -96,7 +87,6 @@
             log(`window.switchToMarkdown: ${typeof window.switchToMarkdown}`);
         }, 500);
 
-        // --- Элементы DOM ---
         const panel = document.getElementById('editor-panel');
         const collapseBtn = document.getElementById('collapse-editor');
         const globalStatus = document.getElementById('global-status');
@@ -110,56 +100,38 @@
         const collapseLevel2Btn = document.getElementById('collapse-level2');
         const expandAllMapBtn = document.getElementById('expand-all-map');
 
-        // --- Сворачивание панели редактора ---
         if (collapseBtn) {
             collapseBtn.addEventListener('click', () => {
-                log('Сворачивание панели редактора');
                 panel.classList.toggle('collapsed');
                 collapseBtn.textContent = panel.classList.contains('collapsed') ? '▶' : '◀';
                 setTimeout(() => {
-                    if (window.currentMarkmap && window.currentMarkmap.fit) {
-                        window.currentMarkmap.fit();
-                        log('fit выполнен после сворачивания');
-                    }
+                    if (window.currentMarkmap && window.currentMarkmap.fit) window.currentMarkmap.fit();
                 }, 200);
             });
         }
 
-        // --- Переключение режимов WYSIWYG / Markdown ---
         if (wysiwygRadio && markdownRadio) {
             wysiwygRadio.addEventListener('change', () => {
                 if (wysiwygRadio.checked && window.switchToWysiwyg) {
                     window.switchToWysiwyg();
                     if (inlineStatus) inlineStatus.textContent = 'Режим WYSIWYG';
-                    log('Переключено на WYSIWYG');
-                } else if (wysiwygRadio.checked) {
-                    log('window.switchToWysiwyg не определена', 'error');
                 }
             });
             markdownRadio.addEventListener('change', () => {
                 if (markdownRadio.checked && window.switchToMarkdown) {
                     window.switchToMarkdown();
                     if (inlineStatus) inlineStatus.textContent = 'Режим Markdown';
-                    log('Переключено на Markdown');
-                } else if (markdownRadio.checked) {
-                    log('window.switchToMarkdown не определена', 'error');
                 }
             });
         }
 
-        // --- Кнопки управления картой ---
         function fitMap() {
-            log('fitMap вызван');
             if (window.currentMarkmap && window.currentMarkmap.fit) {
                 window.currentMarkmap.fit();
                 if (globalStatus) globalStatus.textContent = '✅ Карта подогнана';
-                log('fit выполнен');
-            } else {
-                log('currentMarkmap или fit не найден', 'error');
             }
         }
         function toggleFullscreen() {
-            log('Переключение полноэкранного режима');
             viewerPanel.classList.toggle('fullscreen');
             const isFull = viewerPanel.classList.contains('fullscreen');
             if (fullscreenBtn) {
@@ -168,13 +140,8 @@
             setTimeout(() => fitMap(), 100);
         }
         function saveAsPNG() {
-            log('Сохранение PNG');
             const svg = document.querySelector('#markmap-container svg');
-            if (!svg) {
-                log('SVG не найден', 'error');
-                if (globalStatus) globalStatus.textContent = '❌ Нет карты';
-                return;
-            }
+            if (!svg) return;
             const clone = svg.cloneNode(true);
             const bbox = svg.getBBox();
             const width = bbox.width || 800;
@@ -195,20 +162,14 @@
                 a.href = canvas.toDataURL('image/png');
                 a.download = 'mindmap.png';
                 a.click();
-                log('PNG сохранён');
-                if (globalStatus) globalStatus.textContent = '✅ Сохранено';
             };
             img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(svgStr);
         }
         function collapseLevel(level) {
-            log(`Сворачивание узлов до уровня ${level}`);
             if (window.collapseLevel) window.collapseLevel(level);
-            else log('window.collapseLevel не определена', 'error');
         }
         function expandAll() {
-            log('Разворачивание всех узлов');
             if (window.expandAll) window.expandAll();
-            else log('window.expandAll не определена', 'error');
         }
 
         if (fitBtn) fitBtn.onclick = fitMap;
@@ -217,15 +178,12 @@
         if (collapseLevel2Btn) collapseLevel2Btn.onclick = () => collapseLevel(2);
         if (expandAllMapBtn) expandAllMapBtn.onclick = expandAll;
 
-        // --- Привязка кнопок редактора к глобальным функциям из bundle.js ---
         const bind = (id, method, arg = null) => {
             const btn = document.getElementById(id);
             if (!btn) return;
             btn.onclick = () => {
-                log(`Клик по ${id}, вызов ${method}${arg !== null ? ' с аргументом ' + arg : ''}`);
                 if (arg !== null && window[method]) window[method](arg);
                 else if (window[method]) window[method]();
-                else log(`window.${method} не определена`, 'error');
                 if (method === 'saveToFile' && globalStatus) globalStatus.textContent = '✅ Сохранено';
                 else if (method === 'loadFromFile' && globalStatus) globalStatus.textContent = '✅ Загружено';
                 setTimeout(() => { if (globalStatus && globalStatus.textContent !== 'Готов') globalStatus.textContent = 'Готов'; }, 1500);
@@ -250,18 +208,11 @@
         bind('save-btn', 'saveToFile');
         bind('load-btn', 'loadFromFile');
 
-        // --- Обновление отображения уровня заголовка ---
         window.updateHeadingLevelDisplay = (level) => {
             const span = document.getElementById('heading-level');
             if (span) span.textContent = (level === 0) ? '-' : 'H' + level;
-            log(`Уровень заголовка: ${span.textContent}`);
         };
-
-        window.addEventListener('resize', () => {
-            log('Resize окна, fitMap');
-            fitMap();
-        });
-
+        window.addEventListener('resize', () => fitMap());
         log('Инициализация скрипта завершена');
     })();
 </script>
