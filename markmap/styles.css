@@ -171,9 +171,10 @@ body {
     background: transparent;
     padding: 4px 8px;
     border-radius: 0;
-    display: flex;
+ /*   display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: center;*/
+	pointer-events: auto;
 }
 
 .dropdown-content button img {
