@@ -69,109 +69,196 @@
 </div>
 <div class="global-status" id="global-status">Готов</div>
 
-<!--script src="bundle.js"></script-->
-<script src="app.js"></script>
-<!-- Добавьте ЭТИ строки перед </body> -->
-<!-- Вместо bundle.js подключаем наши библиотеки -->
-<script src="libs/orderedmap.js"></script>
-<script src="libs/prosemirror-model.js"></script>
-<script src="libs/prosemirror-state.js"></script>
-<script src="libs/prosemirror-view.js"></script>
-<script src="libs/prosemirror-schema-basic.js"></script>
-<script src="libs/prosemirror-schema-list.js"></script>
-<script src="libs/prosemirror-commands.js"></script>
-<script src="libs/prosemirror-keymap.js"></script>
-<script src="libs/prosemirror-history.js"></script>
-
+<script src="bundle.js"></script>
 <script>
-// Полная инициализация ProseMirror редактора
-(function() {
-    console.log('🚀 Инициализация ProseMirror...');
-    
-    function waitForProseMirror() {
-        return new Promise((resolve) => {
-            const check = () => {
-                // Проверяем глобальные переменные, которые создают UMD-сборки
-                if (window.ProseMirror && window.ProseMirror.model && window.ProseMirror.view) {
-                    console.log('✅ ProseMirror загружен');
-                    resolve(window.ProseMirror);
-                } else if (window.pm && window.pm.model) {
-                    // Альтернативное имя
-                    resolve(window.pm);
-                } else {
-                    setTimeout(check, 100);
+    (function() {
+        // --- Отладка ---
+        const debugPanel = document.createElement('div');
+        debugPanel.id = 'debug-panel';
+        debugPanel.style.cssText = 'position: fixed; bottom: 10px; right: 10px; background: #1e1e1e; color: #0f0; font-family: monospace; font-size: 11px; padding: 8px; border-radius: 8px; z-index: 9999; max-width: 400px; max-height: 200px; overflow: auto; opacity: 0.9; pointer-events: none;';
+        document.body.appendChild(debugPanel);
+        function log(msg, type = 'info') {
+            const time = new Date().toLocaleTimeString();
+            const line = `[${time}] ${msg}`;
+            console.log(`%c${line}`, type === 'error' ? 'color: red; font-weight: bold' : 'color: #0f0');
+            const div = document.createElement('div');
+            div.textContent = line;
+            div.style.color = type === 'error' ? '#f66' : '#0f0';
+            debugPanel.appendChild(div);
+            if (debugPanel.children.length > 15) debugPanel.removeChild(debugPanel.children[0]);
+        }
+        log('Скрипт инициализации запущен');
+
+        // --- Проверка глобальных функций из bundle.js ---
+        setTimeout(() => {
+            log(`window.format: ${typeof window.format}, window.saveToFile: ${typeof window.saveToFile}, window.loadFromFile: ${typeof window.loadFromFile}, window.collapseLevel: ${typeof window.collapseLevel}, window.expandAll: ${typeof window.expandAll}`);
+        }, 500);
+
+        // --- Элементы ---
+        const panel = document.getElementById('editor-panel');
+        const collapseBtn = document.getElementById('collapse-editor');
+        const globalStatus = document.getElementById('global-status');
+        const inlineStatus = document.getElementById('editor-inline-status');
+        const wysiwygRadio = document.querySelector('input[value="wysiwyg"]');
+        const markdownRadio = document.querySelector('input[value="markdown"]');
+        const viewerPanel = document.getElementById('viewer-panel');
+        const fitBtn = document.getElementById('fit-btn');
+        const fullscreenBtn = document.getElementById('fullscreen-map');
+        const savePngBtn = document.getElementById('save-png');
+        const collapseLevel2Btn = document.getElementById('collapse-level2');
+        const expandAllMapBtn = document.getElementById('expand-all-map');
+
+        // --- Сворачивание панели редактора ---
+        if (collapseBtn) {
+            collapseBtn.addEventListener('click', () => {
+                log('Сворачивание панели редактора');
+                panel.classList.toggle('collapsed');
+                collapseBtn.textContent = panel.classList.contains('collapsed') ? '▶' : '◀';
+                setTimeout(() => {
+                    if (window.currentMarkmap && window.currentMarkmap.fit) {
+                        window.currentMarkmap.fit();
+                        log('fit выполнен после сворачивания');
+                    }
+                }, 200);
+            });
+        }
+
+        // --- Переключение режимов ---
+        if (wysiwygRadio && markdownRadio) {
+            wysiwygRadio.addEventListener('change', () => {
+                if (wysiwygRadio.checked && window.switchToWysiwyg) {
+                    window.switchToWysiwyg();
+                    if (inlineStatus) inlineStatus.textContent = 'Режим WYSIWYG';
+                    log('Переключено на WYSIWYG');
+                } else if (wysiwygRadio.checked) {
+                    log('window.switchToWysiwyg не определена', 'error');
                 }
-            };
-            check();
-        });
-    }
-    
-    waitForProseMirror().then((pm) => {
-        console.log('Создаём редактор...');
-        
-        const { Schema } = pm.model;
-        const { EditorState } = pm.state;
-        const { EditorView } = pm.view;
-        
-        // Простая схема для начала
-        const mySchema = new Schema({
-            nodes: {
-                doc: { content: "block+" },
-                paragraph: { 
-                    group: "block", 
-                    content: "inline*", 
-                    toDOM: () => ["p", 0] 
-                },
-                text: { group: "inline" }
-            },
-            marks: {
-                strong: { toDOM: () => ["strong", 0] },
-                em: { toDOM: () => ["em", 0] }
+            });
+            markdownRadio.addEventListener('change', () => {
+                if (markdownRadio.checked && window.switchToMarkdown) {
+                    window.switchToMarkdown();
+                    if (inlineStatus) inlineStatus.textContent = 'Режим Markdown';
+                    log('Переключено на Markdown');
+                } else if (markdownRadio.checked) {
+                    log('window.switchToMarkdown не определена', 'error');
+                }
+            });
+        }
+
+        // --- Кнопки карты ---
+        function fitMap() {
+            log('fitMap вызван');
+            if (window.currentMarkmap && window.currentMarkmap.fit) {
+                window.currentMarkmap.fit();
+                if (globalStatus) globalStatus.textContent = '✅ Карта подогнана';
+                log('fit выполнен');
+            } else {
+                log('currentMarkmap или fit не найден', 'error');
             }
-        });
-        
-        const editorElement = document.getElementById('editor');
-        if (!editorElement) {
-            console.error('Контейнер #editor не найден!');
-            return;
         }
-        
-        editorElement.innerHTML = '';
-        
-        const view = new EditorView(editorElement, {
-            state: EditorState.create({
-                schema: mySchema,
-                doc: mySchema.node("doc", null, [
-                    mySchema.node("paragraph", null, mySchema.text("Редактор работает!"))
-                ])
-            })
-        });
-        
-        window.editorView = view;
-        console.log('✅ Редактор создан!');
-        
-        // Простая привязка кнопок
-        const boldBtn = document.getElementById('bold');
-        if (boldBtn) {
-            boldBtn.onclick = () => {
-                const { state, dispatch } = view;
-                const { toggleMark } = pm.commands;
-                toggleMark(mySchema.marks.strong)(state, dispatch);
-                view.focus();
+        function toggleFullscreen() {
+            log('Переключение полноэкранного режима');
+            viewerPanel.classList.toggle('fullscreen');
+            const isFull = viewerPanel.classList.contains('fullscreen');
+            if (fullscreenBtn) {
+                fullscreenBtn.innerHTML = isFull ? '<img src="img/exit-fullscreen.svg" alt="">' : '<img src="img/fullscreen.svg" alt="">';
+            }
+            setTimeout(() => fitMap(), 100);
+        }
+        function saveAsPNG() {
+            log('Сохранение PNG');
+            const svg = document.querySelector('#markmap-container svg');
+            if (!svg) {
+                log('SVG не найден', 'error');
+                if (globalStatus) globalStatus.textContent = '❌ Нет карты';
+                return;
+            }
+            const clone = svg.cloneNode(true);
+            const bbox = svg.getBBox();
+            const width = bbox.width || 800;
+            const height = bbox.height || 600;
+            clone.setAttribute('width', width);
+            clone.setAttribute('height', height);
+            clone.setAttribute('viewBox', `${bbox.x} ${bbox.y} ${width} ${height}`);
+            const serializer = new XMLSerializer();
+            const svgStr = serializer.serializeToString(clone);
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            const img = new Image();
+            img.onload = () => {
+                ctx.drawImage(img, 0, 0);
+                const a = document.createElement('a');
+                a.href = canvas.toDataURL('image/png');
+                a.download = 'mindmap.png';
+                a.click();
+                log('PNG сохранён');
+                if (globalStatus) globalStatus.textContent = '✅ Сохранено';
             };
+            img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(svgStr);
         }
-        
-        const italicBtn = document.getElementById('italic');
-        if (italicBtn) {
-            italicBtn.onclick = () => {
-                const { state, dispatch } = view;
-                const { toggleMark } = pm.commands;
-                toggleMark(mySchema.marks.em)(state, dispatch);
-                view.focus();
+        function collapseLevel(level) {
+            log(`Сворачивание узлов до уровня ${level}`);
+            if (window.collapseLevel) window.collapseLevel(level);
+            else log('window.collapseLevel не определена', 'error');
+        }
+        function expandAll() {
+            log('Разворачивание всех узлов');
+            if (window.expandAll) window.expandAll();
+            else log('window.expandAll не определена', 'error');
+        }
+
+        if (fitBtn) fitBtn.onclick = fitMap;
+        if (fullscreenBtn) fullscreenBtn.onclick = toggleFullscreen;
+        if (savePngBtn) savePngBtn.onclick = saveAsPNG;
+        if (collapseLevel2Btn) collapseLevel2Btn.onclick = () => collapseLevel(2);
+        if (expandAllMapBtn) expandAllMapBtn.onclick = expandAll;
+
+        // --- Кнопки редактора (привязка к глобальным функциям) ---
+        const bind = (id, method, arg = null) => {
+            const btn = document.getElementById(id);
+            if (!btn) return;
+            btn.onclick = () => {
+                log(`Клик по ${id}, вызов ${method}${arg !== null ? ' с аргументом ' + arg : ''}`);
+                if (arg !== null && window[method]) window[method](arg);
+                else if (window[method]) window[method]();
+                else log(`window.${method} не определена`, 'error');
+                if (method === 'saveToFile' && globalStatus) globalStatus.textContent = '✅ Сохранено';
+                else if (method === 'loadFromFile' && globalStatus) globalStatus.textContent = '✅ Загружено';
+                setTimeout(() => { if (globalStatus && globalStatus.textContent !== 'Готов') globalStatus.textContent = 'Готов'; }, 1500);
             };
-        }
-    });
-})();
+        };
+        bind('undo', 'undo');
+        bind('redo', 'redo');
+        bind('heading-up', 'changeHeading', 1);
+        bind('heading-down', 'changeHeading', -1);
+        bind('bold', 'format', 'bold');
+        bind('italic', 'format', 'italic');
+        bind('code-inline', 'format', 'code');
+        bind('highlight', 'format', 'highlight');
+        bind('ul', 'format', 'bullet_list');
+        bind('ol', 'format', 'ordered_list');
+        bind('quote', 'format', 'blockquote');
+        bind('code-block', 'format', 'code_block');
+        bind('strike', 'format', 'strike');
+        bind('link', 'format', 'link');
+        bind('hr', 'format', 'horizontal_rule');
+        bind('save-btn', 'saveToFile');
+        bind('load-btn', 'loadFromFile');
+
+        // --- Обновление уровня заголовка ---
+        window.updateHeadingLevelDisplay = (level) => {
+            const span = document.getElementById('heading-level');
+            if (span) span.textContent = (level === 0) ? '-' : 'H' + level;
+            log(`Уровень заголовка: ${span.textContent}`);
+        };
+        window.addEventListener('resize', () => {
+            log('Resize окна, fitMap');
+            fitMap();
+        });
+        log('Инициализация скрипта завершена');
+    })();
 </script>
 </body>
 </html>
