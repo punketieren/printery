@@ -1,4 +1,4 @@
-(function () {
+(function (require$$8) {
   'use strict';
 
   // ::- Persistent data structure representing an ordered mapping from
@@ -205,7 +205,7 @@
       */
       constructor(
       /**
-      The child nodes in this fragment.
+      @internal
       */
       content, size) {
           this.content = content;
@@ -242,20 +242,25 @@
       [`Node`](https://prosemirror.net/docs/ref/#model.Node.textBetween).
       */
       textBetween(from, to, blockSeparator, leafText) {
-          let text = "", first = true;
+          let text = "", separated = true;
           this.nodesBetween(from, to, (node, pos) => {
-              let nodeText = node.isText ? node.text.slice(Math.max(from, pos) - pos, to - pos)
-                  : !node.isLeaf ? ""
-                      : leafText ? (typeof leafText === "function" ? leafText(node) : leafText)
-                          : node.type.spec.leafText ? node.type.spec.leafText(node)
-                              : "";
-              if (node.isBlock && (node.isLeaf && nodeText || node.isTextblock) && blockSeparator) {
-                  if (first)
-                      first = false;
-                  else
-                      text += blockSeparator;
+              if (node.isText) {
+                  text += node.text.slice(Math.max(from, pos) - pos, to - pos);
+                  separated = !blockSeparator;
               }
-              text += nodeText;
+              else if (node.isLeaf) {
+                  if (leafText) {
+                      text += typeof leafText === "function" ? leafText(node) : leafText;
+                  }
+                  else if (node.type.spec.leafText) {
+                      text += node.type.spec.leafText(node);
+                  }
+                  separated = !blockSeparator;
+              }
+              else if (!separated && node.isBlock) {
+                  text += blockSeparator;
+                  separated = true;
+              }
           }, 0);
           return text;
       }
@@ -407,9 +412,9 @@
       /**
       Find the index and inner offset corresponding to a given relative
       position in this fragment. The result object will be reused
-      (overwritten) the next time the function is called. @internal
+      (overwritten) the next time the function is called. (Not public.)
       */
-      findIndex(pos) {
+      findIndex(pos, round = -1) {
           if (pos == 0)
               return retIndex(0, pos);
           if (pos == this.size)
@@ -419,7 +424,7 @@
           for (let i = 0, curPos = 0;; i++) {
               let cur = this.child(i), end = curPos + cur.nodeSize;
               if (end >= pos) {
-                  if (end == pos)
+                  if (end == pos || round > 0)
                       return retIndex(i + 1, end);
                   return retIndex(i, curPos);
               }
@@ -448,7 +453,7 @@
               return Fragment.empty;
           if (!Array.isArray(value))
               throw new RangeError("Invalid input for Fragment.fromJSON");
-          return Fragment.fromArray(value.map(schema.nodeFromJSON));
+          return new Fragment(value.map(schema.nodeFromJSON));
       }
       /**
       Build a fragment from an array of nodes. Ensures that adjacent
@@ -640,9 +645,7 @@
           let type = schema.marks[json.type];
           if (!type)
               throw new RangeError(`There is no mark type ${json.type} in this schema`);
-          let mark = type.create(json.attrs);
-          type.checkAttrs(mark.attrs);
-          return mark;
+          return type.create(json.attrs);
       }
       /**
       Test whether two sets of marks are identical.
@@ -682,6 +685,17 @@
   */
   class ReplaceError extends Error {
   }
+  /*
+  ReplaceError = function(this: any, message: string) {
+    let err = Error.call(this, message)
+    ;(err as any).__proto__ = ReplaceError.prototype
+    return err
+  } as any
+
+  ReplaceError.prototype = Object.create(Error.prototype)
+  ReplaceError.prototype.constructor = ReplaceError
+  ReplaceError.prototype.name = "ReplaceError"
+  */
   /**
   A slice represents a piece cut out of a larger document. It
   stores not only a fragment, but also the depth up to which nodes on
@@ -727,7 +741,7 @@
       @internal
       */
       insertAt(pos, fragment) {
-          let content = insertInto(this.content, pos + this.openStart, fragment, this.openStart + 1, this.openEnd + 1);
+          let content = insertInto(this.content, pos + this.openStart, fragment);
           return content && new Slice(content, this.openStart, this.openEnd);
       }
       /**
@@ -801,17 +815,15 @@
           throw new RangeError("Removing non-flat range");
       return content.replaceChild(index, child.copy(removeRange(child.content, from - offset - 1, to - offset - 1)));
   }
-  function insertInto(content, dist, insert, openStart, openEnd, parent) {
+  function insertInto(content, dist, insert, parent) {
       let { index, offset } = content.findIndex(dist), child = content.maybeChild(index);
       if (offset == dist || child.isText) {
-          if (parent && openStart <= 0 && openEnd <= 0 && !parent.canReplace(index, index, insert))
-              return null;
           return content.cut(0, dist).append(insert).append(content.cut(dist));
       }
-      let inner = insertInto(child.content, dist - offset - 1, insert, index == 0 ? openStart - 1 : 0, index == content.childCount - 1 ? openEnd - 1 : 0, child);
+      let inner = insertInto(child.content, dist - offset - 1, insert);
       return inner && content.replaceChild(index, child.copy(inner));
   }
-  function replace$1($from, $to, slice) {
+  function replace($from, $to, slice) {
       if (slice.openStart > $from.depth)
           throw new ReplaceError("Inserted content deeper than insertion position");
       if ($from.depth - slice.openStart != $to.depth - slice.openEnd)
@@ -1189,29 +1201,17 @@
       @internal
       */
       static resolveCached(doc, pos) {
-          let cache = resolveCache.get(doc);
-          if (cache) {
-              for (let i = 0; i < cache.elts.length; i++) {
-                  let elt = cache.elts[i];
-                  if (elt.pos == pos)
-                      return elt;
-              }
+          for (let i = 0; i < resolveCache.length; i++) {
+              let cached = resolveCache[i];
+              if (cached.pos == pos && cached.doc == doc)
+                  return cached;
           }
-          else {
-              resolveCache.set(doc, cache = new ResolveCache);
-          }
-          let result = cache.elts[cache.i] = ResolvedPos.resolve(doc, pos);
-          cache.i = (cache.i + 1) % resolveCacheSize;
+          let result = resolveCache[resolveCachePos] = ResolvedPos.resolve(doc, pos);
+          resolveCachePos = (resolveCachePos + 1) % resolveCacheSize;
           return result;
       }
   }
-  class ResolveCache {
-      constructor() {
-          this.elts = [];
-          this.i = 0;
-      }
-  }
-  const resolveCacheSize = 12, resolveCache = new WeakMap();
+  let resolveCache = [], resolveCachePos = 0, resolveCacheSize = 12;
   /**
   Represents a flat range of content, i.e. one that starts and
   ends in the same node.
@@ -1278,7 +1278,7 @@
   tree shape like this (without back pointers) makes easy.
 
   **Do not** directly mutate the properties of a `Node` object. See
-  [the guide](https://prosemirror.net/docs/guide/#doc) for more information.
+  [the guide](/docs/guide/#doc) for more information.
   */
   class Node {
       /**
@@ -1308,12 +1308,8 @@
           this.content = content || Fragment.empty;
       }
       /**
-      The array of this node's child nodes.
-      */
-      get children() { return this.content.content; }
-      /**
       The size of this node, as defined by the integer-based [indexing
-      scheme](https://prosemirror.net/docs/guide/#doc.indexing). For text nodes, this is the
+      scheme](/docs/guide/#doc.indexing). For text nodes, this is the
       amount of characters. For other leaf nodes, it is one. For
       non-leaf nodes, it is the size of the content plus two (the
       start and end token).
@@ -1338,11 +1334,10 @@
       */
       forEach(f) { this.content.forEach(f); }
       /**
-      Invoke a callback for all descendant nodes recursively overlapping
+      Invoke a callback for all descendant nodes recursively between
       the given two positions that are relative to start of this
-      node's content. This includes all ancestors of the nodes
-      containing the two positions. The callback is invoked with the
-      node, its position relative to the original node (method receiver),
+      node's content. The callback is invoked with the node, its
+      position relative to the original node (method receiver),
       its parent node, and its child index. When the callback returns
       false for a given node, that node's children will not be
       recursed over. The last parameter can be used to specify a
@@ -1372,7 +1367,7 @@
       `blockSeparator` is given, it will be inserted to separate text
       from different block nodes. If `leafText` is given, it'll be
       inserted for every non-text leaf node encountered, otherwise
-      [`leafText`](https://prosemirror.net/docs/ref/#model.NodeSpec.leafText) will be used.
+      [`leafText`](https://prosemirror.net/docs/ref/#model.NodeSpec^leafText) will be used.
       */
       textBetween(from, to, blockSeparator, leafText) {
           return this.content.textBetween(from, to, blockSeparator, leafText);
@@ -1457,7 +1452,7 @@
       [`ReplaceError`](https://prosemirror.net/docs/ref/#model.ReplaceError) is thrown.
       */
       replace(from, to, slice) {
-          return replace$1(this.resolve(from), this.resolve(to), slice);
+          return replace(this.resolve(from), this.resolve(to), slice);
       }
       /**
       Find the node directly after the given position.
@@ -1616,17 +1611,13 @@
       }
       /**
       Check whether this node and its descendants conform to the
-      schema, and raise an exception when they do not.
+      schema, and raise error when they do not.
       */
       check() {
           this.type.checkContent(this.content);
-          this.type.checkAttrs(this.attrs);
           let copy = Mark.none;
-          for (let i = 0; i < this.marks.length; i++) {
-              let mark = this.marks[i];
-              mark.type.checkAttrs(mark.attrs);
-              copy = mark.addToSet(copy);
-          }
+          for (let i = 0; i < this.marks.length; i++)
+              copy = this.marks[i].addToSet(copy);
           if (!Mark.sameSet(copy, this.marks))
               throw new RangeError(`Invalid collection of marks for node ${this.type.name}: ${this.marks.map(m => m.type.name)}`);
           this.content.forEach(node => node.check());
@@ -1652,7 +1643,7 @@
       static fromJSON(schema, json) {
           if (!json)
               throw new RangeError("Invalid input for Node.fromJSON");
-          let marks = undefined;
+          let marks = null;
           if (json.marks) {
               if (!Array.isArray(json.marks))
                   throw new RangeError("Invalid mark data for Node.fromJSON");
@@ -1664,9 +1655,7 @@
               return schema.text(json.text, marks);
           }
           let content = Fragment.fromJSON(schema, json.content);
-          let node = schema.nodeType(json.type).create(json.attrs, content, marks);
-          node.type.checkAttrs(node.attrs);
-          return node;
+          return schema.nodeType(json.type).create(json.attrs, content, marks);
       }
   }
   Node.prototype.text = undefined;
@@ -1979,7 +1968,7 @@
       let result = [];
       for (let typeName in types) {
           let type = types[typeName];
-          if (type.isInGroup(name))
+          if (type.groups.indexOf(name) > -1)
               result.push(type);
       }
       if (result.length == 0)
@@ -2008,14 +1997,16 @@
           stream.err("Unexpected token '" + stream.next + "'");
       }
   }
-  // Construct an NFA from an expression as returned by the parser. The
-  // NFA is represented as an array of states, which are themselves
-  // arrays of edges, which are `{term, to}` objects. The first state is
-  // the entry state and the last node is the success state.
-  //
-  // Note that unlike typical NFAs, the edge ordering in this one is
-  // significant, in that it is used to contruct filler content when
-  // necessary.
+  /**
+  Construct an NFA from an expression as returned by the parser. The
+  NFA is represented as an array of states, which are themselves
+  arrays of edges, which are `{term, to}` objects. The first state is
+  the entry state and the last node is the success state.
+
+  Note that unlike typical NFAs, the edge ordering in this one is
+  significant, in that it is used to contruct filler content when
+  necessary.
+  */
   function nfa(expr) {
       let nfa = [[]];
       connect(compile(expr, 0), node());
@@ -2181,21 +2172,11 @@
       }
       return built;
   }
-  function checkAttrs(attrs, values, type, name) {
-      for (let name in values)
-          if (!(name in attrs))
-              throw new RangeError(`Unsupported attribute ${name} for ${type} of type ${name}`);
-      for (let name in attrs) {
-          let attr = attrs[name];
-          if (attr.validate)
-              attr.validate(values[name]);
-      }
-  }
-  function initAttrs(typeName, attrs) {
+  function initAttrs(attrs) {
       let result = Object.create(null);
       if (attrs)
           for (let name in attrs)
-              result[name] = new Attribute(typeName, name, attrs[name]);
+              result[name] = new Attribute(attrs[name]);
       return result;
   }
   /**
@@ -2230,7 +2211,7 @@
           */
           this.markSet = null;
           this.groups = spec.group ? spec.group.split(" ") : [];
-          this.attrs = initAttrs(name, spec.attrs);
+          this.attrs = initAttrs(spec.attrs);
           this.defaultAttrs = defaultAttrs(this.attrs);
           this.contentMatch = null;
           this.inlineContent = null;
@@ -2255,13 +2236,6 @@
       directly editable content.
       */
       get isAtom() { return this.isLeaf || !!this.spec.atom; }
-      /**
-      Return true when this node type is part of the given
-      [group](https://prosemirror.net/docs/ref/#model.NodeSpec.group).
-      */
-      isInGroup(group) {
-          return this.groups.indexOf(group) > -1;
-      }
       /**
       The node type's [whitespace](https://prosemirror.net/docs/ref/#model.NodeSpec.whitespace) option.
       */
@@ -2341,7 +2315,7 @@
       }
       /**
       Returns true if the given fragment is valid content for this node
-      type.
+      type with the given attributes.
       */
       validContent(content) {
           let result = this.contentMatch.matchFragment(content);
@@ -2360,12 +2334,6 @@
       checkContent(content) {
           if (!this.validContent(content))
               throw new RangeError(`Invalid content for node ${this.name}: ${content.toString().slice(0, 50)}`);
-      }
-      /**
-      @internal
-      */
-      checkAttrs(attrs) {
-          checkAttrs(this.attrs, attrs, "node", this.name);
       }
       /**
       Check whether the given mark type is allowed in this node.
@@ -2418,20 +2386,11 @@
           return result;
       }
   };
-  function validateType(typeName, attrName, type) {
-      let types = type.split("|");
-      return (value) => {
-          let name = value === null ? "null" : typeof value;
-          if (types.indexOf(name) < 0)
-              throw new RangeError(`Expected value of type ${types} for attribute ${attrName} on type ${typeName}, got ${name}`);
-      };
-  }
   // Attribute descriptors
   class Attribute {
-      constructor(typeName, attrName, options) {
+      constructor(options) {
           this.hasDefault = Object.prototype.hasOwnProperty.call(options, "default");
           this.default = options.default;
-          this.validate = typeof options.validate == "string" ? validateType(typeName, attrName, options.validate) : options.validate;
       }
       get isRequired() {
           return !this.hasDefault;
@@ -2469,7 +2428,7 @@
           this.rank = rank;
           this.schema = schema;
           this.spec = spec;
-          this.attrs = initAttrs(name, spec.attrs);
+          this.attrs = initAttrs(spec.attrs);
           this.excluded = null;
           let defaults = defaultAttrs(this.attrs);
           this.instance = defaults ? new Mark(this, defaults) : null;
@@ -2513,12 +2472,6 @@
                   return set[i];
       }
       /**
-      @internal
-      */
-      checkAttrs(attrs) {
-          checkAttrs(this.attrs, attrs, "mark", this.name);
-      }
-      /**
       Queries whether a given mark type is
       [excluded](https://prosemirror.net/docs/ref/#model.MarkSpec.excludes) by this one.
       */
@@ -2535,17 +2488,11 @@
   When given, the type parameters provide the names of the nodes and
   marks in this schema.
   */
-  let Schema$1 = class Schema {
+  let Schema$2 = class Schema {
       /**
       Construct a schema from a schema [specification](https://prosemirror.net/docs/ref/#model.SchemaSpec).
       */
       constructor(spec) {
-          /**
-          The [linebreak
-          replacement](https://prosemirror.net/docs/ref/#model.NodeSpec.linebreakReplacement) node defined
-          in this schema, if any.
-          */
-          this.linebreakReplacement = null;
           /**
           An object for storing whatever values modules may want to
           compute and cache per schema. (If you want to store something
@@ -2567,13 +2514,6 @@
               type.contentMatch = contentExprCache[contentExpr] ||
                   (contentExprCache[contentExpr] = ContentMatch.parse(contentExpr, this.nodes));
               type.inlineContent = type.contentMatch.inlineContent;
-              if (type.spec.linebreakReplacement) {
-                  if (this.linebreakReplacement)
-                      throw new RangeError("Multiple linebreak nodes defined");
-                  if (!type.isInline || !type.isLeaf)
-                      throw new RangeError("Linebreak replacement nodes must be inline leaf nodes");
-                  this.linebreakReplacement = type;
-              }
               type.markSet = markExpr == "_" ? null :
                   markExpr ? gatherMarks(this, markExpr.split(" ")) :
                       markExpr == "" || !type.inlineContent ? [] : null;
@@ -2582,8 +2522,8 @@
               let type = this.marks[prop], excl = type.spec.excludes;
               type.excluded = excl == null ? [type] : excl == "" ? [] : gatherMarks(this, excl.split(" "));
           }
-          this.nodeFromJSON = json => Node.fromJSON(this, json);
-          this.markFromJSON = json => Mark.fromJSON(this, json);
+          this.nodeFromJSON = this.nodeFromJSON.bind(this);
+          this.markFromJSON = this.markFromJSON.bind(this);
           this.topNodeType = this.nodes[this.spec.topNode || "doc"];
           this.cached.wrappings = Object.create(null);
       }
@@ -2619,6 +2559,20 @@
           return type.create(attrs);
       }
       /**
+      Deserialize a node from its JSON representation. This method is
+      bound.
+      */
+      nodeFromJSON(json) {
+          return Node.fromJSON(this, json);
+      }
+      /**
+      Deserialize a mark from its JSON representation. This method is
+      bound.
+      */
+      markFromJSON(json) {
+          return Mark.fromJSON(this, json);
+      }
+      /**
       @internal
       */
       nodeType(name) {
@@ -2648,8 +2602,6 @@
       return found;
   }
 
-  function isTagRule(rule) { return rule.tag != null; }
-  function isStyleRule(rule) { return rule.style != null; }
   /**
   A DOM parser represents a strategy for parsing DOM content into a
   ProseMirror document conforming to a given schema. Its behavior is
@@ -2680,17 +2632,11 @@
           @internal
           */
           this.styles = [];
-          let matchedStyles = this.matchedStyles = [];
           rules.forEach(rule => {
-              if (isTagRule(rule)) {
+              if (rule.tag)
                   this.tags.push(rule);
-              }
-              else if (isStyleRule(rule)) {
-                  let prop = /[^=]*/.exec(rule.style)[0];
-                  if (matchedStyles.indexOf(prop) < 0)
-                      matchedStyles.push(prop);
+              else if (rule.style)
                   this.styles.push(rule);
-              }
           });
           // Only normalize list elements when lists in the schema can't directly contain themselves
           this.normalizeLists = !this.tags.some(r => {
@@ -2705,7 +2651,7 @@
       */
       parse(dom, options = {}) {
           let context = new ParseContext(this, options, false);
-          context.addAll(dom, Mark.none, options.from, options.to);
+          context.addAll(dom, options.from, options.to);
           return context.finish();
       }
       /**
@@ -2718,7 +2664,7 @@
       */
       parseSlice(dom, options = {}) {
           let context = new ParseContext(this, options, true);
-          context.addAll(dom, Mark.none, options.from, options.to);
+          context.addAll(dom, options.from, options.to);
           return Slice.maxOpen(context.finish());
       }
       /**
@@ -2781,7 +2727,7 @@
               let rules = schema.marks[name].spec.parseDOM;
               if (rules)
                   rules.forEach(rule => {
-                      insert(rule = copy$1(rule));
+                      insert(rule = copy$2(rule));
                       if (!(rule.mark || rule.ignore || rule.clearMark))
                           rule.mark = name;
                   });
@@ -2790,7 +2736,7 @@
               let rules = schema.nodes[name].spec.parseDOM;
               if (rules)
                   rules.forEach(rule => {
-                      insert(rule = copy$1(rule));
+                      insert(rule = copy$2(rule));
                       if (!(rule.node || rule.ignore || rule.mark))
                           rule.node = name;
                   });
@@ -2800,7 +2746,7 @@
       /**
       Construct a DOM parser using the parsing rules listed in a
       schema's [node specs](https://prosemirror.net/docs/ref/#model.NodeSpec.parseDOM), reordered by
-      [priority](https://prosemirror.net/docs/ref/#model.GenericParseRule.priority).
+      [priority](https://prosemirror.net/docs/ref/#model.ParseRule.priority).
       */
       static fromSchema(schema) {
           return schema.cached.domParser ||
@@ -2827,15 +2773,22 @@
       return type && type.whitespace == "pre" ? OPT_PRESERVE_WS | OPT_PRESERVE_WS_FULL : base & ~OPT_OPEN_LEFT;
   }
   class NodeContext {
-      constructor(type, attrs, marks, solid, match, options) {
+      constructor(type, attrs, 
+      // Marks applied to this node itself
+      marks, 
+      // Marks that can't apply here, but will be used in children if possible
+      pendingMarks, solid, match, options) {
           this.type = type;
           this.attrs = attrs;
           this.marks = marks;
+          this.pendingMarks = pendingMarks;
           this.solid = solid;
           this.options = options;
           this.content = [];
           // Marks applied to the node's children
           this.activeMarks = Mark.none;
+          // Nested Marks with same type
+          this.stashMarks = [];
           this.match = match || (options & OPT_OPEN_LEFT ? null : type.contentMatch);
       }
       findWrapping(node) {
@@ -2875,6 +2828,21 @@
               content = content.append(this.match.fillBefore(Fragment.empty, true));
           return this.type ? this.type.create(this.attrs, content, this.marks) : content;
       }
+      popFromStashMark(mark) {
+          for (let i = this.stashMarks.length - 1; i >= 0; i--)
+              if (mark.eq(this.stashMarks[i]))
+                  return this.stashMarks.splice(i, 1)[0];
+      }
+      applyPending(nextType) {
+          for (let i = 0, pending = this.pendingMarks; i < pending.length; i++) {
+              let mark = pending[i];
+              if ((this.type ? this.type.allowsMarkType(mark.type) : markMayApply(mark.type, nextType)) &&
+                  !mark.isInSet(this.activeMarks)) {
+                  this.activeMarks = mark.addToSet(this.activeMarks);
+                  this.pendingMarks = mark.removeFromSet(this.pendingMarks);
+              }
+          }
+      }
       inlineContext(node) {
           if (this.type)
               return this.type.inlineContent;
@@ -2893,15 +2861,14 @@
           this.options = options;
           this.isOpen = isOpen;
           this.open = 0;
-          this.localPreserveWS = false;
           let topNode = options.topNode, topContext;
           let topOptions = wsOptionsFor(null, options.preserveWhitespace, 0) | (isOpen ? OPT_OPEN_LEFT : 0);
           if (topNode)
-              topContext = new NodeContext(topNode.type, topNode.attrs, Mark.none, true, options.topMatch || topNode.type.contentMatch, topOptions);
+              topContext = new NodeContext(topNode.type, topNode.attrs, Mark.none, Mark.none, true, options.topMatch || topNode.type.contentMatch, topOptions);
           else if (isOpen)
-              topContext = new NodeContext(null, null, Mark.none, true, null, topOptions);
+              topContext = new NodeContext(null, null, Mark.none, Mark.none, true, null, topOptions);
           else
-              topContext = new NodeContext(parser.schema.topNodeType, null, Mark.none, true, null, topOptions);
+              topContext = new NodeContext(parser.schema.topNodeType, null, Mark.none, Mark.none, true, null, topOptions);
           this.nodes = [topContext];
           this.find = options.findPositions;
           this.needsBlock = false;
@@ -2912,21 +2879,37 @@
       // Add a DOM node to the content. Text is inserted as text node,
       // otherwise, the node is passed to `addElement` or, if it has a
       // `style` attribute, `addElementWithStyles`.
-      addDOM(dom, marks) {
+      addDOM(dom) {
           if (dom.nodeType == 3)
-              this.addTextNode(dom, marks);
+              this.addTextNode(dom);
           else if (dom.nodeType == 1)
-              this.addElement(dom, marks);
+              this.addElement(dom);
       }
-      addTextNode(dom, marks) {
+      withStyleRules(dom, f) {
+          let style = dom.getAttribute("style");
+          if (!style)
+              return f();
+          let marks = this.readStyles(parseStyles(style));
+          if (!marks)
+              return; // A style with ignore: true
+          let [addMarks, removeMarks] = marks, top = this.top;
+          for (let i = 0; i < removeMarks.length; i++)
+              this.removePendingMark(removeMarks[i], top);
+          for (let i = 0; i < addMarks.length; i++)
+              this.addPendingMark(addMarks[i]);
+          f();
+          for (let i = 0; i < addMarks.length; i++)
+              this.removePendingMark(addMarks[i], top);
+          for (let i = 0; i < removeMarks.length; i++)
+              this.addPendingMark(removeMarks[i]);
+      }
+      addTextNode(dom) {
           let value = dom.nodeValue;
-          let top = this.top, preserveWS = (top.options & OPT_PRESERVE_WS_FULL) ? "full"
-              : this.localPreserveWS || (top.options & OPT_PRESERVE_WS) > 0;
-          let { schema } = this.parser;
-          if (preserveWS === "full" ||
+          let top = this.top;
+          if (top.options & OPT_PRESERVE_WS_FULL ||
               top.inlineContext(dom) ||
               /[^ \t\r\n\u000c]/.test(value)) {
-              if (!preserveWS) {
+              if (!(top.options & OPT_PRESERVE_WS)) {
                   value = value.replace(/[ \t\r\n\u000c]+/g, " ");
                   // If this starts with whitespace, and there is no node before it, or
                   // a hard break, or a text node that ends with whitespace, strip the
@@ -2940,24 +2923,14 @@
                           value = value.slice(1);
                   }
               }
-              else if (preserveWS === "full") {
-                  value = value.replace(/\r\n?/g, "\n");
-              }
-              else if (schema.linebreakReplacement && /[\r\n]/.test(value) && this.top.findWrapping(schema.linebreakReplacement.create())) {
-                  let lines = value.split(/\r?\n|\r/);
-                  for (let i = 0; i < lines.length; i++) {
-                      if (i)
-                          this.insertNode(schema.linebreakReplacement.create(), marks, true);
-                      if (lines[i])
-                          this.insertNode(schema.text(lines[i]), marks, !/\S/.test(lines[i]));
-                  }
-                  value = "";
-              }
-              else {
+              else if (!(top.options & OPT_PRESERVE_WS_FULL)) {
                   value = value.replace(/\r?\n|\r/g, " ");
               }
+              else {
+                  value = value.replace(/\r\n?/g, "\n");
+              }
               if (value)
-                  this.insertNode(schema.text(value), marks, !/\S/.test(value));
+                  this.insertNode(this.parser.schema.text(value));
               this.findInText(dom);
           }
           else {
@@ -2966,25 +2939,22 @@
       }
       // Try to find a handler for the given tag and use that to parse. If
       // none is found, the element's content nodes are added directly.
-      addElement(dom, marks, matchAfter) {
-          let outerWS = this.localPreserveWS, top = this.top;
-          if (dom.tagName == "PRE" || /pre/.test(dom.style && dom.style.whiteSpace))
-              this.localPreserveWS = true;
+      addElement(dom, matchAfter) {
           let name = dom.nodeName.toLowerCase(), ruleID;
           if (listTags.hasOwnProperty(name) && this.parser.normalizeLists)
               normalizeList(dom);
           let rule = (this.options.ruleFromNode && this.options.ruleFromNode(dom)) ||
               (ruleID = this.parser.matchTag(dom, this, matchAfter));
-          out: if (rule ? rule.ignore : ignoreTags.hasOwnProperty(name)) {
+          if (rule ? rule.ignore : ignoreTags.hasOwnProperty(name)) {
               this.findInside(dom);
-              this.ignoreFallback(dom, marks);
+              this.ignoreFallback(dom);
           }
           else if (!rule || rule.skip || rule.closeParent) {
               if (rule && rule.closeParent)
                   this.open = Math.max(0, this.open - 1);
               else if (rule && rule.skip.nodeType)
                   dom = rule.skip;
-              let sync, oldNeedsBlock = this.needsBlock;
+              let sync, top = this.top, oldNeedsBlock = this.needsBlock;
               if (blockTags.hasOwnProperty(name)) {
                   if (top.content.length && top.content[0].isInline && this.open) {
                       this.open--;
@@ -2995,98 +2965,92 @@
                       this.needsBlock = true;
               }
               else if (!dom.firstChild) {
-                  this.leafFallback(dom, marks);
-                  break out;
+                  this.leafFallback(dom);
+                  return;
               }
-              let innerMarks = rule && rule.skip ? marks : this.readStyles(dom, marks);
-              if (innerMarks)
-                  this.addAll(dom, innerMarks);
+              if (rule && rule.skip)
+                  this.addAll(dom);
+              else
+                  this.withStyleRules(dom, () => this.addAll(dom));
               if (sync)
                   this.sync(top);
               this.needsBlock = oldNeedsBlock;
           }
           else {
-              let innerMarks = this.readStyles(dom, marks);
-              if (innerMarks)
-                  this.addElementByRule(dom, rule, innerMarks, rule.consuming === false ? ruleID : undefined);
+              this.withStyleRules(dom, () => {
+                  this.addElementByRule(dom, rule, rule.consuming === false ? ruleID : undefined);
+              });
           }
-          this.localPreserveWS = outerWS;
       }
       // Called for leaf DOM nodes that would otherwise be ignored
-      leafFallback(dom, marks) {
+      leafFallback(dom) {
           if (dom.nodeName == "BR" && this.top.type && this.top.type.inlineContent)
-              this.addTextNode(dom.ownerDocument.createTextNode("\n"), marks);
+              this.addTextNode(dom.ownerDocument.createTextNode("\n"));
       }
       // Called for ignored nodes
-      ignoreFallback(dom, marks) {
+      ignoreFallback(dom) {
           // Ignored BR nodes should at least create an inline context
           if (dom.nodeName == "BR" && (!this.top.type || !this.top.type.inlineContent))
-              this.findPlace(this.parser.schema.text("-"), marks, true);
+              this.findPlace(this.parser.schema.text("-"));
       }
       // Run any style parser associated with the node's styles. Either
-      // return an updated array of marks, or null to indicate some of the
-      // styles had a rule with `ignore` set.
-      readStyles(dom, marks) {
-          let styles = dom.style;
-          // Because many properties will only show up in 'normalized' form
-          // in `style.item` (i.e. text-decoration becomes
-          // text-decoration-line, text-decoration-color, etc), we directly
-          // query the styles mentioned in our rules instead of iterating
-          // over the items.
-          if (styles && styles.length)
-              for (let i = 0; i < this.parser.matchedStyles.length; i++) {
-                  let name = this.parser.matchedStyles[i], value = styles.getPropertyValue(name);
-                  if (value)
-                      for (let after = undefined;;) {
-                          let rule = this.parser.matchStyle(name, value, this, after);
-                          if (!rule)
-                              break;
-                          if (rule.ignore)
-                              return null;
-                          if (rule.clearMark)
-                              marks = marks.filter(m => !rule.clearMark(m));
-                          else
-                              marks = marks.concat(this.parser.schema.marks[rule.mark].create(rule.attrs));
-                          if (rule.consuming === false)
-                              after = rule;
-                          else
-                              break;
-                      }
+      // return an array of marks, or null to indicate some of the styles
+      // had a rule with `ignore` set.
+      readStyles(styles) {
+          let add = Mark.none, remove = Mark.none;
+          for (let i = 0; i < styles.length; i += 2) {
+              for (let after = undefined;;) {
+                  let rule = this.parser.matchStyle(styles[i], styles[i + 1], this, after);
+                  if (!rule)
+                      break;
+                  if (rule.ignore)
+                      return null;
+                  if (rule.clearMark) {
+                      this.top.pendingMarks.concat(this.top.activeMarks).forEach(m => {
+                          if (rule.clearMark(m))
+                              remove = m.addToSet(remove);
+                      });
+                  }
+                  else {
+                      add = this.parser.schema.marks[rule.mark].create(rule.attrs).addToSet(add);
+                  }
+                  if (rule.consuming === false)
+                      after = rule;
+                  else
+                      break;
               }
-          return marks;
+          }
+          return [add, remove];
       }
       // Look up a handler for the given node. If none are found, return
       // false. Otherwise, apply it, use its return value to drive the way
       // the node's content is wrapped, and return true.
-      addElementByRule(dom, rule, marks, continueAfter) {
-          let sync, nodeType;
+      addElementByRule(dom, rule, continueAfter) {
+          let sync, nodeType, mark;
           if (rule.node) {
               nodeType = this.parser.schema.nodes[rule.node];
               if (!nodeType.isLeaf) {
-                  let inner = this.enter(nodeType, rule.attrs || null, marks, rule.preserveWhitespace);
-                  if (inner) {
-                      sync = true;
-                      marks = inner;
-                  }
+                  sync = this.enter(nodeType, rule.attrs || null, rule.preserveWhitespace);
               }
-              else if (!this.insertNode(nodeType.create(rule.attrs), marks, dom.nodeName == "BR")) {
-                  this.leafFallback(dom, marks);
+              else if (!this.insertNode(nodeType.create(rule.attrs))) {
+                  this.leafFallback(dom);
               }
           }
           else {
               let markType = this.parser.schema.marks[rule.mark];
-              marks = marks.concat(markType.create(rule.attrs));
+              mark = markType.create(rule.attrs);
+              this.addPendingMark(mark);
           }
           let startIn = this.top;
           if (nodeType && nodeType.isLeaf) {
               this.findInside(dom);
           }
           else if (continueAfter) {
-              this.addElement(dom, marks, continueAfter);
+              this.addElement(dom, continueAfter);
           }
           else if (rule.getContent) {
               this.findInside(dom);
-              rule.getContent(dom, this.parser.schema).forEach(node => this.insertNode(node, marks, false));
+              rule.getContent(dom, this.parser.schema).forEach(node => this.insertNode(node));
           }
           else {
               let contentDOM = dom;
@@ -3097,99 +3061,89 @@
               else if (rule.contentElement)
                   contentDOM = rule.contentElement;
               this.findAround(dom, contentDOM, true);
-              this.addAll(contentDOM, marks);
-              this.findAround(dom, contentDOM, false);
+              this.addAll(contentDOM);
           }
           if (sync && this.sync(startIn))
               this.open--;
+          if (mark)
+              this.removePendingMark(mark, startIn);
       }
       // Add all child nodes between `startIndex` and `endIndex` (or the
       // whole node, if not given). If `sync` is passed, use it to
       // synchronize after every block element.
-      addAll(parent, marks, startIndex, endIndex) {
+      addAll(parent, startIndex, endIndex) {
           let index = startIndex || 0;
           for (let dom = startIndex ? parent.childNodes[startIndex] : parent.firstChild, end = endIndex == null ? null : parent.childNodes[endIndex]; dom != end; dom = dom.nextSibling, ++index) {
               this.findAtPoint(parent, index);
-              this.addDOM(dom, marks);
+              this.addDOM(dom);
           }
           this.findAtPoint(parent, index);
       }
       // Try to find a way to fit the given node type into the current
       // context. May add intermediate wrappers and/or leave non-solid
       // nodes that we're in.
-      findPlace(node, marks, cautious) {
+      findPlace(node) {
           let route, sync;
-          for (let depth = this.open, penalty = 0; depth >= 0; depth--) {
+          for (let depth = this.open; depth >= 0; depth--) {
               let cx = this.nodes[depth];
               let found = cx.findWrapping(node);
-              if (found && (!route || route.length > found.length + penalty)) {
+              if (found && (!route || route.length > found.length)) {
                   route = found;
                   sync = cx;
                   if (!found.length)
                       break;
               }
-              if (cx.solid) {
-                  if (cautious)
-                      break;
-                  penalty += 2;
-              }
+              if (cx.solid)
+                  break;
           }
           if (!route)
-              return null;
+              return false;
           this.sync(sync);
           for (let i = 0; i < route.length; i++)
-              marks = this.enterInner(route[i], null, marks, false);
-          return marks;
+              this.enterInner(route[i], null, false);
+          return true;
       }
       // Try to insert the given node, adjusting the context when needed.
-      insertNode(node, marks, cautious) {
+      insertNode(node) {
           if (node.isInline && this.needsBlock && !this.top.type) {
               let block = this.textblockFromContext();
               if (block)
-                  marks = this.enterInner(block, null, marks);
+                  this.enterInner(block);
           }
-          let innerMarks = this.findPlace(node, marks, cautious);
-          if (innerMarks) {
+          if (this.findPlace(node)) {
               this.closeExtra();
               let top = this.top;
+              top.applyPending(node.type);
               if (top.match)
                   top.match = top.match.matchType(node.type);
-              let nodeMarks = Mark.none;
-              for (let m of innerMarks.concat(node.marks))
-                  if (top.type ? top.type.allowsMarkType(m.type) : markMayApply(m.type, node.type))
-                      nodeMarks = m.addToSet(nodeMarks);
-              top.content.push(node.mark(nodeMarks));
+              let marks = top.activeMarks;
+              for (let i = 0; i < node.marks.length; i++)
+                  if (!top.type || top.type.allowsMarkType(node.marks[i].type))
+                      marks = node.marks[i].addToSet(marks);
+              top.content.push(node.mark(marks));
               return true;
           }
           return false;
       }
       // Try to start a node of the given type, adjusting the context when
       // necessary.
-      enter(type, attrs, marks, preserveWS) {
-          let innerMarks = this.findPlace(type.create(attrs), marks, false);
-          if (innerMarks)
-              innerMarks = this.enterInner(type, attrs, marks, true, preserveWS);
-          return innerMarks;
+      enter(type, attrs, preserveWS) {
+          let ok = this.findPlace(type.create(attrs));
+          if (ok)
+              this.enterInner(type, attrs, true, preserveWS);
+          return ok;
       }
       // Open a node of the given type
-      enterInner(type, attrs, marks, solid = false, preserveWS) {
+      enterInner(type, attrs = null, solid = false, preserveWS) {
           this.closeExtra();
           let top = this.top;
+          top.applyPending(type);
           top.match = top.match && top.match.matchType(type);
           let options = wsOptionsFor(type, preserveWS, top.options);
           if ((top.options & OPT_OPEN_LEFT) && top.content.length == 0)
               options |= OPT_OPEN_LEFT;
-          let applyMarks = Mark.none;
-          marks = marks.filter(m => {
-              if (top.type ? top.type.allowsMarkType(m.type) : markMayApply(m.type, type)) {
-                  applyMarks = m.addToSet(applyMarks);
-                  return false;
-              }
-              return true;
-          });
-          this.nodes.push(new NodeContext(type, attrs, applyMarks, solid, null, options));
+          this.nodes.push(new NodeContext(type, attrs, top.activeMarks, top.pendingMarks, solid, null, options));
           this.open++;
-          return marks;
       }
       // Make sure all nodes above this.open are finished and added to
       // their parents
@@ -3204,18 +3158,14 @@
       finish() {
           this.open = 0;
           this.closeExtra(this.isOpen);
-          return this.nodes[0].finish(!!(this.isOpen || this.options.topOpen));
+          return this.nodes[0].finish(this.isOpen || this.options.topOpen);
       }
       sync(to) {
-          for (let i = this.open; i >= 0; i--) {
+          for (let i = this.open; i >= 0; i--)
               if (this.nodes[i] == to) {
                   this.open = i;
                   return true;
               }
-              else if (this.localPreserveWS) {
-                  this.nodes[i].options |= OPT_PRESERVE_WS;
-              }
-          }
           return false;
       }
       get currentPos() {
@@ -3284,7 +3234,7 @@
                       let next = depth > 0 || (depth == 0 && useRoot) ? this.nodes[depth].type
                           : option && depth >= minDepth ? option.node(depth - minDepth).type
                               : null;
-                      if (!next || (next.name != part && !next.isInGroup(part)))
+                      if (!next || (next.name != part && next.groups.indexOf(part) == -1))
                           return false;
                       depth--;
                   }
@@ -3305,6 +3255,29 @@
               let type = this.parser.schema.nodes[name];
               if (type.isTextblock && type.defaultAttrs)
                   return type;
+          }
+      }
+      addPendingMark(mark) {
+          let found = findSameMarkInSet(mark, this.top.pendingMarks);
+          if (found)
+              this.top.stashMarks.push(found);
+          this.top.pendingMarks = mark.addToSet(this.top.pendingMarks);
+      }
+      removePendingMark(mark, upto) {
+          for (let depth = this.open; depth >= 0; depth--) {
+              let level = this.nodes[depth];
+              let found = level.pendingMarks.lastIndexOf(mark);
+              if (found > -1) {
+                  level.pendingMarks = mark.removeFromSet(level.pendingMarks);
+              }
+              else {
+                  level.activeMarks = mark.removeFromSet(level.activeMarks);
+                  let stashMark = level.popFromStashMark(mark);
+                  if (stashMark && level.type && level.type.allowsMarkType(stashMark.type))
+                      level.activeMarks = stashMark.addToSet(level.activeMarks);
+              }
+              if (level == upto)
+                  break;
           }
       }
   }
@@ -3330,7 +3303,14 @@
   function matches(dom, selector) {
       return (dom.matches || dom.msMatchesSelector || dom.webkitMatchesSelector || dom.mozMatchesSelector).call(dom, selector);
   }
-  function copy$1(obj) {
+  // Tokenize a style attribute into property/value pairs.
+  function parseStyles(style) {
+      let re = /\s*([\w-]+)\s*:\s*([^;]+)/g, m, result = [];
+      while (m = re.exec(style))
+          result.push(m[1], m[2].trim());
+      return result;
+  }
+  function copy$2(obj) {
       let copy = {};
       for (let prop in obj)
           copy[prop] = obj[prop];
@@ -3357,6 +3337,12 @@
           };
           if (scan(parent.contentMatch))
               return true;
+      }
+  }
+  function findSameMarkInSet(mark, set) {
+      for (let i = 0; i < set.length; i++) {
+          if (mark.eq(set[i]))
+              return set[i];
       }
   }
 
@@ -3430,9 +3416,7 @@
       @internal
       */
       serializeNodeInner(node, options) {
-          if (node.isText)
-              return doc$2(options).createTextNode(node.text);
-          let { dom, contentDOM } = renderSpec(doc$2(options), this.nodes[node.type.name](node), null, node.attrs);
+          let { dom, contentDOM } = DOMSerializer.renderSpec(doc$2(options), this.nodes[node.type.name](node));
           if (contentDOM) {
               if (node.isLeaf)
                   throw new RangeError("Content hole not allowed in a leaf node spec");
@@ -3463,13 +3447,57 @@
       */
       serializeMark(mark, inline, options = {}) {
           let toDOM = this.marks[mark.type.name];
-          return toDOM && renderSpec(doc$2(options), toDOM(mark, inline), null, mark.attrs);
+          return toDOM && DOMSerializer.renderSpec(doc$2(options), toDOM(mark, inline));
       }
-      static renderSpec(doc, structure, xmlNS = null, blockArraysIn) {
-          // Kludge for backwards-compatibility with accidental original behavious
+      /**
+      Render an [output spec](https://prosemirror.net/docs/ref/#model.DOMOutputSpec) to a DOM node. If
+      the spec has a hole (zero) in it, `contentDOM` will point at the
+      node with the hole.
+      */
+      static renderSpec(doc, structure, xmlNS = null) {
           if (typeof structure == "string")
               return { dom: doc.createTextNode(structure) };
-          return renderSpec(doc, structure, xmlNS, blockArraysIn);
+          if (structure.nodeType != null)
+              return { dom: structure };
+          if (structure.dom && structure.dom.nodeType != null)
+              return structure;
+          let tagName = structure[0], space = tagName.indexOf(" ");
+          if (space > 0) {
+              xmlNS = tagName.slice(0, space);
+              tagName = tagName.slice(space + 1);
+          }
+          let contentDOM;
+          let dom = (xmlNS ? doc.createElementNS(xmlNS, tagName) : doc.createElement(tagName));
+          let attrs = structure[1], start = 1;
+          if (attrs && typeof attrs == "object" && attrs.nodeType == null && !Array.isArray(attrs)) {
+              start = 2;
+              for (let name in attrs)
+                  if (attrs[name] != null) {
+                      let space = name.indexOf(" ");
+                      if (space > 0)
+                          dom.setAttributeNS(name.slice(0, space), name.slice(space + 1), attrs[name]);
+                      else
+                          dom.setAttribute(name, attrs[name]);
+                  }
+          }
+          for (let i = start; i < structure.length; i++) {
+              let child = structure[i];
+              if (child === 0) {
+                  if (i < structure.length - 1 || i > start)
+                      throw new RangeError("Content hole must be the only child of its parent node");
+                  return { dom, contentDOM: dom };
+              }
+              else {
+                  let { dom: inner, contentDOM: innerContent } = DOMSerializer.renderSpec(doc, child, xmlNS);
+                  dom.appendChild(inner);
+                  if (innerContent) {
+                      if (contentDOM)
+                          throw new RangeError("Multiple content holes");
+                      contentDOM = innerContent;
+                  }
+              }
+          }
+          return { dom, contentDOM };
       }
       /**
       Build a serializer using the [`toDOM`](https://prosemirror.net/docs/ref/#model.NodeSpec.toDOM)
@@ -3507,91 +3535,6 @@
   }
   function doc$2(options) {
       return options.document || window.document;
-  }
-  const suspiciousAttributeCache = new WeakMap();
-  function suspiciousAttributes(attrs) {
-      let value = suspiciousAttributeCache.get(attrs);
-      if (value === undefined)
-          suspiciousAttributeCache.set(attrs, value = suspiciousAttributesInner(attrs));
-      return value;
-  }
-  function suspiciousAttributesInner(attrs) {
-      let result = null;
-      function scan(value) {
-          if (value && typeof value == "object") {
-              if (Array.isArray(value)) {
-                  if (typeof value[0] == "string") {
-                      if (!result)
-                          result = [];
-                      result.push(value);
-                  }
-                  else {
-                      for (let i = 0; i < value.length; i++)
-                          scan(value[i]);
-                  }
-              }
-              else {
-                  for (let prop in value)
-                      scan(value[prop]);
-              }
-          }
-      }
-      scan(attrs);
-      return result;
-  }
-  function renderSpec(doc, structure, xmlNS, blockArraysIn) {
-      if (structure.nodeType == 1)
-          return { dom: structure };
-      if (structure.dom && structure.dom.nodeType == 1)
-          return structure;
-      let tagName = structure[0], suspicious;
-      if (typeof tagName != "string")
-          throw new RangeError("Invalid array passed to renderSpec");
-      if (blockArraysIn && (suspicious = suspiciousAttributes(blockArraysIn)) &&
-          suspicious.indexOf(structure) > -1)
-          throw new RangeError("Using an array from an attribute object as a DOM spec. This may be an attempted cross site scripting attack.");
-      let space = tagName.indexOf(" ");
-      if (space > 0) {
-          xmlNS = tagName.slice(0, space);
-          tagName = tagName.slice(space + 1);
-      }
-      let contentDOM;
-      let dom = (xmlNS ? doc.createElementNS(xmlNS, tagName) : doc.createElement(tagName));
-      let attrs = structure[1], start = 1;
-      if (attrs && typeof attrs == "object" && attrs.nodeType == null && !Array.isArray(attrs)) {
-          start = 2;
-          for (let name in attrs)
-              if (attrs[name] != null) {
-                  let space = name.indexOf(" ");
-                  if (space > 0)
-                      dom.setAttributeNS(name.slice(0, space), name.slice(space + 1), attrs[name]);
-                  else if (name == "style" && dom.style)
-                      dom.style.cssText = attrs[name];
-                  else
-                      dom.setAttribute(name, attrs[name]);
-              }
-      }
-      for (let i = start; i < structure.length; i++) {
-          let child = structure[i];
-          if (child === 0) {
-              if (i < structure.length - 1 || i > start)
-                  throw new RangeError("Content hole must be the only child of its parent node");
-              return { dom, contentDOM: dom };
-          }
-          else if (typeof child == "string") {
-              dom.appendChild(doc.createTextNode(child));
-          }
-          else {
-              let { dom: inner, contentDOM: innerContent } = renderSpec(doc, child, xmlNS, blockArraysIn);
-              dom.appendChild(inner);
-              if (innerContent) {
-                  if (contentDOM)
-                      throw new RangeError("Multiple content holes");
-                  contentDOM = innerContent;
-              }
-          }
-      }
-      return { dom, contentDOM };
   }
 
   const pDOM = ["p", 0], blockquoteDOM = ["blockquote", 0], hrDOM = ["hr"], preDOM = ["pre", ["code", 0]], brDOM = ["br"];
@@ -3639,7 +3582,7 @@
       `<h6>` elements.
       */
       heading: {
-          attrs: { level: { default: 1, validate: "number" } },
+          attrs: { level: { default: 1 } },
           content: "inline*",
           group: "block",
           defining: true,
@@ -3679,9 +3622,9 @@
       image: {
           inline: true,
           attrs: {
-              src: { validate: "string" },
-              alt: { default: null, validate: "string|null" },
-              title: { default: null, validate: "string|null" }
+              src: {},
+              alt: { default: null },
+              title: { default: null }
           },
           group: "inline",
           draggable: true,
@@ -3717,8 +3660,8 @@
       */
       link: {
           attrs: {
-              href: { validate: "string" },
-              title: { default: null, validate: "string|null" }
+              href: {},
+              title: { default: null }
           },
           inclusive: false,
           parseDOM: [{ tag: "a[href]", getAttrs(dom) {
@@ -3758,7 +3701,6 @@
       Code font mark. Represented as a `<code>` element.
       */
       code: {
-          code: true,
           parseDOM: [{ tag: "code" }],
           toDOM() { return codeDOM; }
       }
@@ -3772,7 +3714,7 @@
   To reuse elements from this schema, extend or read from its
   `spec.nodes` and `spec.marks` [properties](https://prosemirror.net/docs/ref/#model.Schema.spec).
   */
-  const schema$1 = new Schema$1({ nodes: nodes$1, marks: marks$1 });
+  const schema$2 = new Schema$2({ nodes: nodes$1, marks: marks$1 });
 
   // Recovery values encode a range index and an offset. They are
   // represented as numbers, because tons of them will be created when
@@ -6585,6 +6527,7 @@
           else {
               if (to == null)
                   to = from;
+              to = to == null ? from : to;
               if (!text)
                   return this.deleteRange(from, to);
               let marks = this.storedMarks;
@@ -6593,7 +6536,7 @@
                   marks = to == from ? $from.marks() : $from.marksAcross(this.doc.resolve(to));
               }
               this.replaceRangeWith(from, to, schema.text(text, marks));
-              if (!this.selection.empty && this.selection.to == from + text.length)
+              if (!this.selection.empty)
                   this.setSelection(Selection$2.near(this.selection.$to));
               return this;
           }
@@ -6789,7 +6732,7 @@
           return newInstance;
       }
       /**
-      Accessor that constructs and returns a new [transaction](https://prosemirror.net/docs/ref/#state.Transaction) from this state.
+      Start a [transaction](https://prosemirror.net/docs/ref/#state.Transaction) from this state.
       */
       get tr() { return new Transaction$1(this); }
       /**
@@ -6971,9 +6914,6 @@
       range.setStart(node, from || 0);
       return range;
   };
-  const clearReusedRange = function () {
-      reusedRange = null;
-  };
   // Scans forward and backward through DOM positions equivalent to the
   // given one to see if the two are in the same place (i.e. after a
   // text node vs at the end of that text node)
@@ -6983,7 +6923,6 @@
   };
   const atomElements = /^(img|br|input|textarea|hr)$/i;
   function scanFor(node, off, targetNode, targetOff, dir) {
-      var _a;
       for (;;) {
           if (node == targetNode && off == targetOff)
               return true;
@@ -6996,17 +6935,10 @@
               node = parent;
           }
           else if (node.nodeType == 1) {
-              let child = node.childNodes[off + (dir < 0 ? -1 : 0)];
-              if (child.nodeType == 1 && child.contentEditable == "false") {
-                  if ((_a = child.pmViewDesc) === null || _a === void 0 ? void 0 : _a.ignoreForSelection)
-                      off += dir;
-                  else
-                      return false;
-              }
-              else {
-                  node = child;
-                  off = dir < 0 ? nodeSize(node) : 0;
-              }
+              node = node.childNodes[off + (dir < 0 ? -1 : 0)];
+              if (node.contentEditable == "false")
+                  return false;
+              off = dir < 0 ? nodeSize(node) : 0;
           }
           else {
               return false;
@@ -7015,44 +6947,6 @@
   }
   function nodeSize(node) {
       return node.nodeType == 3 ? node.nodeValue.length : node.childNodes.length;
-  }
-  function textNodeBefore$1(node, offset) {
-      for (;;) {
-          if (node.nodeType == 3 && offset)
-              return node;
-          if (node.nodeType == 1 && offset > 0) {
-              if (node.contentEditable == "false")
-                  return null;
-              node = node.childNodes[offset - 1];
-              offset = nodeSize(node);
-          }
-          else if (node.parentNode && !hasBlockDesc(node)) {
-              offset = domIndex(node);
-              node = node.parentNode;
-          }
-          else {
-              return null;
-          }
-      }
-  }
-  function textNodeAfter$1(node, offset) {
-      for (;;) {
-          if (node.nodeType == 3 && offset < node.nodeValue.length)
-              return node;
-          if (node.nodeType == 1 && offset < node.childNodes.length) {
-              if (node.contentEditable == "false")
-                  return null;
-              node = node.childNodes[offset];
-              offset = 0;
-          }
-          else if (node.parentNode && !hasBlockDesc(node)) {
-              offset = domIndex(node) + 1;
-              node = node.parentNode;
-          }
-          else {
-              return null;
-          }
-      }
   }
   function isOnEdge(node, offset, parent) {
       for (let atStart = offset == 0, atEnd = offset == nodeSize(node); atStart || atEnd;) {
@@ -7095,18 +6989,15 @@
       if (doc.caretPositionFromPoint) {
           try { // Firefox throws for this call in hard-to-predict circumstances (#994)
               let pos = doc.caretPositionFromPoint(x, y);
-              // Clip the offset, because Chrome will return a text offset
-              // into <input> nodes, which can't be treated as a regular DOM
-              // offset
               if (pos)
-                  return { node: pos.offsetNode, offset: Math.min(nodeSize(pos.offsetNode), pos.offset) };
+                  return { node: pos.offsetNode, offset: pos.offset };
           }
           catch (_) { }
       }
       if (doc.caretRangeFromPoint) {
           let range = doc.caretRangeFromPoint(x, y);
           if (range)
-              return { node: range.startContainer, offset: Math.min(nodeSize(range.startContainer), range.startOffset) };
+              return { node: range.startContainer, offset: range.startOffset };
       }
   }
 
@@ -7127,18 +7018,12 @@
   // Is true for both iOS and iPadOS for convenience
   const ios = safari && (/Mobile\/\w+/.test(agent) || !!nav && nav.maxTouchPoints > 2);
   const mac$3 = ios || (nav ? /Mac/.test(nav.platform) : false);
-  const windows$1 = nav ? /Win/.test(nav.platform) : false;
+  const windows = nav ? /Win/.test(nav.platform) : false;
   const android = /Android \d/.test(agent);
   const webkit = !!doc$1 && "webkitFontSmoothing" in doc$1.documentElement.style;
   const webkit_version = webkit ? +(/\bAppleWebKit\/(\d+)/.exec(navigator.userAgent) || [0, 0])[1] : 0;
 
   function windowRect(doc) {
-      let vp = doc.defaultView && doc.defaultView.visualViewport;
-      if (vp)
-          return {
-              left: 0, right: vp.width,
-              top: 0, bottom: vp.height
-          };
       return { left: 0, right: doc.documentElement.clientWidth,
           top: 0, bottom: doc.documentElement.clientHeight };
   }
@@ -7157,13 +7042,11 @@
   function scrollRectIntoView(view, rect, startDOM) {
       let scrollThreshold = view.someProp("scrollThreshold") || 0, scrollMargin = view.someProp("scrollMargin") || 5;
       let doc = view.dom.ownerDocument;
-      for (let parent = startDOM || view.dom;;) {
+      for (let parent = startDOM || view.dom;; parent = parentNode(parent)) {
           if (!parent)
               break;
-          if (parent.nodeType != 1) {
-              parent = parentNode(parent);
+          if (parent.nodeType != 1)
               continue;
-          }
           let elt = parent;
           let atTop = elt == doc.body;
           let bounding = atTop ? windowRect(doc) : clientRect(elt);
@@ -7192,10 +7075,8 @@
                   rect = { left: rect.left - dX, top: rect.top - dY, right: rect.right - dX, bottom: rect.bottom - dY };
               }
           }
-          let pos = atTop ? "fixed" : getComputedStyle(parent).position;
-          if (/^(fixed|sticky)$/.test(pos))
+          if (atTop || /^(fixed|sticky)$/.test(getComputedStyle(parent).position))
               break;
-          parent = pos == "absolute" ? parent.offsetParent : parentNode(parent);
       }
   }
   // Store the scroll position of the editor's parent nodes, along with
@@ -7315,20 +7196,17 @@
   }
   function findOffsetInText(node, coords) {
       let len = node.nodeValue.length;
-      let range = document.createRange(), result;
+      let range = document.createRange();
       for (let i = 0; i < len; i++) {
           range.setEnd(node, i + 1);
           range.setStart(node, i);
           let rect = singleRect(range, 1);
           if (rect.top == rect.bottom)
               continue;
-          if (inRect(coords, rect)) {
-              result = { node, offset: i + (coords.left >= (rect.left + rect.right) / 2 ? 1 : 0) };
-              break;
-          }
+          if (inRect(coords, rect))
+              return { node, offset: i + (coords.left >= (rect.left + rect.right) / 2 ? 1 : 0) };
       }
-      range.detach();
-      return result || { node, offset: 0 };
+      return { node, offset: 0 };
   }
   function inRect(coords, rect) {
       return coords.left >= rect.left - 1 && coords.left <= rect.right + 1 &&
@@ -7359,19 +7237,17 @@
       for (let cur = node, sawBlock = false;;) {
           if (cur == view.dom)
               break;
-          let desc = view.docView.nearestDesc(cur, true), rect;
+          let desc = view.docView.nearestDesc(cur, true);
           if (!desc)
               return null;
-          if (desc.dom.nodeType == 1 && (desc.node.isBlock && desc.parent || !desc.contentDOM) &&
-              // Ignore elements with zero-size bounding rectangles
-              ((rect = desc.dom.getBoundingClientRect()).width || rect.height)) {
-              if (desc.node.isBlock && desc.parent && !/^T(R|BODY|HEAD|FOOT)$/.test(desc.dom.nodeName)) {
-                  // Only apply the horizontal test to the innermost block. Vertical for any parent.
-                  if (!sawBlock && rect.left > coords.left || rect.top > coords.top)
-                      outsideBlock = desc.posBefore;
-                  else if (!sawBlock && rect.right < coords.left || rect.bottom < coords.top)
-                      outsideBlock = desc.posAfter;
+          if (desc.dom.nodeType == 1 && (desc.node.isBlock && desc.parent && !sawBlock || !desc.contentDOM)) {
+              let rect = desc.dom.getBoundingClientRect();
+              if (desc.node.isBlock && desc.parent && !sawBlock) {
                   sawBlock = true;
+                  if (rect.left > coords.left || rect.top > coords.top)
+                      outsideBlock = desc.posBefore;
+                  else if (rect.right < coords.left || rect.bottom < coords.top)
+                      outsideBlock = desc.posAfter;
               }
               if (!desc.contentDOM && outsideBlock < 0 && !desc.node.isText) {
                   // If we are inside a leaf, return the side of the leaf closer to the coords
@@ -7626,8 +7502,6 @@
           return false;
       let offset = $head.parentOffset, atStart = !offset, atEnd = offset == $head.parent.content.size;
       let sel = view.domSelection();
-      if (!sel)
-          return $head.pos == $head.start() || $head.pos == $head.end();
       // If the textblock is all LTR, or the browser doesn't support
       // Selection.modify (Edge), fall back to a primitive approach
       if (!maybeRTL.test($head.parent.textContent) || !sel.modify)
@@ -7848,15 +7722,8 @@
           for (let i = 0, offset = 0; i < this.children.length; i++) {
               let child = this.children[i], end = offset + child.size;
               if (offset == pos && end != offset) {
-                  while (!child.border && child.children.length) {
-                      for (let i = 0; i < child.children.length; i++) {
-                          let inner = child.children[i];
-                          if (inner.size) {
-                              child = inner;
-                              break;
-                          }
-                      }
-                  }
+                  while (!child.border && child.children.length)
+                      child = child.children[0];
                   return child;
               }
               if (pos < end)
@@ -7967,19 +7834,18 @@
       // custom things with the selection. Note that this falls apart when
       // a selection starts in such a node and ends in another, in which
       // case we just use whatever domFromPos produces as a best effort.
-      setSelection(anchor, head, view, force = false) {
+      setSelection(anchor, head, root, force = false) {
           // If the selection falls entirely in a child, give it to that child
           let from = Math.min(anchor, head), to = Math.max(anchor, head);
           for (let i = 0, offset = 0; i < this.children.length; i++) {
               let child = this.children[i], end = offset + child.size;
               if (from > offset && to < end)
-                  return child.setSelection(anchor - offset - child.border, head - offset - child.border, view, force);
+                  return child.setSelection(anchor - offset - child.border, head - offset - child.border, root, force);
               offset = end;
           }
           let anchorDOM = this.domFromPos(anchor, anchor ? -1 : 1);
           let headDOM = head == anchor ? anchorDOM : this.domFromPos(head, head ? -1 : 1);
-          let domSel = view.root.getSelection();
-          let selRange = view.domSelectionRange();
+          let domSel = root.getSelection();
           let brKludge = false;
           // On Firefox, using Selection.collapse to put the cursor after a
           // BR node for some reason doesn't always work (#1073). On Safari,
@@ -8010,20 +7876,20 @@
           }
           // Firefox can act strangely when the selection is in front of an
           // uneditable node. See #1163 and https://bugzilla.mozilla.org/show_bug.cgi?id=1709536
-          if (gecko && selRange.focusNode && selRange.focusNode != headDOM.node && selRange.focusNode.nodeType == 1) {
-              let after = selRange.focusNode.childNodes[selRange.focusOffset];
+          if (gecko && domSel.focusNode && domSel.focusNode != headDOM.node && domSel.focusNode.nodeType == 1) {
+              let after = domSel.focusNode.childNodes[domSel.focusOffset];
               if (after && after.contentEditable == "false")
                   force = true;
           }
           if (!(force || brKludge && safari) &&
-              isEquivalentPosition(anchorDOM.node, anchorDOM.offset, selRange.anchorNode, selRange.anchorOffset) &&
-              isEquivalentPosition(headDOM.node, headDOM.offset, selRange.focusNode, selRange.focusOffset))
+              isEquivalentPosition(anchorDOM.node, anchorDOM.offset, domSel.anchorNode, domSel.anchorOffset) &&
+              isEquivalentPosition(headDOM.node, headDOM.offset, domSel.focusNode, domSel.focusOffset))
               return;
           // Selection.extend can be used to create an 'inverted' selection
           // (one where the focus is before the anchor), but not all
           // browsers support it yet.
           let domSelExtended = false;
-          if ((domSel.extend || anchor == head) && !(brKludge && gecko)) {
+          if ((domSel.extend || anchor == head) && !brKludge) {
               domSel.collapse(anchorDOM.node, anchorDOM.offset);
               try {
                   if (anchor != head)
@@ -8093,8 +7959,6 @@
       }
       get domAtom() { return false; }
       get ignoreForCoords() { return false; }
-      get ignoreForSelection() { return false; }
-      isText(text) { return false; }
   }
   // A widget desc represents a widget decoration, which is a DOM node
   // drawn between the document nodes.
@@ -8138,7 +8002,6 @@
           super.destroy();
       }
       get domAtom() { return true; }
-      get ignoreForSelection() { return !!this.widget.type.spec.relaxedSide; }
       get side() { return this.widget.type.side; }
   }
   class CompositionViewDesc extends ViewDesc {
@@ -8166,17 +8029,16 @@
   // some cases they will be split more often than would appear
   // necessary.
   class MarkViewDesc extends ViewDesc {
-      constructor(parent, mark, dom, contentDOM, spec) {
+      constructor(parent, mark, dom, contentDOM) {
           super(parent, [], dom, contentDOM);
           this.mark = mark;
-          this.spec = spec;
       }
       static create(parent, mark, inline, view) {
           let custom = view.nodeViews[mark.type.name];
           let spec = custom && custom(mark, view, inline);
           if (!spec || !spec.dom)
-              spec = DOMSerializer.renderSpec(document, mark.type.spec.toDOM(mark, inline), null, mark.attrs);
-          return new MarkViewDesc(parent, mark, spec.dom, spec.contentDOM || spec.dom, spec);
+              spec = DOMSerializer.renderSpec(document, mark.type.spec.toDOM(mark, inline));
+          return new MarkViewDesc(parent, mark, spec.dom, spec.contentDOM || spec.dom);
       }
       parseRule() {
           if ((this.dirty & NODE_DIRTY) || this.mark.type.spec.reparseInView)
@@ -8207,14 +8069,6 @@
               nodes[i].parent = copy;
           copy.children = nodes;
           return copy;
-      }
-      ignoreMutation(mutation) {
-          return this.spec.ignoreMutation ? this.spec.ignoreMutation(mutation) : super.ignoreMutation(mutation);
-      }
-      destroy() {
-          if (this.spec.destroy)
-              this.spec.destroy();
-          super.destroy();
       }
   }
   // Node view descs are the main, most common type of view desc, and
@@ -8255,8 +8109,7 @@
                   throw new RangeError("Text must be rendered as a DOM text node");
           }
           else if (!dom) {
-              let spec = DOMSerializer.renderSpec(document, node.type.spec.toDOM(node), null, node.attrs);
-              ({ dom, contentDOM } = spec);
+              ({ dom, contentDOM } = DOMSerializer.renderSpec(document, node.type.spec.toDOM(node)));
           }
           if (!contentDOM && !node.isText && dom.nodeName != "BR") { // Chrome gets confused by <br contenteditable=false>
               if (!dom.hasAttribute("contenteditable"))
@@ -8324,15 +8177,15 @@
           let updater = new ViewTreeUpdater(this, localComposition && localComposition.node, view);
           iterDeco(this.node, this.innerDeco, (widget, i, insideNode) => {
               if (widget.spec.marks)
-                  updater.syncToMarks(widget.spec.marks, inline, view, i);
+                  updater.syncToMarks(widget.spec.marks, inline, view);
               else if (widget.type.side >= 0 && !insideNode)
-                  updater.syncToMarks(i == this.node.childCount ? Mark.none : this.node.child(i).marks, inline, view, i);
+                  updater.syncToMarks(i == this.node.childCount ? Mark.none : this.node.child(i).marks, inline, view);
               // If the next node is a desc matching this widget, reuse it,
               // otherwise insert the widget as a new view desc.
               updater.placeWidget(widget, view, off);
           }, (child, outerDeco, innerDeco, i) => {
               // Make sure the wrapping mark descs match the node's marks.
-              updater.syncToMarks(child.marks, inline, view, i);
+              updater.syncToMarks(child.marks, inline, view);
               // Try several strategies for drawing this node
               let compIndex;
               if (updater.findNodeMatch(child, outerDeco, innerDeco, i)) ;
@@ -8348,7 +8201,7 @@
               off += child.nodeSize;
           });
           // Drop all remaining descs after the current position.
-          updater.syncToMarks([], inline, view, 0);
+          updater.syncToMarks([], inline, view);
           if (this.node.isTextblock)
               updater.addTextblockHacks();
           updater.destroyRest();
@@ -8368,7 +8221,8 @@
           let { from, to } = view.state.selection;
           if (!(view.state.selection instanceof TextSelection) || from < pos || to > pos + this.node.content.size)
               return null;
-          let textNode = view.input.compositionNode;
+          let sel = view.domSelectionRange();
+          let textNode = nearbyTextNode(sel.focusNode, sel.focusOffset);
           if (!textNode || !this.dom.contains(textNode.parentNode))
               return null;
           if (this.node.inlineContent) {
@@ -8435,19 +8289,17 @@
       }
       // Mark this node as being the selected node.
       selectNode() {
-          if (this.nodeDOM.nodeType == 1) {
+          if (this.nodeDOM.nodeType == 1)
               this.nodeDOM.classList.add("ProseMirror-selectednode");
-              if (this.contentDOM || !this.node.type.spec.draggable)
-                  this.nodeDOM.draggable = true;
-          }
+          if (this.contentDOM || !this.node.type.spec.draggable)
+              this.dom.draggable = true;
       }
       // Remove selected node marking from this node.
       deselectNode() {
-          if (this.nodeDOM.nodeType == 1) {
+          if (this.nodeDOM.nodeType == 1)
               this.nodeDOM.classList.remove("ProseMirror-selectednode");
-              if (this.contentDOM || !this.node.type.spec.draggable)
-                  this.nodeDOM.removeAttribute("draggable");
-          }
+          if (this.contentDOM || !this.node.type.spec.draggable)
+              this.dom.removeAttribute("draggable");
       }
       get domAtom() { return this.node.isAtom; }
   }
@@ -8512,7 +8364,6 @@
               this.dirty = NODE_DIRTY;
       }
       get domAtom() { return false; }
-      isText(text) { return this.node.text == text; }
   }
   // A dummy desc used to tag trailing BR or IMG nodes created to work
   // around contentEditable terribleness.
@@ -8536,7 +8387,7 @@
       update(node, outerDeco, innerDeco, view) {
           if (this.dirty == NODE_DIRTY)
               return false;
-          if (this.spec.update && (this.node.type == node.type || this.spec.multiType)) {
+          if (this.spec.update) {
               let result = this.spec.update(node, outerDeco, innerDeco);
               if (result)
                   this.updateInner(node, outerDeco, innerDeco, view);
@@ -8555,9 +8406,9 @@
       deselectNode() {
           this.spec.deselectNode ? this.spec.deselectNode() : super.deselectNode();
       }
-      setSelection(anchor, head, view, force) {
-          this.spec.setSelection ? this.spec.setSelection(anchor, head, view.root)
-              : super.setSelection(anchor, head, view, force);
+      setSelection(anchor, head, root, force) {
+          this.spec.setSelection ? this.spec.setSelection(anchor, head, root)
+              : super.setSelection(anchor, head, root, force);
       }
       destroy() {
           if (this.spec.destroy)
@@ -8738,7 +8589,7 @@
       }
       // Sync the current stack of mark descs with the given array of
       // marks, reusing existing mark descs when possible.
-      syncToMarks(marks, inline, view, parentIndex) {
+      syncToMarks(marks, inline, view) {
           let keep = 0, depth = this.stack.length >> 1;
           let maxKeep = Math.min(depth, marks.length);
           while (keep < maxKeep &&
@@ -8754,10 +8605,8 @@
           }
           while (depth < marks.length) {
               this.stack.push(this.top, this.index + 1);
-              let found = -1, scanTo = this.top.children.length;
-              if (parentIndex < this.preMatch.index)
-                  scanTo = Math.min(this.index + 3, scanTo);
-              for (let i = this.index; i < scanTo; i++) {
+              let found = -1;
+              for (let i = this.index; i < Math.min(this.index + 3, this.top.children.length); i++) {
                   let next = this.top.children[i];
                   if (next.matchesMark(marks[depth]) && !this.isLocked(next.dom)) {
                       found = i;
@@ -8856,7 +8705,6 @@
                       return true;
                   }
                   else if (!locked && (updated = this.recreateWrapper(next, node, outerDeco, innerDeco, view, pos))) {
-                      this.destroyBetween(this.index, i);
                       this.top.children[this.index] = updated;
                       if (updated.contentDOM) {
                           updated.dirty = CONTENT_DIRTY;
@@ -8876,8 +8724,7 @@
       // identical content, move over its children.
       recreateWrapper(next, node, outerDeco, innerDeco, view, pos) {
           if (next.dirty || node.isAtom || !next.children.length ||
-              !next.node.content.eq(node.content) ||
-              !sameOuterDeco(outerDeco, next.outerDeco) || !innerDeco.eq(next.innerDeco))
+              !next.node.content.eq(node.content))
               return null;
           let wrapper = NodeViewDesc.create(this.top, node, outerDeco, innerDeco, view, pos);
           if (wrapper.contentDOM) {
@@ -8953,7 +8800,9 @@
   }
   // Iterate from the end of the fragment and array of descs to find
   // directly matching ones, in order to avoid overeagerly reusing those
-  // for other nodes.
+  // for other nodes. Returns the fragment index of the first node that
+  // is part of the sequence of matched nodes at the end of the
+  // fragment.
   function preMatch(frag, parentDesc) {
       let curDesc = parentDesc, descI = curDesc.children.length;
       let fI = frag.childCount, matched = new Map, matches = [];
@@ -8976,6 +8825,7 @@
                   break outer;
               }
               else {
+                  // FIXME
                   descI = curDesc.parent.children.indexOf(curDesc);
                   curDesc = curDesc.parent;
               }
@@ -9083,6 +8933,25 @@
           dom.style.cssText = oldCSS;
       }
   }
+  function nearbyTextNode(node, offset) {
+      for (;;) {
+          if (node.nodeType == 3)
+              return node;
+          if (node.nodeType == 1 && offset > 0) {
+              if (node.childNodes.length > offset && node.childNodes[offset].nodeType == 3)
+                  return node.childNodes[offset];
+              node = node.childNodes[offset - 1];
+              offset = nodeSize(node);
+          }
+          else if (node.nodeType == 1 && offset < node.childNodes.length) {
+              node = node.childNodes[offset];
+              offset = 0;
+          }
+          else {
+              return null;
+          }
+      }
+  }
   // Find a piece of text in an inline fragment, overlapping from-to
   function findTextInFragment(frag, text, from, to) {
       for (let i = 0, pos = 0; i < frag.childCount && pos <= to;) {
@@ -9145,9 +9014,9 @@
       let head = view.docView.posFromDOM(domSel.focusNode, domSel.focusOffset, 1);
       if (head < 0)
           return null;
-      let $head = doc.resolve(head), anchor, selection;
+      let $head = doc.resolve(head), $anchor, selection;
       if (selectionCollapsed(domSel)) {
-          anchor = head;
+          $anchor = $head;
           while (nearestDesc && !nearestDesc.node)
               nearestDesc = nearestDesc.parent;
           let nearestDescNode = nearestDesc.node;
@@ -9158,25 +9027,11 @@
           }
       }
       else {
-          if (domSel instanceof view.dom.ownerDocument.defaultView.Selection && domSel.rangeCount > 1) {
-              let min = head, max = head;
-              for (let i = 0; i < domSel.rangeCount; i++) {
-                  let range = domSel.getRangeAt(i);
-                  min = Math.min(min, view.docView.posFromDOM(range.startContainer, range.startOffset, 1));
-                  max = Math.max(max, view.docView.posFromDOM(range.endContainer, range.endOffset, -1));
-              }
-              if (min < 0)
-                  return null;
-              [anchor, head] = max == view.state.selection.anchor ? [max, min] : [min, max];
-              $head = doc.resolve(head);
-          }
-          else {
-              anchor = view.docView.posFromDOM(domSel.anchorNode, domSel.anchorOffset, 1);
-          }
+          let anchor = view.docView.posFromDOM(domSel.anchorNode, domSel.anchorOffset, 1);
           if (anchor < 0)
               return null;
+          $anchor = doc.resolve(anchor);
       }
-      let $anchor = doc.resolve(anchor);
       if (!selection) {
           let bias = origin == "pointer" || (view.state.selection.head < $head.pos && !inWidget) ? 1 : -1;
           selection = selectionBetween(view, $anchor, $head, bias);
@@ -9216,7 +9071,7 @@
               if (!sel.empty && !sel.$from.parent.inlineContent)
                   resetEditableTo = temporarilyEditableNear(view, sel.to);
           }
-          view.docView.setSelection(anchor, head, view, force);
+          view.docView.setSelection(anchor, head, view.root, force);
           if (brokenSelectBetweenUneditable) {
               if (resetEditableFrom)
                   resetEditable(resetEditableFrom);
@@ -9284,14 +9139,15 @@
       });
   }
   function selectCursorWrapper(view) {
-      let domSel = view.domSelection();
-      if (!domSel)
-          return;
+      let domSel = view.domSelection(), range = document.createRange();
       let node = view.cursorWrapper.dom, img = node.nodeName == "IMG";
       if (img)
-          domSel.collapse(node.parentNode, domIndex(node) + 1);
+          range.setEnd(node.parentNode, domIndex(node) + 1);
       else
-          domSel.collapse(node, 0);
+          range.setEnd(node, 0);
+      range.collapse(false);
+      domSel.removeAllRanges();
+      domSel.addRange(range);
       // Kludge to kill 'control selection' in IE11 when selecting an
       // invisible cursor wrapper, since that would result in those weird
       // resize handles and a selection that considers the absolutely
@@ -9577,8 +9433,6 @@
           }
       }
       let sel = view.domSelection();
-      if (!sel)
-          return;
       if (selectionCollapsed(sel)) {
           let range = document.createRange();
           range.setEnd(node, offset);
@@ -9599,7 +9453,7 @@
   }
   function findDirection(view, pos) {
       let $pos = view.state.doc.resolve(pos);
-      if (!(chrome || windows$1) && $pos.parent.inlineContent) {
+      if (!(chrome || windows) && $pos.parent.inlineContent) {
           let coords = view.coordsAtPos(pos);
           if (pos > $pos.start()) {
               let before = view.coordsAtPos(pos - 1);
@@ -9761,7 +9615,7 @@
           firstChild.setAttribute("data-pm-slice", `${openStart} ${openEnd}${wrappers ? ` -${wrappers}` : ""} ${JSON.stringify(context)}`);
       let text = view.someProp("clipboardTextSerializer", f => f(slice, view)) ||
           slice.content.textBetween(0, slice.content.size, "\n\n");
-      return { dom: wrap, text, slice };
+      return { dom: wrap, text };
   }
   // Read a slice of content from the clipboard (or drop data).
   function parseFromClipboard(view, text, html, plainText, $context) {
@@ -9769,14 +9623,11 @@
       let dom, slice;
       if (!html && !text)
           return null;
-      let asText = !!text && (plainText || inCode || !html);
+      let asText = text && (plainText || inCode || !html);
       if (asText) {
           view.someProp("transformPastedText", f => { text = f(text, inCode || plainText, view); });
-          if (inCode) {
-              slice = new Slice(Fragment.from(view.state.schema.text(text.replace(/\r\n?/g, "\n"))), 0, 0);
-              view.someProp("transformPasted", f => { slice = f(slice, view, true); });
-              return slice;
-          }
+          if (inCode)
+              return text ? new Slice(Fragment.from(view.state.schema.text(text.replace(/\r\n?/g, "\n"))), 0, 0) : Slice.empty;
           let parsed = view.someProp("clipboardTextParser", f => f(text, $context, plainText, view));
           if (parsed) {
               slice = parsed;
@@ -9834,7 +9685,7 @@
               slice = closeSlice(slice, openStart, openEnd);
           }
       }
-      view.someProp("transformPasted", f => { slice = f(slice, view, asText); });
+      view.someProp("transformPasted", f => { slice = f(slice, view); });
       return slice;
   }
   const inlineParents = /^(a|abbr|acronym|b|cite|code|del|em|i|ins|kbd|label|output|q|ruby|s|samp|span|strong|sub|sup|time|u|tt|var)$/i;
@@ -9936,18 +9787,6 @@
   function detachedDoc() {
       return _detachedDoc || (_detachedDoc = document.implementation.createHTMLDocument("title"));
   }
-  let _policy = null;
-  function maybeWrapTrusted(html) {
-      let trustedTypes = window.trustedTypes;
-      if (!trustedTypes)
-          return html;
-      // With the require-trusted-types-for CSP, Chrome will block
-      // innerHTML, even on a detached document. This wraps the string in
-      // a way that makes the browser allow us to use its parser again.
-      if (!_policy)
-          _policy = trustedTypes.defaultPolicy || trustedTypes.createPolicy("ProseMirrorClipboard", { createHTML: (s) => s });
-      return _policy.createHTML(html);
-  }
   function readHTML(html) {
       let metas = /^(\s*<meta [^>]*>)*/.exec(html);
       if (metas)
@@ -9956,7 +9795,7 @@
       let firstTag = /<([a-z][^>\s]+)/i.exec(html), wrap;
       if (wrap = firstTag && wrapMap[firstTag[1].toLowerCase()])
           html = wrap.map(n => "<" + n + ">").join("") + html + wrap.map(n => "</" + n + ">").reverse().join("");
-      elt.innerHTML = maybeWrapTrusted(html);
+      elt.innerHTML = html;
       if (wrap)
           for (let i = 0; i < wrap.length; i++)
               elt = elt.querySelector(wrap[i]) || elt;
@@ -10008,21 +9847,19 @@
           this.mouseDown = null;
           this.lastKeyCode = null;
           this.lastKeyCodeTime = 0;
-          this.lastClick = { time: 0, x: 0, y: 0, type: "", button: 0 };
+          this.lastClick = { time: 0, x: 0, y: 0, type: "" };
           this.lastSelectionOrigin = null;
           this.lastSelectionTime = 0;
           this.lastIOSEnter = 0;
           this.lastIOSEnterFallbackTimeout = -1;
           this.lastFocus = 0;
           this.lastTouch = 0;
-          this.lastChromeDelete = 0;
+          this.lastAndroidDelete = 0;
           this.composing = false;
-          this.compositionNode = null;
           this.composingTimeout = -1;
           this.compositionNodes = [];
           this.compositionEndedAt = -2e8;
           this.compositionID = 1;
-          this.badSafariComposition = false;
           // Set to a composition ID when there are pending changes at compositionend
           this.compositionPendingChanges = 0;
           this.domChangeCount = 0;
@@ -10137,9 +9974,8 @@
       let sel = view.state.selection;
       if (!(sel instanceof TextSelection) || !sel.$from.sameParent(sel.$to)) {
           let text = String.fromCharCode(event.charCode);
-          let deflt = () => view.state.tr.insertText(text).scrollIntoView();
-          if (!/[\r\n]/.test(text) && !view.someProp("handleTextInput", f => f(view, sel.$from.pos, sel.$to.pos, text, deflt)))
-              view.dispatch(deflt());
+          if (!/[\r\n]/.test(text) && !view.someProp("handleTextInput", f => f(view, sel.$from.pos, sel.$to.pos, text)))
+              view.dispatch(view.state.tr.insertText(text).scrollIntoView());
           event.preventDefault();
       }
   };
@@ -10162,8 +9998,6 @@
   function updateSelection(view, selection, origin) {
       if (!view.focused)
           view.focus();
-      if (view.state.selection.eq(selection))
-          return;
       let tr = view.state.tr.setSelection(selection);
       tr.setMeta("pointer", true);
       view.dispatch(tr);
@@ -10251,14 +10085,13 @@
       view.input.shiftKey = event.shiftKey;
       let flushed = forceDOMFlush(view);
       let now = Date.now(), type = "singleClick";
-      if (now - view.input.lastClick.time < 500 && isNear(event, view.input.lastClick) && !event[selectNodeModifier] &&
-          view.input.lastClick.button == event.button) {
+      if (now - view.input.lastClick.time < 500 && isNear(event, view.input.lastClick) && !event[selectNodeModifier]) {
           if (view.input.lastClick.type == "singleClick")
               type = "doubleClick";
           else if (view.input.lastClick.type == "doubleClick")
               type = "tripleClick";
       }
-      view.input.lastClick = { time: now, x: event.clientX, y: event.clientY, type, button: event.button };
+      view.input.lastClick = { time: now, x: event.clientX, y: event.clientY, type };
       let pos = view.posAtCoords(eventCoords(event));
       if (!pos)
           return;
@@ -10297,11 +10130,11 @@
           }
           const target = flushed ? null : event.target;
           const targetDesc = target ? view.docView.nearestDesc(target, true) : null;
-          this.target = targetDesc && targetDesc.nodeDOM.nodeType == 1 ? targetDesc.nodeDOM : null;
+          this.target = targetDesc ? targetDesc.dom : null;
           let { selection } = view.state;
           if (event.button == 0 &&
-              (targetNode.type.spec.draggable && targetNode.type.spec.selectable !== false ||
-                  selection instanceof NodeSelection && selection.from <= targetPos && selection.to > targetPos))
+              targetNode.type.spec.draggable && targetNode.type.spec.selectable !== false ||
+              selection instanceof NodeSelection && selection.from <= targetPos && selection.to > targetPos)
               this.mightDrag = {
                   node: targetNode,
                   pos: targetPos,
@@ -10418,18 +10251,17 @@
   editHandlers.compositionstart = editHandlers.compositionupdate = view => {
       if (!view.composing) {
           view.domObserver.flush();
-          let { state } = view, $pos = state.selection.$to;
-          if (state.selection instanceof TextSelection &&
+          let { state } = view, $pos = state.selection.$from;
+          if (state.selection.empty &&
               (state.storedMarks ||
-                  (!$pos.textOffset && $pos.parentOffset && $pos.nodeBefore.marks.some(m => m.type.spec.inclusive === false)) ||
-                  chrome && windows$1 && selectionBeforeUneditable(view))) { // Issue #1500
+                  (!$pos.textOffset && $pos.parentOffset && $pos.nodeBefore.marks.some(m => m.type.spec.inclusive === false)))) {
               // Need to wrap the cursor in mark nodes different from the ones in the DOM context
               view.markCursor = view.state.storedMarks || $pos.marks();
               endComposition(view, true);
               view.markCursor = null;
           }
           else {
-              endComposition(view, !state.selection.empty);
+              endComposition(view);
               // In firefox, if the cursor is after but outside a marked node,
               // the inserted text won't inherit the marks. So this moves it
               // inside if necessary.
@@ -10440,9 +10272,7 @@
                       if (!before)
                           break;
                       if (before.nodeType == 3) {
-                          let sel = view.domSelection();
-                          if (sel)
-                              sel.collapse(before, before.nodeValue.length);
+                          view.domSelection().collapse(before, before.nodeValue.length);
                           break;
                       }
                       else {
@@ -10456,22 +10286,12 @@
       }
       scheduleComposeEnd(view, timeoutComposition);
   };
-  function selectionBeforeUneditable(view) {
-      let { focusNode, focusOffset } = view.domSelectionRange();
-      if (!focusNode || focusNode.nodeType != 1 || focusOffset >= focusNode.childNodes.length)
-          return false;
-      let next = focusNode.childNodes[focusOffset];
-      return next.nodeType == 1 && next.contentEditable == "false";
-  }
   editHandlers.compositionend = (view, event) => {
       if (view.composing) {
           view.input.composing = false;
           view.input.compositionEndedAt = event.timeStamp;
           view.input.compositionPendingChanges = view.domObserver.pendingRecords().length ? view.input.compositionID : 0;
-          view.input.compositionNode = null;
-          if (view.input.badSafariComposition)
-              view.domObserver.forceFlush();
-          else if (view.input.compositionPendingChanges)
+          if (view.input.compositionPendingChanges)
               Promise.resolve().then(() => view.domObserver.flush());
           view.input.compositionID++;
           scheduleComposeEnd(view, 20);
@@ -10490,27 +10310,6 @@
       while (view.input.compositionNodes.length > 0)
           view.input.compositionNodes.pop().markParentsDirty();
   }
-  function findCompositionNode(view) {
-      let sel = view.domSelectionRange();
-      if (!sel.focusNode)
-          return null;
-      let textBefore = textNodeBefore$1(sel.focusNode, sel.focusOffset);
-      let textAfter = textNodeAfter$1(sel.focusNode, sel.focusOffset);
-      if (textBefore && textAfter && textBefore != textAfter) {
-          let descAfter = textAfter.pmViewDesc, lastChanged = view.domObserver.lastChangedTextNode;
-          if (textBefore == lastChanged || textAfter == lastChanged)
-              return lastChanged;
-          if (!descAfter || !descAfter.isText(textAfter.nodeValue)) {
-              return textAfter;
-          }
-          else if (view.input.compositionNode == textAfter) {
-              let descBefore = textBefore.pmViewDesc;
-              if (!(!descBefore || !descBefore.isText(textBefore.nodeValue)))
-                  return textAfter;
-          }
-      }
-      return textBefore || textAfter;
-  }
   function timestampFromCustomEvent() {
       let event = document.createEvent("Event");
       event.initEvent("event", true, true);
@@ -10519,17 +10318,15 @@
   /**
   @internal
   */
-  function endComposition(view, restarting = false) {
+  function endComposition(view, forceUpdate = false) {
       if (android && view.domObserver.flushingSoon >= 0)
           return;
       view.domObserver.forceFlush();
       clearComposition(view);
-      if (restarting || view.docView && view.docView.dirty) {
-          let sel = selectionFromDOM(view), cur = view.state.selection;
-          if (sel && !sel.eq(cur))
+      if (forceUpdate || view.docView && view.docView.dirty) {
+          let sel = selectionFromDOM(view);
+          if (sel && !sel.eq(view.state.selection))
               view.dispatch(view.state.tr.setSelection(sel));
-          else if ((view.markCursor || restarting) && !cur.$from.node(cur.$from.sharedDepth(cur.to)).inlineContent)
-              view.dispatch(view.state.tr.deleteSelection());
           else
               view.updateState(view.state);
           return true;
@@ -10649,11 +10446,6 @@
       }
   }
   const dragCopyModifier = mac$3 ? "altKey" : "ctrlKey";
-  function dragMoves(view, event) {
-      let copy;
-      view.someProp("dragCopies", test => { copy = copy || test(event); });
-      return copy != null ? !copy : !event[dragCopyModifier];
-  }
   handlers.dragstart = (view, _event) => {
       let event = _event;
       let mouseDown = view.input.mouseDown;
@@ -10673,17 +10465,14 @@
           if (desc && desc.node.type.spec.draggable && desc != view.docView)
               node = NodeSelection.create(view.state.doc, desc.posBefore);
       }
-      let draggedSlice = (node || view.state.selection).content();
-      let { dom, text, slice } = serializeForClipboard(view, draggedSlice);
-      // Pre-120 Chrome versions clear files when calling `clearData` (#1472)
-      if (!event.dataTransfer.files.length || !chrome || chrome_version > 120)
-          event.dataTransfer.clearData();
+      let slice = (node || view.state.selection).content(), { dom, text } = serializeForClipboard(view, slice);
+      event.dataTransfer.clearData();
       event.dataTransfer.setData(brokenClipboardAPI ? "Text" : "text/html", dom.innerHTML);
-      // See https://code.haverbeke.berlin/prosemirror/prosemirror/issues/1156
+      // See https://github.com/ProseMirror/prosemirror/issues/1156
       event.dataTransfer.effectAllowed = "copyMove";
       if (!brokenClipboardAPI)
           event.dataTransfer.setData("text/plain", text);
-      view.dragging = new Dragging(slice, dragMoves(view, event), node);
+      view.dragging = new Dragging(slice, !event[dragCopyModifier], node);
   };
   handlers.dragend = view => {
       let dragging = view.dragging;
@@ -10693,15 +10482,10 @@
       }, 50);
   };
   editHandlers.dragover = editHandlers.dragenter = (_, e) => e.preventDefault();
-  editHandlers.drop = (view, event) => {
-      try {
-          handleDrop(view, event, view.dragging);
-      }
-      finally {
-          view.dragging = null;
-      }
-  };
-  function handleDrop(view, event, dragging) {
+  editHandlers.drop = (view, _event) => {
+      let event = _event;
+      let dragging = view.dragging;
+      view.dragging = null;
       if (!event.dataTransfer)
           return;
       let eventPos = view.posAtCoords(eventCoords(event));
@@ -10710,12 +10494,12 @@
       let $mouse = view.state.doc.resolve(eventPos.pos);
       let slice = dragging && dragging.slice;
       if (slice) {
-          view.someProp("transformPasted", f => { slice = f(slice, view, false); });
+          view.someProp("transformPasted", f => { slice = f(slice, view); });
       }
       else {
           slice = parseFromClipboard(view, getText(event.dataTransfer), brokenClipboardAPI ? null : event.dataTransfer.getData("text/html"), false, $mouse);
       }
-      let move = !!(dragging && dragMoves(view, event));
+      let move = !!(dragging && !event[dragCopyModifier]);
       if (view.someProp("handleDrop", f => f(view, event, slice || Slice.empty, move))) {
           event.preventDefault();
           return;
@@ -10755,7 +10539,7 @@
       }
       view.focus();
       view.dispatch(tr.setMeta("uiEvent", "drop"));
-  }
+  };
   handlers.focus = view => {
       view.input.lastFocus = Date.now();
       if (!view.focused) {
@@ -10991,7 +10775,7 @@
       you must make a copy if you want need to preserve that.
       */
       static create(doc, decorations) {
-          return decorations.length ? buildTree(decorations, doc, 0, noSpec) : empty$1;
+          return decorations.length ? buildTree(decorations, doc, 0, noSpec) : empty$2;
       }
       /**
       Find all decorations in this set which touch the given range
@@ -11024,7 +10808,7 @@
       document.
       */
       map(mapping, doc, options) {
-          if (this == empty$1 || mapping.maps.length == 0)
+          if (this == empty$2 || mapping.maps.length == 0)
               return this;
           return this.mapInner(mapping, doc, 0, 0, options || noSpec);
       }
@@ -11043,7 +10827,7 @@
           if (this.children.length)
               return mapChildren(this.children, newLocal || [], mapping, node, offset, oldOffset, options);
           else
-              return newLocal ? new DecorationSet(newLocal.sort(byPos), none$1) : empty$1;
+              return newLocal ? new DecorationSet(newLocal.sort(byPos), none$1) : empty$2;
       }
       /**
       Add the given array of decorations to the ones in the set,
@@ -11054,7 +10838,7 @@
       add(doc, decorations) {
           if (!decorations.length)
               return this;
-          if (this == empty$1)
+          if (this == empty$2)
               return DecorationSet.create(doc, decorations);
           return this.addInner(doc, decorations, 0);
       }
@@ -11085,7 +10869,7 @@
       the ones in the given array.
       */
       remove(decorations) {
-          if (decorations.length == 0 || this == empty$1)
+          if (decorations.length == 0 || this == empty$2)
               return this;
           return this.removeInner(decorations, 0);
       }
@@ -11106,7 +10890,7 @@
               if (children == this.children)
                   children = this.children.slice();
               let removed = children[i + 2].removeInner(found, from + 1);
-              if (removed != empty$1) {
+              if (removed != empty$2) {
                   children[i + 2] = removed;
               }
               else {
@@ -11126,10 +10910,13 @@
                   }
           if (children == this.children && local == this.local)
               return this;
-          return local.length || children.length ? new DecorationSet(local, children) : empty$1;
+          return local.length || children.length ? new DecorationSet(local, children) : empty$2;
       }
+      /**
+      @internal
+      */
       forChild(offset, node) {
-          if (this == empty$1)
+          if (this == empty$2)
               return this;
           if (node.isLeaf)
               return DecorationSet.empty;
@@ -11153,7 +10940,7 @@
               let localSet = new DecorationSet(local.sort(byPos), none$1);
               return child ? new DecorationGroup([localSet, child]) : localSet;
           }
-          return child || empty$1;
+          return child || empty$2;
       }
       /**
       @internal
@@ -11185,7 +10972,7 @@
       @internal
       */
       localsInner(node) {
-          if (this == empty$1)
+          if (this == empty$2)
               return none$1;
           if (node.inlineContent || !this.local.some(InlineType.is))
               return this.local;
@@ -11196,7 +10983,6 @@
           }
           return result;
       }
-      forEachSet(f) { f(this); }
   }
   /**
   The empty set of decorations.
@@ -11206,7 +10992,7 @@
   @internal
   */
   DecorationSet.removeOverlap = removeOverlap;
-  const empty$1 = DecorationSet.empty;
+  const empty$2 = DecorationSet.empty;
   // An abstraction that allows the code dealing with decorations to
   // treat multiple DecorationSet objects as if it were a single object
   // with (a subset of) the same interface.
@@ -11224,7 +11010,7 @@
           let found = [];
           for (let i = 0; i < this.members.length; i++) {
               let result = this.members[i].forChild(offset, child);
-              if (result == empty$1)
+              if (result == empty$2)
                   continue;
               if (result instanceof DecorationGroup)
                   found = found.concat(result.members);
@@ -11266,15 +11052,11 @@
       // a single set when possible.
       static from(members) {
           switch (members.length) {
-              case 0: return empty$1;
+              case 0: return empty$2;
               case 1: return members[0];
               default: return new DecorationGroup(members.every(m => m instanceof DecorationSet) ? members :
                   members.reduce((r, m) => r.concat(m instanceof DecorationSet ? m : m.members), []));
           }
-      }
-      forEachSet(f) {
-          for (let i = 0; i < this.members.length; i++)
-              this.members[i].forEachSet(f);
       }
   }
   function mapChildren(oldChildren, newLocal, mapping, node, offset, oldOffset, options) {
@@ -11324,7 +11106,7 @@
               if (childNode && childOffset == fromLocal && childOffset + childNode.nodeSize == toLocal) {
                   let mapped = children[i + 2]
                       .mapInner(mapping, childNode, from + 1, oldChildren[i] + oldOffset + 1, options);
-                  if (mapped != empty$1) {
+                  if (mapped != empty$2) {
                       children[i] = fromLocal;
                       children[i + 1] = toLocal;
                       children[i + 2] = mapped;
@@ -11415,7 +11197,7 @@
           if (found) {
               hasNulls = true;
               let subtree = buildTree(found, childNode, offset + localStart + 1, options);
-              if (subtree != empty$1)
+              if (subtree != empty$2)
                   children.push(localStart, localStart + childNode.nodeSize, subtree);
           }
       });
@@ -11426,7 +11208,7 @@
                   options.onRemove(locals[i].spec);
               locals.splice(i--, 1);
           }
-      return locals.length || children.length ? new DecorationSet(locals, children) : empty$1;
+      return locals.length || children.length ? new DecorationSet(locals, children) : empty$2;
   }
   // Used to sort decorations so that ones with a low start position
   // come first, and within a set with the same start position, those
@@ -11481,7 +11263,7 @@
       let found = [];
       view.someProp("decorations", f => {
           let result = f(view.state);
-          if (result && result != empty$1)
+          if (result && result != empty$2)
               found.push(result);
       });
       if (view.cursorWrapper)
@@ -11530,29 +11312,19 @@
           this.currentSelection = new SelectionState;
           this.onCharData = null;
           this.suppressingSelectionUpdates = false;
-          this.lastChangedTextNode = null;
           this.observer = window.MutationObserver &&
               new window.MutationObserver(mutations => {
                   for (let i = 0; i < mutations.length; i++)
                       this.queue.push(mutations[i]);
+                  // IE11 will sometimes (on backspacing out a single character
+                  // text node after a BR node) call the observer callback
+                  // before actually updating the DOM, which will cause
+                  // ProseMirror to miss the change (see #930)
                   if (ie$1 && ie_version <= 11 && mutations.some(m => m.type == "childList" && m.removedNodes.length ||
-                      m.type == "characterData" && m.oldValue.length > m.target.nodeValue.length)) {
-                      // IE11 will sometimes (on backspacing out a single character
-                      // text node after a BR node) call the observer callback
-                      // before actually updating the DOM, which will cause
-                      // ProseMirror to miss the change (see #930)
+                      m.type == "characterData" && m.oldValue.length > m.target.nodeValue.length))
                       this.flushSoon();
-                  }
-                  else if (safari && view.composing && mutations.some(m => m.type == "childList" && m.target.nodeName == "TR")) {
-                      // Safari does weird stuff when finishing a composition in a
-                      // table cell, which tends to involve inserting inappropriate
-                      // nodes in the table row.
-                      view.input.badSafariComposition = true;
-                      this.flushSoon();
-                  }
-                  else {
+                  else
                       this.flush();
-                  }
               });
           if (useCharData) {
               this.onCharData = e => {
@@ -11672,37 +11444,14 @@
                   }
               }
           }
-          if (added.some(n => n.nodeName == "BR") && (view.input.lastKeyCode == 8 || view.input.lastKeyCode == 46)) {
-              // Browsers sometimes insert a bogus break node if you
-              // backspace out the last bit of text before an inline-flex node (#1552)
-              for (let node of added)
-                  if (node.nodeName == "BR" && node.parentNode) {
-                      let after = node.nextSibling;
-                      while (after && after.nodeType == 1) {
-                          if (after.contentEditable == "false") {
-                              node.parentNode.removeChild(node);
-                              break;
-                          }
-                          after = after.firstChild;
-                      }
-                  }
-          }
-          else if (gecko && added.length) {
+          if (gecko && added.length > 1) {
               let brs = added.filter(n => n.nodeName == "BR");
               if (brs.length == 2) {
-                  let [a, b] = brs;
+                  let a = brs[0], b = brs[1];
                   if (a.parentNode && a.parentNode.parentNode == b.parentNode)
                       b.remove();
                   else
                       a.remove();
-              }
-              else {
-                  let { focusNode } = this.currentSelection;
-                  for (let br of brs) {
-                      let parent = br.parentNode;
-                      if (parent && parent.nodeName == "LI" && (!focusNode || blockParent(view, focusNode) != parent))
-                          br.remove();
-                  }
               }
           }
           let readSel = null;
@@ -11722,10 +11471,6 @@
               if (from > -1) {
                   view.docView.markDirty(from, to);
                   checkCSS(view);
-              }
-              if (view.input.badSafariComposition) {
-                  view.input.badSafariComposition = false;
-                  fixUpBadSafariComposition(view, added);
               }
               this.handleDOMChange(from, to, typeOver, added);
               if (view.docView && view.docView.dirty)
@@ -11748,12 +11493,8 @@
           if (!desc || desc.ignoreMutation(mut))
               return null;
           if (mut.type == "childList") {
-              for (let i = 0; i < mut.addedNodes.length; i++) {
-                  let node = mut.addedNodes[i];
-                  added.push(node);
-                  if (node.nodeType == 3)
-                      this.lastChangedTextNode = node;
-              }
+              for (let i = 0; i < mut.addedNodes.length; i++)
+                  added.push(mut.addedNodes[i]);
               if (desc.contentDOM && desc.contentDOM != desc.dom && !desc.contentDOM.contains(mut.target))
                   return { from: desc.posBefore, to: desc.posAfter };
               let prev = mut.previousSibling, next = mut.nextSibling;
@@ -11780,7 +11521,6 @@
               return { from: desc.posAtStart - desc.border, to: desc.posAtEnd + desc.border };
           }
           else { // "characterData"
-              this.lastChangedTextNode = mut.target;
               return {
                   from: desc.posAtStart,
                   to: desc.posAtEnd,
@@ -11807,25 +11547,9 @@
           cssCheckWarned = true;
       }
   }
-  function rangeToSelectionRange(view, range) {
-      let anchorNode = range.startContainer, anchorOffset = range.startOffset;
-      let focusNode = range.endContainer, focusOffset = range.endOffset;
-      let currentAnchor = view.domAtPos(view.state.selection.anchor);
-      // Since such a range doesn't distinguish between anchor and head,
-      // use a heuristic that flips it around if its end matches the
-      // current anchor.
-      if (isEquivalentPosition(currentAnchor.node, currentAnchor.offset, focusNode, focusOffset))
-          [anchorNode, anchorOffset, focusNode, focusOffset] = [focusNode, focusOffset, anchorNode, anchorOffset];
-      return { anchorNode, anchorOffset, focusNode, focusOffset };
-  }
   // Used to work around a Safari Selection/shadow DOM bug
   // Based on https://github.com/codemirror/dev/issues/414 fix
-  function safariShadowSelectionRange(view, selection) {
-      if (selection.getComposedRanges) {
-          let range = selection.getComposedRanges(view.root)[0];
-          if (range)
-              return rangeToSelectionRange(view, range);
-      }
+  function safariShadowSelectionRange(view) {
       let found;
       function read(event) {
           event.preventDefault();
@@ -11840,46 +11564,15 @@
       view.dom.addEventListener("beforeinput", read, true);
       document.execCommand("indent");
       view.dom.removeEventListener("beforeinput", read, true);
-      return found ? rangeToSelectionRange(view, found) : null;
-  }
-  function blockParent(view, node) {
-      for (let p = node.parentNode; p && p != view.dom; p = p.parentNode) {
-          let desc = view.docView.nearestDesc(p, true);
-          if (desc && desc.node.isBlock)
-              return p;
-      }
-      return null;
-  }
-  // Kludge for a Safari bug where, on ending a composition in an
-  // otherwise empty table cell, it randomly moves the composed text
-  // into the table row around that cell, greatly confusing everything
-  // (#188).
-  function fixUpBadSafariComposition(view, addedNodes) {
-      var _a;
-      let { focusNode, focusOffset } = view.domSelectionRange();
-      for (let node of addedNodes) {
-          if (((_a = node.parentNode) === null || _a === void 0 ? void 0 : _a.nodeName) == "TR") {
-              let nextCell = node.nextSibling;
-              while (nextCell && (nextCell.nodeName != "TD" && nextCell.nodeName != "TH"))
-                  nextCell = nextCell.nextSibling;
-              if (nextCell) {
-                  let parent = nextCell;
-                  for (;;) {
-                      let first = parent.firstChild;
-                      if (!first || first.nodeType != 1 || first.contentEditable == "false" ||
-                          /^(BR|IMG)$/.test(first.nodeName))
-                          break;
-                      parent = first;
-                  }
-                  parent.insertBefore(node, parent.firstChild);
-                  if (focusNode == node)
-                      view.domSelection().collapse(node, focusOffset);
-              }
-              else {
-                  node.parentNode.removeChild(node);
-              }
-          }
-      }
+      let anchorNode = found.startContainer, anchorOffset = found.startOffset;
+      let focusNode = found.endContainer, focusOffset = found.endOffset;
+      let currentAnchor = view.domAtPos(view.state.selection.anchor);
+      // Since such a range doesn't distinguish between anchor and head,
+      // use a heuristic that flips it around if its end matches the
+      // current anchor.
+      if (isEquivalentPosition(currentAnchor.node, currentAnchor.offset, focusNode, focusOffset))
+          [anchorNode, anchorOffset, focusNode, focusOffset] = [focusNode, focusOffset, anchorNode, anchorOffset];
+      return { anchorNode, anchorOffset, focusNode, focusOffset };
   }
 
   // Note that all referencing and parsing is done with the
@@ -11955,7 +11648,7 @@
       }
       return null;
   }
-  const isInline = /^(a|abbr|acronym|b|bd[io]|big|br|button|cite|code|data(list)?|del|dfn|em|i|img|ins|kbd|label|map|mark|meter|output|q|ruby|s|samp|small|span|strong|su[bp]|time|u|tt|var)$/i;
+  const isInline = /^(a|abbr|acronym|b|bd[io]|big|br|button|cite|code|data(list)?|del|dfn|em|i|ins|kbd|label|map|mark|meter|output|q|ruby|s|samp|small|span|strong|su[bp]|time|u|tt|var)$/i;
   function readDOMChange(view, from, to, typeOver, addedNodes) {
       let compositionID = view.input.compositionPendingChanges || (view.composing ? view.input.compositionID : 0);
       view.input.compositionPendingChanges = 0;
@@ -11997,8 +11690,6 @@
       }
       view.input.lastKeyCode = null;
       let change = findDiff(compare.content, parse.doc.content, parse.from, preferredPos, preferredSide);
-      if (change)
-          view.input.domChangeCount++;
       if ((ios && view.input.lastIOSEnter > Date.now() - 225 || android) &&
           addedNodes.some(n => n.nodeType == 1 && !isInline.test(n.nodeName)) &&
           (!change || change.endA >= change.endB) &&
@@ -12024,6 +11715,14 @@
               return;
           }
       }
+      // Chrome sometimes leaves the cursor before the inserted text when
+      // composing after a cursor wrapper. This moves it forward.
+      if (chrome && view.cursorWrapper && parse.sel && parse.sel.anchor == view.cursorWrapper.deco.from &&
+          parse.sel.head == parse.sel.anchor) {
+          let size = change.endB - change.start;
+          parse.sel = { anchor: parse.sel.anchor + size, head: parse.sel.anchor + size };
+      }
+      view.input.domChangeCount++;
       // Handle the case where overwriting a selection by typing matches
       // the start or end of the selected content, creating a change
       // that's smaller than what was actually overwritten.
@@ -12054,30 +11753,31 @@
       let $to = parse.doc.resolveNoCache(change.endB - parse.from);
       let $fromA = doc.resolve(change.start);
       let inlineChange = $from.sameParent($to) && $from.parent.inlineContent && $fromA.end() >= change.endA;
+      let nextSel;
       // If this looks like the effect of pressing Enter (or was recorded
       // as being an iOS enter press), just dispatch an Enter key instead.
       if (((ios && view.input.lastIOSEnter > Date.now() - 225 &&
           (!inlineChange || addedNodes.some(n => n.nodeName == "DIV" || n.nodeName == "P"))) ||
-          (!inlineChange && $from.pos < parse.doc.content.size &&
-              (!$from.sameParent($to) || !$from.parent.inlineContent) &&
-              $from.pos < $to.pos && !/\S/.test(parse.doc.textBetween($from.pos, $to.pos, "", "")))) &&
+          (!inlineChange && $from.pos < parse.doc.content.size && !$from.sameParent($to) &&
+              (nextSel = Selection$2.findFrom(parse.doc.resolve($from.pos + 1), 1, true)) &&
+              nextSel.head == $to.pos)) &&
           view.someProp("handleKeyDown", f => f(view, keyEvent(13, "Enter")))) {
           view.input.lastIOSEnter = 0;
           return;
       }
       // Same for backspace
       if (view.state.selection.anchor > change.start &&
-          looksLikeBackspace(doc, change.start, change.endA, $from, $to) &&
+          looksLikeJoin(doc, change.start, change.endA, $from, $to) &&
           view.someProp("handleKeyDown", f => f(view, keyEvent(8, "Backspace")))) {
           if (android && chrome)
               view.domObserver.suppressSelectionUpdates(); // #820
           return;
       }
-      // Chrome will occasionally, during composition, delete the
+      // Chrome Android will occasionally, during composition, delete the
       // entire composition and then immediately insert it again. This is
       // used to detect that situation.
-      if (chrome && change.endB == change.start)
-          view.input.lastChromeDelete = Date.now();
+      if (chrome && android && change.endB == change.start)
+          view.input.lastAndroidDelete = Date.now();
       // This tries to detect Android virtual keyboard
       // enter-and-pick-suggestion action. That sometimes (see issue
       // #1059) first fires a DOM mutation, before moving the selection to
@@ -12095,26 +11795,7 @@
           }, 20);
       }
       let chFrom = change.start, chTo = change.endA;
-      let mkTr = (base) => {
-          let tr = base || view.state.tr.replace(chFrom, chTo, parse.doc.slice(change.start - parse.from, change.endB - parse.from));
-          if (parse.sel) {
-              let sel = resolveSelection(view, tr.doc, parse.sel);
-              // Chrome will sometimes, during composition, report the
-              // selection in the wrong place. If it looks like that is
-              // happening, don't update the selection.
-              // Edge just doesn't move the cursor forward when you start typing
-              // in an empty block or between br nodes.
-              if (sel && !(chrome && view.composing && sel.empty &&
-                  (change.start != change.endB || view.input.lastChromeDelete < Date.now() - 100) &&
-                  (sel.head == chFrom || sel.head == tr.mapping.map(chTo) - 1) ||
-                  ie$1 && sel.empty && sel.head == chFrom))
-                  tr.setSelection(sel);
-          }
-          if (compositionID)
-              tr.setMeta("composition", compositionID);
-          return tr.scrollIntoView();
-      };
-      let markChange;
+      let tr, storedMarks, markChange;
       if (inlineChange) {
           if ($from.pos == $to.pos) { // Deletion
               // IE11 sometimes weirdly moves the DOM selection around after
@@ -12123,36 +11804,46 @@
                   view.domObserver.suppressSelectionUpdates();
                   setTimeout(() => selectionToDOM(view), 20);
               }
-              let tr = mkTr(view.state.tr.delete(chFrom, chTo));
-              let marks = doc.resolve(change.start).marksAcross(doc.resolve(change.endA));
-              if (marks)
-                  tr.ensureMarks(marks);
-              view.dispatch(tr);
+              tr = view.state.tr.delete(chFrom, chTo);
+              storedMarks = doc.resolve(change.start).marksAcross(doc.resolve(change.endA));
           }
           else if ( // Adding or removing a mark
           change.endA == change.endB &&
               (markChange = isMarkChange($from.parent.content.cut($from.parentOffset, $to.parentOffset), $fromA.parent.content.cut($fromA.parentOffset, change.endA - $fromA.start())))) {
-              let tr = mkTr(view.state.tr);
+              tr = view.state.tr;
               if (markChange.type == "add")
                   tr.addMark(chFrom, chTo, markChange.mark);
               else
                   tr.removeMark(chFrom, chTo, markChange.mark);
-              view.dispatch(tr);
           }
           else if ($from.parent.child($from.index()).isText && $from.index() == $to.index() - ($to.textOffset ? 0 : 1)) {
               // Both positions in the same text node -- simply insert text
               let text = $from.parent.textBetween($from.parentOffset, $to.parentOffset);
-              let deflt = () => mkTr(view.state.tr.insertText(text, chFrom, chTo));
-              if (!view.someProp("handleTextInput", f => f(view, chFrom, chTo, text, deflt)))
-                  view.dispatch(deflt());
-          }
-          else {
-              view.dispatch(mkTr());
+              if (view.someProp("handleTextInput", f => f(view, chFrom, chTo, text)))
+                  return;
+              tr = view.state.tr.insertText(text, chFrom, chTo);
           }
       }
-      else {
-          view.dispatch(mkTr());
+      if (!tr)
+          tr = view.state.tr.replace(chFrom, chTo, parse.doc.slice(change.start - parse.from, change.endB - parse.from));
+      if (parse.sel) {
+          let sel = resolveSelection(view, tr.doc, parse.sel);
+          // Chrome Android will sometimes, during composition, report the
+          // selection in the wrong place. If it looks like that is
+          // happening, don't update the selection.
+          // Edge just doesn't move the cursor forward when you start typing
+          // in an empty block or between br nodes.
+          if (sel && !(chrome && android && view.composing && sel.empty &&
+              (change.start != change.endB || view.input.lastAndroidDelete < Date.now() - 100) &&
+              (sel.head == chFrom || sel.head == tr.mapping.map(chTo) - 1) ||
+              ie$1 && sel.empty && sel.head == chFrom))
+              tr.setSelection(sel);
       }
+      if (storedMarks)
+          tr.ensureMarks(storedMarks);
+      if (compositionID)
+          tr.setMeta("composition", compositionID);
+      view.dispatch(tr.scrollIntoView());
   }
   function resolveSelection(view, doc, parsedSel) {
       if (Math.max(parsedSel.anchor, parsedSel.head) > doc.content.size)
@@ -12188,18 +11879,14 @@
       if (Fragment.from(updated).eq(cur))
           return { mark, type };
   }
-  function looksLikeBackspace(old, start, end, $newStart, $newEnd) {
-      if ( // The content must have shrunk
-      end - start <= $newEnd.pos - $newStart.pos ||
+  function looksLikeJoin(old, start, end, $newStart, $newEnd) {
+      if (!$newStart.parent.isTextblock ||
+          // The content must have shrunk
+          end - start <= $newEnd.pos - $newStart.pos ||
           // newEnd must point directly at or after the end of the block that newStart points into
           skipClosingAndOpening($newStart, true, false) < $newEnd.pos)
           return false;
       let $start = old.resolve(start);
-      // Handle the case where, rather than joining blocks, the change just removed an entire block
-      if (!$newStart.parent.isTextblock) {
-          let after = $start.nodeAfter;
-          return after != null && end == start + after.nodeSize;
-      }
       // Start must be at the end of a block
       if ($start.parentOffset < $start.parent.content.size || !$start.parent.isTextblock)
           return false;
@@ -12304,7 +11991,7 @@
           this.pluginViews = [];
           /**
           Holds `true` when a hack node is needed in Firefox to prevent the
-          [space is eaten issue](https://code.haverbeke.berlin/prosemirror/prosemirror/issues/651)
+          [space is eaten issue](https://github.com/ProseMirror/prosemirror/issues/651)
           @internal
           */
           this.requiresGeckoHackNode = false;
@@ -12437,14 +12124,12 @@
                   // tracks that and forces a selection reset when our update
                   // did write to the node.
                   let chromeKludge = chrome ? (this.trackWrites = this.domSelectionRange().focusNode) : null;
-                  if (this.composing)
-                      this.input.compositionNode = findCompositionNode(this);
                   if (redraw || !this.docView.update(state.doc, outerDeco, innerDeco, this)) {
-                      this.docView.updateOuterDeco(outerDeco);
+                      this.docView.updateOuterDeco([]);
                       this.docView.destroy();
                       this.docView = docViewDesc(state.doc, outerDeco, innerDeco, this.dom, this);
                   }
-                  if (chromeKludge && (!this.trackWrites || !this.dom.contains(this.trackWrites)))
+                  if (chromeKludge && !this.trackWrites)
                       forceSelUpdate = true;
               }
               // Work around for an issue where an update arriving right between
@@ -12480,8 +12165,7 @@
       */
       scrollToSelection() {
           let startDOM = this.domSelectionRange().focusNode;
-          if (!startDOM || !this.dom.contains(startDOM.nodeType == 1 ? startDOM : startDOM.parentNode)) ;
-          else if (this.someProp("handleScrollToSelection", f => f(this))) ;
+          if (this.someProp("handleScrollToSelection", f => f(this))) ;
           else if (this.state.selection instanceof NodeSelection) {
               let target = this.docView.domAfterPos(this.state.selection.from);
               if (target.nodeType == 1)
@@ -12522,12 +12206,12 @@
       }
       updateDraggedNode(dragging, prev) {
           let sel = dragging.node, found = -1;
-          if (sel.from < this.state.doc.content.size && this.state.doc.nodeAt(sel.from) == sel.node) {
+          if (this.state.doc.nodeAt(sel.from) == sel.node) {
               found = sel.from;
           }
           else {
               let movedPos = sel.from + (this.state.doc.content.size - prev.doc.content.size);
-              let moved = movedPos > 0 && movedPos < this.state.doc.content.size && this.state.doc.nodeAt(movedPos);
+              let moved = movedPos > 0 && this.state.doc.nodeAt(movedPos);
               if (moved == sel.node)
                   found = movedPos;
           }
@@ -12701,17 +12385,6 @@
           return doPaste(this, text, null, true, event || new ClipboardEvent("paste"));
       }
       /**
-      Serialize the given slice as it would be if it was copied from
-      this editor. Returns a DOM element that contains a
-      representation of the slice as its children, a textual
-      representation, and the transformed slice (which can be
-      different from the given input due to hooks like
-      [`transformCopied`](https://prosemirror.net/docs/ref/#view.EditorProps.transformCopied)).
-      */
-      serializeForClipboard(slice) {
-          return serializeForClipboard(this, slice);
-      }
-      /**
       Removes the editor from the DOM and destroys all [node
       views](https://prosemirror.net/docs/ref/#view.NodeView).
       */
@@ -12729,7 +12402,6 @@
           }
           this.docView.destroy();
           this.docView = null;
-          clearReusedRange();
       }
       /**
       This is true when the view has been
@@ -12746,14 +12418,27 @@
           return dispatchEvent$1(this, event);
       }
       /**
+      Dispatch a transaction. Will call
+      [`dispatchTransaction`](https://prosemirror.net/docs/ref/#view.DirectEditorProps.dispatchTransaction)
+      when given, and otherwise defaults to applying the transaction to
+      the current state and calling
+      [`updateState`](https://prosemirror.net/docs/ref/#view.EditorView.updateState) with the result.
+      This method is bound to the view instance, so that it can be
+      easily passed around.
+      */
+      dispatch(tr) {
+          let dispatchTransaction = this._props.dispatchTransaction;
+          if (dispatchTransaction)
+              dispatchTransaction.call(this, tr);
+          else
+              this.updateState(this.state.apply(tr));
+      }
+      /**
       @internal
       */
       domSelectionRange() {
-          let sel = this.domSelection();
-          if (!sel)
-              return { focusNode: null, focusOffset: 0, anchorNode: null, anchorOffset: 0 };
-          return safari && this.root.nodeType === 11 &&
-              deepActiveElement(this.dom.ownerDocument) == this.dom && safariShadowSelectionRange(this, sel) || sel;
+          return safari && this.root.nodeType === 11 && deepActiveElement(this.dom.ownerDocument) == this.dom
+              ? safariShadowSelectionRange(this) : this.domSelection();
       }
       /**
       @internal
@@ -12762,13 +12447,6 @@
           return this.root.getSelection();
       }
   }
-  EditorView.prototype.dispatch = function (tr) {
-      let dispatchTransaction = this._props.dispatchTransaction;
-      if (dispatchTransaction)
-          dispatchTransaction.call(this, tr);
-      else
-          this.updateState(this.state.apply(tr));
-  };
   function computeDocDeco(view) {
       let attrs = Object.create(null);
       attrs.class = "ProseMirror";
@@ -12796,7 +12474,7 @@
           dom.className = "ProseMirror-separator";
           dom.setAttribute("mark-placeholder", "true");
           dom.setAttribute("alt", "");
-          view.cursorWrapper = { dom, deco: Decoration.widget(view.state.selection.from, dom, { raw: true, marks: view.markCursor }) };
+          view.cursorWrapper = { dom, deco: Decoration.widget(view.state.selection.head, dom, { raw: true, marks: view.markCursor }) };
       }
       else {
           view.cursorWrapper = null;
@@ -12836,7 +12514,7 @@
           throw new RangeError("Plugins passed directly to the view must not have a state component");
   }
 
-  var base$1 = {
+  var base = {
     8: "Backspace",
     9: "Tab",
     10: "Enter",
@@ -12922,19 +12600,19 @@
   var ie = typeof navigator != "undefined" && /MSIE \d|Trident\/(?:[7-9]|\d{2,})\..*rv:(\d+)/.exec(navigator.userAgent);
 
   // Fill in the digit keys
-  for (var i = 0; i < 10; i++) base$1[48 + i] = base$1[96 + i] = String(i);
+  for (var i$3 = 0; i$3 < 10; i$3++) base[48 + i$3] = base[96 + i$3] = String(i$3);
 
   // The function keys
-  for (var i = 1; i <= 24; i++) base$1[i + 111] = "F" + i;
+  for (var i$3 = 1; i$3 <= 24; i$3++) base[i$3 + 111] = "F" + i$3;
 
   // And the alphabetic keys
-  for (var i = 65; i <= 90; i++) {
-    base$1[i] = String.fromCharCode(i + 32);
-    shift[i] = String.fromCharCode(i);
+  for (var i$3 = 65; i$3 <= 90; i$3++) {
+    base[i$3] = String.fromCharCode(i$3 + 32);
+    shift[i$3] = String.fromCharCode(i$3);
   }
 
   // For each code that doesn't have a shift-equivalent, copy the base name
-  for (var code$1 in base$1) if (!shift.hasOwnProperty(code$1)) shift[code$1] = base$1[code$1];
+  for (var code$1 in base) if (!shift.hasOwnProperty(code$1)) shift[code$1] = base[code$1];
 
   function keyName(event) {
     // On macOS, keys held with Shift and Cmd don't reflect the effect of Shift in `.key`.
@@ -12943,7 +12621,7 @@
         ie && event.shiftKey && event.key && event.key.length == 1 ||
         event.key == "Unidentified";
     var name = (!ignoreKey && event.key) ||
-      (event.shiftKey ? shift : base$1)[event.keyCode] ||
+      (event.shiftKey ? shift : base)[event.keyCode] ||
       event.key || "Unidentified";
     // Edge sometimes produces wrong names (Issue #3)
     if (name == "Esc") name = "Escape";
@@ -12956,8 +12634,7 @@
     return name
   }
 
-  const mac$1 = typeof navigator != "undefined" && /Mac|iP(hone|[oa]d)/.test(navigator.platform);
-  const windows = typeof navigator != "undefined" && /Win/.test(navigator.platform);
+  const mac$1 = typeof navigator != "undefined" ? /Mac|iP(hone|[oa]d)/.test(navigator.platform) : false;
   function normalizeKeyName(name) {
       let parts = name.split(/-(?!$)/), result = parts[parts.length - 1];
       if (result == "Space")
@@ -13063,14 +12740,12 @@
                   if (noShift && noShift(view.state, view.dispatch, view))
                       return true;
               }
-              if ((event.altKey || event.metaKey || event.ctrlKey) &&
-                  // Ctrl-Alt may be used for AltGr on Windows
-                  !(windows && event.ctrlKey && event.altKey) &&
-                  (baseName = base$1[event.keyCode]) && baseName != name) {
+              if ((event.shiftKey || event.altKey || event.metaKey || name.charCodeAt(0) > 127) &&
+                  (baseName = base[event.keyCode]) && baseName != name) {
                   // Try falling back to the keyCode when there's a modifier
                   // active or the character produced isn't ASCII, and our table
                   // produces a different name from the the keyCode. See #668,
-                  // #1060, #1529.
+                  // #1060
                   let fromCode = map[modifiers(baseName, event)];
                   if (fromCode && fromCode(view.state, view.dispatch, view))
                       return true;
@@ -13551,7 +13226,7 @@
       }
       else if (appended && appended.getMeta(historyKey)) {
           if (appended.getMeta(historyKey).redo)
-              return new HistoryState(history.done.addTransform(tr, undefined, options, mustPreserveItems(state)), history.undone, rangesFor(tr.mapping.maps), history.prevTime, history.prevComposition);
+              return new HistoryState(history.done.addTransform(tr, undefined, options, mustPreserveItems(state)), history.undone, rangesFor(tr.mapping.maps[tr.steps.length - 1]), history.prevTime, history.prevComposition);
           else
               return new HistoryState(history.done, history.undone.addTransform(tr, undefined, options, mustPreserveItems(state)), null, history.prevTime, history.prevComposition);
       }
@@ -13561,7 +13236,7 @@
           let newGroup = history.prevTime == 0 ||
               (!appended && history.prevComposition != composition &&
                   (history.prevTime < (tr.time || 0) - options.newGroupDelay || !isAdjacentTo(tr, history.prevRanges)));
-          let prevRanges = appended ? mapRanges(history.prevRanges, tr.mapping) : rangesFor(tr.mapping.maps);
+          let prevRanges = appended ? mapRanges(history.prevRanges, tr.mapping) : rangesFor(tr.mapping.maps[tr.steps.length - 1]);
           return new HistoryState(history.done.addTransform(tr, newGroup ? state.selection.getBookmark() : undefined, options, mustPreserveItems(state)), Branch.empty, prevRanges, tr.time, composition == null ? history.prevComposition : composition);
       }
       else if (rebased = tr.getMeta("rebased")) {
@@ -13586,10 +13261,9 @@
       });
       return adjacent;
   }
-  function rangesFor(maps) {
+  function rangesFor(map) {
       let result = [];
-      for (let i = maps.length - 1; i >= 0 && result.length == 0; i--)
-          maps[i].forEach((_from, _to, from, to) => result.push(from, to));
+      map.forEach((_from, _to, from, to) => result.push(from, to));
       return result;
   }
   function mapRanges(ranges, mapping) {
@@ -13605,16 +13279,16 @@
   }
   // Apply the latest event from one branch to the document and shift the event
   // onto the other branch.
-  function histTransaction(history, state, redo) {
+  function histTransaction(history, state, dispatch, redo) {
       let preserveItems = mustPreserveItems(state);
       let histOptions = historyKey.get(state).spec.config;
       let pop = (redo ? history.undone : history.done).popEvent(state, preserveItems);
       if (!pop)
-          return null;
+          return;
       let selection = pop.selection.resolve(pop.transform.doc);
       let added = (redo ? history.done : history.undone).addTransform(pop.transform, state.selection.getBookmark(), histOptions, preserveItems);
       let newHist = new HistoryState(redo ? added : pop.remaining, redo ? pop.remaining : added, null, 0, -1);
-      return pop.transform.setSelection(selection).setMeta(historyKey, { redo, historyState: newHist });
+      dispatch(pop.transform.setSelection(selection).setMeta(historyKey, { redo, historyState: newHist }).scrollIntoView());
   }
   let cachedPreserveItems = false, cachedPreserveItemsPlugins = null;
   // Check whether any plugin in the given state has a
@@ -13664,7 +13338,7 @@
                   beforeinput(view, e) {
                       let inputType = e.inputType;
                       let command = inputType == "historyUndo" ? undo$1 : inputType == "historyRedo" ? redo$1 : null;
-                      if (!command || !view.editable)
+                      if (!command)
                           return false;
                       e.preventDefault();
                       return command(view.state, view.dispatch);
@@ -13673,27 +13347,28 @@
           }
       });
   }
-  function buildCommand(redo, scroll) {
-      return (state, dispatch) => {
-          let hist = historyKey.getState(state);
-          if (!hist || (redo ? hist.undone : hist.done).eventCount == 0)
-              return false;
-          if (dispatch) {
-              let tr = histTransaction(hist, state, redo);
-              if (tr)
-                  dispatch(scroll ? tr.scrollIntoView() : tr);
-          }
-          return true;
-      };
-  }
   /**
   A command function that undoes the last change, if any.
   */
-  const undo$1 = buildCommand(false, true);
+  const undo$1 = (state, dispatch) => {
+      let hist = historyKey.getState(state);
+      if (!hist || hist.done.eventCount == 0)
+          return false;
+      if (dispatch)
+          histTransaction(hist, state, dispatch, false);
+      return true;
+  };
   /**
   A command function that redoes the last undone change, if any.
   */
-  const redo$1 = buildCommand(true, true);
+  const redo$1 = (state, dispatch) => {
+      let hist = historyKey.getState(state);
+      if (!hist || hist.undone.eventCount == 0)
+          return false;
+      if (dispatch)
+          histTransaction(hist, state, dispatch, true);
+      return true;
+  };
 
   /**
   Delete the selection, if there is one.
@@ -13737,26 +13412,21 @@
       }
       let before = $cut.nodeBefore;
       // Apply the joining algorithm
-      if (deleteBarrier(state, $cut, dispatch, -1))
+      if (!before.type.spec.isolating && deleteBarrier(state, $cut, dispatch))
           return true;
       // If the node below has no content and the node above is
       // selectable, delete the node below and select the one above.
       if ($cursor.parent.content.size == 0 &&
           (textblockAt(before, "end") || NodeSelection.isSelectable(before))) {
-          for (let depth = $cursor.depth;; depth--) {
-              let delStep = replaceStep(state.doc, $cursor.before(depth), $cursor.after(depth), Slice.empty);
-              if (delStep && delStep.slice.size < delStep.to - delStep.from) {
-                  if (dispatch) {
-                      let tr = state.tr.step(delStep);
-                      tr.setSelection(textblockAt(before, "end")
-                          ? Selection$2.findFrom(tr.doc.resolve(tr.mapping.map($cut.pos, -1)), -1)
-                          : NodeSelection.create(tr.doc, $cut.pos - before.nodeSize));
-                      dispatch(tr.scrollIntoView());
-                  }
-                  return true;
+          let delStep = replaceStep(state.doc, $cursor.before(), $cursor.after(), Slice.empty);
+          if (delStep && delStep.slice.size < delStep.to - delStep.from) {
+              if (dispatch) {
+                  let tr = state.tr.step(delStep);
+                  tr.setSelection(textblockAt(before, "end") ? Selection$2.findFrom(tr.doc.resolve(tr.mapping.map($cut.pos, -1)), -1)
+                      : NodeSelection.create(tr.doc, $cut.pos - before.nodeSize));
+                  dispatch(tr.scrollIntoView());
               }
-              if (depth == 1 || $cursor.node(depth - 1).childCount > 1)
-                  break;
+              return true;
           }
       }
       // If the node before is an atom, delete it
@@ -13834,7 +13504,7 @@
           return false;
       let after = $cut.nodeAfter;
       // Try the joining algorithm
-      if (deleteBarrier(state, $cut, dispatch, 1))
+      if (deleteBarrier(state, $cut, dispatch))
           return true;
       // If the node above has no content and the node below is
       // selectable, delete the node above and select the one below.
@@ -13990,45 +13660,31 @@
                   dispatch(state.tr.split($from.pos).scrollIntoView());
               return true;
           }
-          if (!$from.depth)
+          if (!$from.parent.isBlock)
               return false;
-          let types = [];
-          let splitDepth, deflt, atEnd = false, atStart = false;
-          for (let d = $from.depth;; d--) {
-              let node = $from.node(d);
-              if (node.isBlock) {
-                  atEnd = $from.end(d) == $from.pos + ($from.depth - d);
-                  atStart = $from.start(d) == $from.pos - ($from.depth - d);
-                  deflt = defaultBlockAt($from.node(d - 1).contentMatchAt($from.indexAfter(d - 1)));
-                  types.unshift((atEnd && deflt ? { type: deflt } : null));
-                  splitDepth = d;
-                  break;
+          if (dispatch) {
+              let atEnd = $to.parentOffset == $to.parent.content.size;
+              let tr = state.tr;
+              if (state.selection instanceof TextSelection || state.selection instanceof AllSelection)
+                  tr.deleteSelection();
+              let deflt = $from.depth == 0 ? null : defaultBlockAt($from.node(-1).contentMatchAt($from.indexAfter(-1)));
+              let types = atEnd && deflt ? [{ type: deflt }] : undefined;
+              let can = canSplit(tr.doc, tr.mapping.map($from.pos), 1, types);
+              if (!types && !can && canSplit(tr.doc, tr.mapping.map($from.pos), 1, deflt ? [{ type: deflt }] : undefined)) {
+                  if (deflt)
+                      types = [{ type: deflt }];
+                  can = true;
               }
-              else {
-                  if (d == 1)
-                      return false;
-                  types.unshift(null);
+              if (can) {
+                  tr.split(tr.mapping.map($from.pos), 1, types);
+                  if (!atEnd && !$from.parentOffset && $from.parent.type != deflt) {
+                      let first = tr.mapping.map($from.before()), $first = tr.doc.resolve(first);
+                      if (deflt && $from.node(-1).canReplaceWith($first.index(), $first.index() + 1, deflt))
+                          tr.setNodeMarkup(tr.mapping.map($from.before()), deflt);
+                  }
               }
-          }
-          let tr = state.tr;
-          if (state.selection instanceof TextSelection || state.selection instanceof AllSelection)
-              tr.deleteSelection();
-          let splitPos = tr.mapping.map($from.pos);
-          let can = canSplit(tr.doc, splitPos, types.length, types);
-          if (!can) {
-              types[0] = deflt ? { type: deflt } : null;
-              can = canSplit(tr.doc, splitPos, types.length, types);
-          }
-          if (!can)
-              return false;
-          tr.split(splitPos, types.length, types);
-          if (!atEnd && atStart && $from.node(splitDepth).type != deflt) {
-              let first = tr.mapping.map($from.before(splitDepth)), $first = tr.doc.resolve(first);
-              if (deflt && $from.node(splitDepth - 1).canReplaceWith($first.index(), $first.index() + 1, deflt))
-                  tr.setNodeMarkup(tr.mapping.map($from.before(splitDepth)), deflt);
-          }
-          if (dispatch)
               dispatch(tr.scrollIntoView());
+          }
           return true;
       };
   }
@@ -14057,15 +13713,19 @@
       if (!$pos.parent.canReplace(index, index + 1) || !(after.isTextblock || canJoin(state.doc, $pos.pos)))
           return false;
       if (dispatch)
-          dispatch(state.tr.join($pos.pos).scrollIntoView());
+          dispatch(state.tr
+              .clearIncompatible($pos.pos, before.type, before.contentMatchAt(before.childCount))
+              .join($pos.pos)
+              .scrollIntoView());
       return true;
   }
-  function deleteBarrier(state, $cut, dispatch, dir) {
+  function deleteBarrier(state, $cut, dispatch) {
       let before = $cut.nodeBefore, after = $cut.nodeAfter, conn, match;
-      let isolated = before.type.spec.isolating || after.type.spec.isolating;
-      if (!isolated && joinMaybeClear(state, $cut, dispatch))
+      if (before.type.spec.isolating || after.type.spec.isolating)
+          return false;
+      if (joinMaybeClear(state, $cut, dispatch))
           return true;
-      let canDelAfter = !isolated && $cut.parent.canReplace($cut.index(), $cut.index() + 1);
+      let canDelAfter = $cut.parent.canReplace($cut.index(), $cut.index() + 1);
       if (canDelAfter &&
           (conn = (match = before.contentMatchAt(before.childCount)).findWrapping(after.type)) &&
           match.matchType(conn[0] || after.type).validEnd) {
@@ -14075,15 +13735,14 @@
                   wrap = Fragment.from(conn[i].create(null, wrap));
               wrap = Fragment.from(before.copy(wrap));
               let tr = state.tr.step(new ReplaceAroundStep($cut.pos - 1, end, $cut.pos, end, new Slice(wrap, 1, 0), conn.length, true));
-              let $joinAt = tr.doc.resolve(end + 2 * conn.length);
-              if ($joinAt.nodeAfter && $joinAt.nodeAfter.type == before.type &&
-                  canJoin(tr.doc, $joinAt.pos))
-                  tr.join($joinAt.pos);
+              let joinAt = end + 2 * conn.length;
+              if (canJoin(tr.doc, joinAt))
+                  tr.join(joinAt);
               dispatch(tr.scrollIntoView());
           }
           return true;
       }
-      let selAfter = after.type.spec.isolating || (dir > 0 && isolated) ? null : Selection$2.findFrom($cut, 1);
+      let selAfter = Selection$2.findFrom($cut, 1);
       let range = selAfter && selAfter.$from.blockRange(selAfter.$to), target = range && liftTarget(range);
       if (target != null && target >= $cut.depth) {
           if (dispatch)
@@ -14190,12 +13849,12 @@
           return true;
       };
   }
-  function markApplies(doc, ranges, type, enterAtoms) {
+  function markApplies(doc, ranges, type) {
       for (let i = 0; i < ranges.length; i++) {
           let { $from, $to } = ranges[i];
           let can = $from.depth == 0 ? doc.inlineContent && doc.type.allowsMarkType(type) : false;
-          doc.nodesBetween($from.pos, $to.pos, (node, pos) => {
-              if (can || false)
+          doc.nodesBetween($from.pos, $to.pos, node => {
+              if (can)
                   return false;
               can = node.inlineContent && node.type.allowsMarkType(type);
           });
@@ -14213,7 +13872,7 @@
   marks](https://prosemirror.net/docs/ref/#state.EditorState.storedMarks) instead of a range of the
   document.
   */
-  function toggleMark(markType, attrs = null, options) {
+  function toggleMark(markType, attrs = null) {
       return function (state, dispatch) {
           let { empty, $cursor, ranges } = state.selection;
           if ((empty && !$cursor) || !markApplies(state.doc, ranges, markType))
@@ -14226,13 +13885,14 @@
                       dispatch(state.tr.addStoredMark(markType.create(attrs)));
               }
               else {
-                  let add, tr = state.tr;
-                  {
-                      add = !ranges.some(r => state.doc.rangeHasMark(r.$from.pos, r.$to.pos, markType));
+                  let has = false, tr = state.tr;
+                  for (let i = 0; !has && i < ranges.length; i++) {
+                      let { $from, $to } = ranges[i];
+                      has = state.doc.rangeHasMark($from.pos, $to.pos, markType);
                   }
                   for (let i = 0; i < ranges.length; i++) {
                       let { $from, $to } = ranges[i];
-                      if (!add) {
+                      if (has) {
                           tr.removeMark($from.pos, $to.pos, markType);
                       }
                       else {
@@ -14316,130 +13976,4286 @@
   */
   const baseKeymap = mac ? macBaseKeymap : pcBaseKeymap;
 
-  /* eslint-disable no-bitwise */
+  var commonjsGlobal = typeof globalThis !== 'undefined' ? globalThis : typeof window !== 'undefined' ? window : typeof global !== 'undefined' ? global : typeof self !== 'undefined' ? self : {};
 
-  const decodeCache = {};
-
-  function getDecodeCache (exclude) {
-    let cache = decodeCache[exclude];
-    if (cache) { return cache }
-
-    cache = decodeCache[exclude] = [];
-
-    for (let i = 0; i < 128; i++) {
-      const ch = String.fromCharCode(i);
-      cache.push(ch);
-    }
-
-    for (let i = 0; i < exclude.length; i++) {
-      const ch = exclude.charCodeAt(i);
-      cache[ch] = '%' + ('0' + ch.toString(16).toUpperCase()).slice(-2);
-    }
-
-    return cache
+  function getDefaultExportFromCjs (x) {
+  	return x && x.__esModule && Object.prototype.hasOwnProperty.call(x, 'default') ? x['default'] : x;
   }
 
-  // Decode percent-encoded string.
-  //
-  function decode$1 (string, exclude) {
-    if (typeof exclude !== 'string') {
-      exclude = decode$1.defaultChars;
-    }
+  var utils$1 = {};
 
-    const cache = getDecodeCache(exclude);
+  var Aacute = "Á";
+  var aacute = "á";
+  var Abreve = "Ă";
+  var abreve = "ă";
+  var ac = "∾";
+  var acd = "∿";
+  var acE = "∾̳";
+  var Acirc = "Â";
+  var acirc = "â";
+  var acute = "´";
+  var Acy = "А";
+  var acy = "а";
+  var AElig = "Æ";
+  var aelig = "æ";
+  var af = "⁡";
+  var Afr = "𝔄";
+  var afr = "𝔞";
+  var Agrave = "À";
+  var agrave = "à";
+  var alefsym = "ℵ";
+  var aleph = "ℵ";
+  var Alpha = "Α";
+  var alpha = "α";
+  var Amacr = "Ā";
+  var amacr = "ā";
+  var amalg = "⨿";
+  var amp = "&";
+  var AMP = "&";
+  var andand = "⩕";
+  var And = "⩓";
+  var and = "∧";
+  var andd = "⩜";
+  var andslope = "⩘";
+  var andv = "⩚";
+  var ang = "∠";
+  var ange = "⦤";
+  var angle = "∠";
+  var angmsdaa = "⦨";
+  var angmsdab = "⦩";
+  var angmsdac = "⦪";
+  var angmsdad = "⦫";
+  var angmsdae = "⦬";
+  var angmsdaf = "⦭";
+  var angmsdag = "⦮";
+  var angmsdah = "⦯";
+  var angmsd = "∡";
+  var angrt = "∟";
+  var angrtvb = "⊾";
+  var angrtvbd = "⦝";
+  var angsph = "∢";
+  var angst = "Å";
+  var angzarr = "⍼";
+  var Aogon = "Ą";
+  var aogon = "ą";
+  var Aopf = "𝔸";
+  var aopf = "𝕒";
+  var apacir = "⩯";
+  var ap = "≈";
+  var apE = "⩰";
+  var ape = "≊";
+  var apid = "≋";
+  var apos = "'";
+  var ApplyFunction = "⁡";
+  var approx = "≈";
+  var approxeq = "≊";
+  var Aring = "Å";
+  var aring = "å";
+  var Ascr = "𝒜";
+  var ascr = "𝒶";
+  var Assign = "≔";
+  var ast = "*";
+  var asymp = "≈";
+  var asympeq = "≍";
+  var Atilde = "Ã";
+  var atilde = "ã";
+  var Auml = "Ä";
+  var auml = "ä";
+  var awconint = "∳";
+  var awint = "⨑";
+  var backcong = "≌";
+  var backepsilon = "϶";
+  var backprime = "‵";
+  var backsim = "∽";
+  var backsimeq = "⋍";
+  var Backslash = "∖";
+  var Barv = "⫧";
+  var barvee = "⊽";
+  var barwed = "⌅";
+  var Barwed = "⌆";
+  var barwedge = "⌅";
+  var bbrk = "⎵";
+  var bbrktbrk = "⎶";
+  var bcong = "≌";
+  var Bcy = "Б";
+  var bcy = "б";
+  var bdquo = "„";
+  var becaus = "∵";
+  var because = "∵";
+  var Because = "∵";
+  var bemptyv = "⦰";
+  var bepsi = "϶";
+  var bernou = "ℬ";
+  var Bernoullis = "ℬ";
+  var Beta = "Β";
+  var beta = "β";
+  var beth = "ℶ";
+  var between = "≬";
+  var Bfr = "𝔅";
+  var bfr = "𝔟";
+  var bigcap = "⋂";
+  var bigcirc = "◯";
+  var bigcup = "⋃";
+  var bigodot = "⨀";
+  var bigoplus = "⨁";
+  var bigotimes = "⨂";
+  var bigsqcup = "⨆";
+  var bigstar = "★";
+  var bigtriangledown = "▽";
+  var bigtriangleup = "△";
+  var biguplus = "⨄";
+  var bigvee = "⋁";
+  var bigwedge = "⋀";
+  var bkarow = "⤍";
+  var blacklozenge = "⧫";
+  var blacksquare = "▪";
+  var blacktriangle = "▴";
+  var blacktriangledown = "▾";
+  var blacktriangleleft = "◂";
+  var blacktriangleright = "▸";
+  var blank = "␣";
+  var blk12 = "▒";
+  var blk14 = "░";
+  var blk34 = "▓";
+  var block$1 = "█";
+  var bne = "=⃥";
+  var bnequiv = "≡⃥";
+  var bNot = "⫭";
+  var bnot = "⌐";
+  var Bopf = "𝔹";
+  var bopf = "𝕓";
+  var bot = "⊥";
+  var bottom = "⊥";
+  var bowtie = "⋈";
+  var boxbox = "⧉";
+  var boxdl = "┐";
+  var boxdL = "╕";
+  var boxDl = "╖";
+  var boxDL = "╗";
+  var boxdr = "┌";
+  var boxdR = "╒";
+  var boxDr = "╓";
+  var boxDR = "╔";
+  var boxh = "─";
+  var boxH = "═";
+  var boxhd = "┬";
+  var boxHd = "╤";
+  var boxhD = "╥";
+  var boxHD = "╦";
+  var boxhu = "┴";
+  var boxHu = "╧";
+  var boxhU = "╨";
+  var boxHU = "╩";
+  var boxminus = "⊟";
+  var boxplus = "⊞";
+  var boxtimes = "⊠";
+  var boxul = "┘";
+  var boxuL = "╛";
+  var boxUl = "╜";
+  var boxUL = "╝";
+  var boxur = "└";
+  var boxuR = "╘";
+  var boxUr = "╙";
+  var boxUR = "╚";
+  var boxv = "│";
+  var boxV = "║";
+  var boxvh = "┼";
+  var boxvH = "╪";
+  var boxVh = "╫";
+  var boxVH = "╬";
+  var boxvl = "┤";
+  var boxvL = "╡";
+  var boxVl = "╢";
+  var boxVL = "╣";
+  var boxvr = "├";
+  var boxvR = "╞";
+  var boxVr = "╟";
+  var boxVR = "╠";
+  var bprime = "‵";
+  var breve = "˘";
+  var Breve = "˘";
+  var brvbar = "¦";
+  var bscr = "𝒷";
+  var Bscr = "ℬ";
+  var bsemi = "⁏";
+  var bsim = "∽";
+  var bsime = "⋍";
+  var bsolb = "⧅";
+  var bsol = "\\";
+  var bsolhsub = "⟈";
+  var bull = "•";
+  var bullet = "•";
+  var bump = "≎";
+  var bumpE = "⪮";
+  var bumpe = "≏";
+  var Bumpeq = "≎";
+  var bumpeq = "≏";
+  var Cacute = "Ć";
+  var cacute = "ć";
+  var capand = "⩄";
+  var capbrcup = "⩉";
+  var capcap = "⩋";
+  var cap = "∩";
+  var Cap = "⋒";
+  var capcup = "⩇";
+  var capdot = "⩀";
+  var CapitalDifferentialD = "ⅅ";
+  var caps = "∩︀";
+  var caret = "⁁";
+  var caron = "ˇ";
+  var Cayleys = "ℭ";
+  var ccaps = "⩍";
+  var Ccaron = "Č";
+  var ccaron = "č";
+  var Ccedil = "Ç";
+  var ccedil = "ç";
+  var Ccirc = "Ĉ";
+  var ccirc = "ĉ";
+  var Cconint = "∰";
+  var ccups = "⩌";
+  var ccupssm = "⩐";
+  var Cdot = "Ċ";
+  var cdot = "ċ";
+  var cedil = "¸";
+  var Cedilla = "¸";
+  var cemptyv = "⦲";
+  var cent = "¢";
+  var centerdot = "·";
+  var CenterDot = "·";
+  var cfr = "𝔠";
+  var Cfr = "ℭ";
+  var CHcy = "Ч";
+  var chcy = "ч";
+  var check = "✓";
+  var checkmark = "✓";
+  var Chi = "Χ";
+  var chi = "χ";
+  var circ = "ˆ";
+  var circeq = "≗";
+  var circlearrowleft = "↺";
+  var circlearrowright = "↻";
+  var circledast = "⊛";
+  var circledcirc = "⊚";
+  var circleddash = "⊝";
+  var CircleDot = "⊙";
+  var circledR = "®";
+  var circledS = "Ⓢ";
+  var CircleMinus = "⊖";
+  var CirclePlus = "⊕";
+  var CircleTimes = "⊗";
+  var cir = "○";
+  var cirE = "⧃";
+  var cire = "≗";
+  var cirfnint = "⨐";
+  var cirmid = "⫯";
+  var cirscir = "⧂";
+  var ClockwiseContourIntegral = "∲";
+  var CloseCurlyDoubleQuote = "”";
+  var CloseCurlyQuote = "’";
+  var clubs = "♣";
+  var clubsuit = "♣";
+  var colon = ":";
+  var Colon = "∷";
+  var Colone = "⩴";
+  var colone = "≔";
+  var coloneq = "≔";
+  var comma = ",";
+  var commat = "@";
+  var comp = "∁";
+  var compfn = "∘";
+  var complement = "∁";
+  var complexes = "ℂ";
+  var cong = "≅";
+  var congdot = "⩭";
+  var Congruent = "≡";
+  var conint = "∮";
+  var Conint = "∯";
+  var ContourIntegral = "∮";
+  var copf = "𝕔";
+  var Copf = "ℂ";
+  var coprod = "∐";
+  var Coproduct = "∐";
+  var copy$1 = "©";
+  var COPY = "©";
+  var copysr = "℗";
+  var CounterClockwiseContourIntegral = "∳";
+  var crarr = "↵";
+  var cross = "✗";
+  var Cross = "⨯";
+  var Cscr = "𝒞";
+  var cscr = "𝒸";
+  var csub = "⫏";
+  var csube = "⫑";
+  var csup = "⫐";
+  var csupe = "⫒";
+  var ctdot = "⋯";
+  var cudarrl = "⤸";
+  var cudarrr = "⤵";
+  var cuepr = "⋞";
+  var cuesc = "⋟";
+  var cularr = "↶";
+  var cularrp = "⤽";
+  var cupbrcap = "⩈";
+  var cupcap = "⩆";
+  var CupCap = "≍";
+  var cup = "∪";
+  var Cup = "⋓";
+  var cupcup = "⩊";
+  var cupdot = "⊍";
+  var cupor = "⩅";
+  var cups = "∪︀";
+  var curarr = "↷";
+  var curarrm = "⤼";
+  var curlyeqprec = "⋞";
+  var curlyeqsucc = "⋟";
+  var curlyvee = "⋎";
+  var curlywedge = "⋏";
+  var curren = "¤";
+  var curvearrowleft = "↶";
+  var curvearrowright = "↷";
+  var cuvee = "⋎";
+  var cuwed = "⋏";
+  var cwconint = "∲";
+  var cwint = "∱";
+  var cylcty = "⌭";
+  var dagger = "†";
+  var Dagger = "‡";
+  var daleth = "ℸ";
+  var darr = "↓";
+  var Darr = "↡";
+  var dArr = "⇓";
+  var dash = "‐";
+  var Dashv = "⫤";
+  var dashv = "⊣";
+  var dbkarow = "⤏";
+  var dblac = "˝";
+  var Dcaron = "Ď";
+  var dcaron = "ď";
+  var Dcy = "Д";
+  var dcy = "д";
+  var ddagger = "‡";
+  var ddarr = "⇊";
+  var DD = "ⅅ";
+  var dd = "ⅆ";
+  var DDotrahd = "⤑";
+  var ddotseq = "⩷";
+  var deg = "°";
+  var Del = "∇";
+  var Delta = "Δ";
+  var delta = "δ";
+  var demptyv = "⦱";
+  var dfisht = "⥿";
+  var Dfr = "𝔇";
+  var dfr = "𝔡";
+  var dHar = "⥥";
+  var dharl = "⇃";
+  var dharr = "⇂";
+  var DiacriticalAcute = "´";
+  var DiacriticalDot = "˙";
+  var DiacriticalDoubleAcute = "˝";
+  var DiacriticalGrave = "`";
+  var DiacriticalTilde = "˜";
+  var diam = "⋄";
+  var diamond = "⋄";
+  var Diamond = "⋄";
+  var diamondsuit = "♦";
+  var diams = "♦";
+  var die = "¨";
+  var DifferentialD = "ⅆ";
+  var digamma = "ϝ";
+  var disin = "⋲";
+  var div = "÷";
+  var divide = "÷";
+  var divideontimes = "⋇";
+  var divonx = "⋇";
+  var DJcy = "Ђ";
+  var djcy = "ђ";
+  var dlcorn = "⌞";
+  var dlcrop = "⌍";
+  var dollar = "$";
+  var Dopf = "𝔻";
+  var dopf = "𝕕";
+  var Dot = "¨";
+  var dot = "˙";
+  var DotDot = "⃜";
+  var doteq = "≐";
+  var doteqdot = "≑";
+  var DotEqual = "≐";
+  var dotminus = "∸";
+  var dotplus = "∔";
+  var dotsquare = "⊡";
+  var doublebarwedge = "⌆";
+  var DoubleContourIntegral = "∯";
+  var DoubleDot = "¨";
+  var DoubleDownArrow = "⇓";
+  var DoubleLeftArrow = "⇐";
+  var DoubleLeftRightArrow = "⇔";
+  var DoubleLeftTee = "⫤";
+  var DoubleLongLeftArrow = "⟸";
+  var DoubleLongLeftRightArrow = "⟺";
+  var DoubleLongRightArrow = "⟹";
+  var DoubleRightArrow = "⇒";
+  var DoubleRightTee = "⊨";
+  var DoubleUpArrow = "⇑";
+  var DoubleUpDownArrow = "⇕";
+  var DoubleVerticalBar = "∥";
+  var DownArrowBar = "⤓";
+  var downarrow = "↓";
+  var DownArrow = "↓";
+  var Downarrow = "⇓";
+  var DownArrowUpArrow = "⇵";
+  var DownBreve = "̑";
+  var downdownarrows = "⇊";
+  var downharpoonleft = "⇃";
+  var downharpoonright = "⇂";
+  var DownLeftRightVector = "⥐";
+  var DownLeftTeeVector = "⥞";
+  var DownLeftVectorBar = "⥖";
+  var DownLeftVector = "↽";
+  var DownRightTeeVector = "⥟";
+  var DownRightVectorBar = "⥗";
+  var DownRightVector = "⇁";
+  var DownTeeArrow = "↧";
+  var DownTee = "⊤";
+  var drbkarow = "⤐";
+  var drcorn = "⌟";
+  var drcrop = "⌌";
+  var Dscr = "𝒟";
+  var dscr = "𝒹";
+  var DScy = "Ѕ";
+  var dscy = "ѕ";
+  var dsol = "⧶";
+  var Dstrok = "Đ";
+  var dstrok = "đ";
+  var dtdot = "⋱";
+  var dtri = "▿";
+  var dtrif = "▾";
+  var duarr = "⇵";
+  var duhar = "⥯";
+  var dwangle = "⦦";
+  var DZcy = "Џ";
+  var dzcy = "џ";
+  var dzigrarr = "⟿";
+  var Eacute = "É";
+  var eacute = "é";
+  var easter = "⩮";
+  var Ecaron = "Ě";
+  var ecaron = "ě";
+  var Ecirc = "Ê";
+  var ecirc = "ê";
+  var ecir = "≖";
+  var ecolon = "≕";
+  var Ecy = "Э";
+  var ecy = "э";
+  var eDDot = "⩷";
+  var Edot = "Ė";
+  var edot = "ė";
+  var eDot = "≑";
+  var ee = "ⅇ";
+  var efDot = "≒";
+  var Efr = "𝔈";
+  var efr = "𝔢";
+  var eg = "⪚";
+  var Egrave = "È";
+  var egrave = "è";
+  var egs = "⪖";
+  var egsdot = "⪘";
+  var el = "⪙";
+  var Element = "∈";
+  var elinters = "⏧";
+  var ell = "ℓ";
+  var els = "⪕";
+  var elsdot = "⪗";
+  var Emacr = "Ē";
+  var emacr = "ē";
+  var empty$1 = "∅";
+  var emptyset = "∅";
+  var EmptySmallSquare = "◻";
+  var emptyv = "∅";
+  var EmptyVerySmallSquare = "▫";
+  var emsp13 = " ";
+  var emsp14 = " ";
+  var emsp = " ";
+  var ENG = "Ŋ";
+  var eng = "ŋ";
+  var ensp = " ";
+  var Eogon = "Ę";
+  var eogon = "ę";
+  var Eopf = "𝔼";
+  var eopf = "𝕖";
+  var epar = "⋕";
+  var eparsl = "⧣";
+  var eplus = "⩱";
+  var epsi = "ε";
+  var Epsilon = "Ε";
+  var epsilon = "ε";
+  var epsiv = "ϵ";
+  var eqcirc = "≖";
+  var eqcolon = "≕";
+  var eqsim = "≂";
+  var eqslantgtr = "⪖";
+  var eqslantless = "⪕";
+  var Equal = "⩵";
+  var equals$1 = "=";
+  var EqualTilde = "≂";
+  var equest = "≟";
+  var Equilibrium = "⇌";
+  var equiv = "≡";
+  var equivDD = "⩸";
+  var eqvparsl = "⧥";
+  var erarr = "⥱";
+  var erDot = "≓";
+  var escr = "ℯ";
+  var Escr = "ℰ";
+  var esdot = "≐";
+  var Esim = "⩳";
+  var esim = "≂";
+  var Eta = "Η";
+  var eta = "η";
+  var ETH = "Ð";
+  var eth = "ð";
+  var Euml = "Ë";
+  var euml = "ë";
+  var euro = "€";
+  var excl = "!";
+  var exist = "∃";
+  var Exists = "∃";
+  var expectation = "ℰ";
+  var exponentiale = "ⅇ";
+  var ExponentialE = "ⅇ";
+  var fallingdotseq = "≒";
+  var Fcy = "Ф";
+  var fcy = "ф";
+  var female = "♀";
+  var ffilig = "ﬃ";
+  var fflig = "ﬀ";
+  var ffllig = "ﬄ";
+  var Ffr = "𝔉";
+  var ffr = "𝔣";
+  var filig = "ﬁ";
+  var FilledSmallSquare = "◼";
+  var FilledVerySmallSquare = "▪";
+  var fjlig = "fj";
+  var flat = "♭";
+  var fllig = "ﬂ";
+  var fltns = "▱";
+  var fnof = "ƒ";
+  var Fopf = "𝔽";
+  var fopf = "𝕗";
+  var forall = "∀";
+  var ForAll = "∀";
+  var fork = "⋔";
+  var forkv = "⫙";
+  var Fouriertrf = "ℱ";
+  var fpartint = "⨍";
+  var frac12 = "½";
+  var frac13 = "⅓";
+  var frac14 = "¼";
+  var frac15 = "⅕";
+  var frac16 = "⅙";
+  var frac18 = "⅛";
+  var frac23 = "⅔";
+  var frac25 = "⅖";
+  var frac34 = "¾";
+  var frac35 = "⅗";
+  var frac38 = "⅜";
+  var frac45 = "⅘";
+  var frac56 = "⅚";
+  var frac58 = "⅝";
+  var frac78 = "⅞";
+  var frasl = "⁄";
+  var frown = "⌢";
+  var fscr = "𝒻";
+  var Fscr = "ℱ";
+  var gacute = "ǵ";
+  var Gamma = "Γ";
+  var gamma$1 = "γ";
+  var Gammad = "Ϝ";
+  var gammad = "ϝ";
+  var gap = "⪆";
+  var Gbreve = "Ğ";
+  var gbreve = "ğ";
+  var Gcedil = "Ģ";
+  var Gcirc = "Ĝ";
+  var gcirc = "ĝ";
+  var Gcy = "Г";
+  var gcy = "г";
+  var Gdot = "Ġ";
+  var gdot = "ġ";
+  var ge = "≥";
+  var gE = "≧";
+  var gEl = "⪌";
+  var gel = "⋛";
+  var geq = "≥";
+  var geqq = "≧";
+  var geqslant = "⩾";
+  var gescc = "⪩";
+  var ges = "⩾";
+  var gesdot = "⪀";
+  var gesdoto = "⪂";
+  var gesdotol = "⪄";
+  var gesl = "⋛︀";
+  var gesles = "⪔";
+  var Gfr = "𝔊";
+  var gfr = "𝔤";
+  var gg = "≫";
+  var Gg = "⋙";
+  var ggg = "⋙";
+  var gimel = "ℷ";
+  var GJcy = "Ѓ";
+  var gjcy = "ѓ";
+  var gla = "⪥";
+  var gl = "≷";
+  var glE = "⪒";
+  var glj = "⪤";
+  var gnap = "⪊";
+  var gnapprox = "⪊";
+  var gne = "⪈";
+  var gnE = "≩";
+  var gneq = "⪈";
+  var gneqq = "≩";
+  var gnsim = "⋧";
+  var Gopf = "𝔾";
+  var gopf = "𝕘";
+  var grave = "`";
+  var GreaterEqual = "≥";
+  var GreaterEqualLess = "⋛";
+  var GreaterFullEqual = "≧";
+  var GreaterGreater = "⪢";
+  var GreaterLess = "≷";
+  var GreaterSlantEqual = "⩾";
+  var GreaterTilde = "≳";
+  var Gscr = "𝒢";
+  var gscr = "ℊ";
+  var gsim = "≳";
+  var gsime = "⪎";
+  var gsiml = "⪐";
+  var gtcc = "⪧";
+  var gtcir = "⩺";
+  var gt = ">";
+  var GT = ">";
+  var Gt = "≫";
+  var gtdot = "⋗";
+  var gtlPar = "⦕";
+  var gtquest = "⩼";
+  var gtrapprox = "⪆";
+  var gtrarr = "⥸";
+  var gtrdot = "⋗";
+  var gtreqless = "⋛";
+  var gtreqqless = "⪌";
+  var gtrless = "≷";
+  var gtrsim = "≳";
+  var gvertneqq = "≩︀";
+  var gvnE = "≩︀";
+  var Hacek = "ˇ";
+  var hairsp = " ";
+  var half = "½";
+  var hamilt = "ℋ";
+  var HARDcy = "Ъ";
+  var hardcy = "ъ";
+  var harrcir = "⥈";
+  var harr = "↔";
+  var hArr = "⇔";
+  var harrw = "↭";
+  var Hat = "^";
+  var hbar = "ℏ";
+  var Hcirc = "Ĥ";
+  var hcirc = "ĥ";
+  var hearts = "♥";
+  var heartsuit = "♥";
+  var hellip = "…";
+  var hercon = "⊹";
+  var hfr = "𝔥";
+  var Hfr = "ℌ";
+  var HilbertSpace = "ℋ";
+  var hksearow = "⤥";
+  var hkswarow = "⤦";
+  var hoarr = "⇿";
+  var homtht = "∻";
+  var hookleftarrow = "↩";
+  var hookrightarrow = "↪";
+  var hopf = "𝕙";
+  var Hopf = "ℍ";
+  var horbar = "―";
+  var HorizontalLine = "─";
+  var hscr = "𝒽";
+  var Hscr = "ℋ";
+  var hslash = "ℏ";
+  var Hstrok = "Ħ";
+  var hstrok = "ħ";
+  var HumpDownHump = "≎";
+  var HumpEqual = "≏";
+  var hybull = "⁃";
+  var hyphen = "‐";
+  var Iacute = "Í";
+  var iacute = "í";
+  var ic = "⁣";
+  var Icirc = "Î";
+  var icirc = "î";
+  var Icy = "И";
+  var icy = "и";
+  var Idot = "İ";
+  var IEcy = "Е";
+  var iecy = "е";
+  var iexcl = "¡";
+  var iff = "⇔";
+  var ifr = "𝔦";
+  var Ifr = "ℑ";
+  var Igrave = "Ì";
+  var igrave = "ì";
+  var ii = "ⅈ";
+  var iiiint = "⨌";
+  var iiint = "∭";
+  var iinfin = "⧜";
+  var iiota = "℩";
+  var IJlig = "Ĳ";
+  var ijlig = "ĳ";
+  var Imacr = "Ī";
+  var imacr = "ī";
+  var image$1 = "ℑ";
+  var ImaginaryI = "ⅈ";
+  var imagline = "ℐ";
+  var imagpart = "ℑ";
+  var imath = "ı";
+  var Im = "ℑ";
+  var imof = "⊷";
+  var imped = "Ƶ";
+  var Implies = "⇒";
+  var incare = "℅";
+  var infin = "∞";
+  var infintie = "⧝";
+  var inodot = "ı";
+  var intcal = "⊺";
+  var int$1 = "∫";
+  var Int = "∬";
+  var integers = "ℤ";
+  var Integral = "∫";
+  var intercal = "⊺";
+  var Intersection = "⋂";
+  var intlarhk = "⨗";
+  var intprod = "⨼";
+  var InvisibleComma = "⁣";
+  var InvisibleTimes = "⁢";
+  var IOcy = "Ё";
+  var iocy = "ё";
+  var Iogon = "Į";
+  var iogon = "į";
+  var Iopf = "𝕀";
+  var iopf = "𝕚";
+  var Iota = "Ι";
+  var iota = "ι";
+  var iprod = "⨼";
+  var iquest = "¿";
+  var iscr = "𝒾";
+  var Iscr = "ℐ";
+  var isin = "∈";
+  var isindot = "⋵";
+  var isinE = "⋹";
+  var isins = "⋴";
+  var isinsv = "⋳";
+  var isinv = "∈";
+  var it = "⁢";
+  var Itilde = "Ĩ";
+  var itilde = "ĩ";
+  var Iukcy = "І";
+  var iukcy = "і";
+  var Iuml = "Ï";
+  var iuml = "ï";
+  var Jcirc = "Ĵ";
+  var jcirc = "ĵ";
+  var Jcy = "Й";
+  var jcy = "й";
+  var Jfr = "𝔍";
+  var jfr = "𝔧";
+  var jmath = "ȷ";
+  var Jopf = "𝕁";
+  var jopf = "𝕛";
+  var Jscr = "𝒥";
+  var jscr = "𝒿";
+  var Jsercy = "Ј";
+  var jsercy = "ј";
+  var Jukcy = "Є";
+  var jukcy = "є";
+  var Kappa = "Κ";
+  var kappa = "κ";
+  var kappav = "ϰ";
+  var Kcedil = "Ķ";
+  var kcedil = "ķ";
+  var Kcy = "К";
+  var kcy = "к";
+  var Kfr = "𝔎";
+  var kfr = "𝔨";
+  var kgreen = "ĸ";
+  var KHcy = "Х";
+  var khcy = "х";
+  var KJcy = "Ќ";
+  var kjcy = "ќ";
+  var Kopf = "𝕂";
+  var kopf = "𝕜";
+  var Kscr = "𝒦";
+  var kscr = "𝓀";
+  var lAarr = "⇚";
+  var Lacute = "Ĺ";
+  var lacute = "ĺ";
+  var laemptyv = "⦴";
+  var lagran = "ℒ";
+  var Lambda = "Λ";
+  var lambda = "λ";
+  var lang = "⟨";
+  var Lang = "⟪";
+  var langd = "⦑";
+  var langle = "⟨";
+  var lap = "⪅";
+  var Laplacetrf = "ℒ";
+  var laquo = "«";
+  var larrb = "⇤";
+  var larrbfs = "⤟";
+  var larr = "←";
+  var Larr = "↞";
+  var lArr = "⇐";
+  var larrfs = "⤝";
+  var larrhk = "↩";
+  var larrlp = "↫";
+  var larrpl = "⤹";
+  var larrsim = "⥳";
+  var larrtl = "↢";
+  var latail = "⤙";
+  var lAtail = "⤛";
+  var lat = "⪫";
+  var late = "⪭";
+  var lates = "⪭︀";
+  var lbarr = "⤌";
+  var lBarr = "⤎";
+  var lbbrk = "❲";
+  var lbrace = "{";
+  var lbrack = "[";
+  var lbrke = "⦋";
+  var lbrksld = "⦏";
+  var lbrkslu = "⦍";
+  var Lcaron = "Ľ";
+  var lcaron = "ľ";
+  var Lcedil = "Ļ";
+  var lcedil = "ļ";
+  var lceil = "⌈";
+  var lcub = "{";
+  var Lcy = "Л";
+  var lcy = "л";
+  var ldca = "⤶";
+  var ldquo = "“";
+  var ldquor = "„";
+  var ldrdhar = "⥧";
+  var ldrushar = "⥋";
+  var ldsh = "↲";
+  var le = "≤";
+  var lE = "≦";
+  var LeftAngleBracket = "⟨";
+  var LeftArrowBar = "⇤";
+  var leftarrow = "←";
+  var LeftArrow = "←";
+  var Leftarrow = "⇐";
+  var LeftArrowRightArrow = "⇆";
+  var leftarrowtail = "↢";
+  var LeftCeiling = "⌈";
+  var LeftDoubleBracket = "⟦";
+  var LeftDownTeeVector = "⥡";
+  var LeftDownVectorBar = "⥙";
+  var LeftDownVector = "⇃";
+  var LeftFloor = "⌊";
+  var leftharpoondown = "↽";
+  var leftharpoonup = "↼";
+  var leftleftarrows = "⇇";
+  var leftrightarrow = "↔";
+  var LeftRightArrow = "↔";
+  var Leftrightarrow = "⇔";
+  var leftrightarrows = "⇆";
+  var leftrightharpoons = "⇋";
+  var leftrightsquigarrow = "↭";
+  var LeftRightVector = "⥎";
+  var LeftTeeArrow = "↤";
+  var LeftTee = "⊣";
+  var LeftTeeVector = "⥚";
+  var leftthreetimes = "⋋";
+  var LeftTriangleBar = "⧏";
+  var LeftTriangle = "⊲";
+  var LeftTriangleEqual = "⊴";
+  var LeftUpDownVector = "⥑";
+  var LeftUpTeeVector = "⥠";
+  var LeftUpVectorBar = "⥘";
+  var LeftUpVector = "↿";
+  var LeftVectorBar = "⥒";
+  var LeftVector = "↼";
+  var lEg = "⪋";
+  var leg = "⋚";
+  var leq = "≤";
+  var leqq = "≦";
+  var leqslant = "⩽";
+  var lescc = "⪨";
+  var les = "⩽";
+  var lesdot = "⩿";
+  var lesdoto = "⪁";
+  var lesdotor = "⪃";
+  var lesg = "⋚︀";
+  var lesges = "⪓";
+  var lessapprox = "⪅";
+  var lessdot = "⋖";
+  var lesseqgtr = "⋚";
+  var lesseqqgtr = "⪋";
+  var LessEqualGreater = "⋚";
+  var LessFullEqual = "≦";
+  var LessGreater = "≶";
+  var lessgtr = "≶";
+  var LessLess = "⪡";
+  var lesssim = "≲";
+  var LessSlantEqual = "⩽";
+  var LessTilde = "≲";
+  var lfisht = "⥼";
+  var lfloor = "⌊";
+  var Lfr = "𝔏";
+  var lfr = "𝔩";
+  var lg = "≶";
+  var lgE = "⪑";
+  var lHar = "⥢";
+  var lhard = "↽";
+  var lharu = "↼";
+  var lharul = "⥪";
+  var lhblk = "▄";
+  var LJcy = "Љ";
+  var ljcy = "љ";
+  var llarr = "⇇";
+  var ll = "≪";
+  var Ll = "⋘";
+  var llcorner = "⌞";
+  var Lleftarrow = "⇚";
+  var llhard = "⥫";
+  var lltri = "◺";
+  var Lmidot = "Ŀ";
+  var lmidot = "ŀ";
+  var lmoustache = "⎰";
+  var lmoust = "⎰";
+  var lnap = "⪉";
+  var lnapprox = "⪉";
+  var lne = "⪇";
+  var lnE = "≨";
+  var lneq = "⪇";
+  var lneqq = "≨";
+  var lnsim = "⋦";
+  var loang = "⟬";
+  var loarr = "⇽";
+  var lobrk = "⟦";
+  var longleftarrow = "⟵";
+  var LongLeftArrow = "⟵";
+  var Longleftarrow = "⟸";
+  var longleftrightarrow = "⟷";
+  var LongLeftRightArrow = "⟷";
+  var Longleftrightarrow = "⟺";
+  var longmapsto = "⟼";
+  var longrightarrow = "⟶";
+  var LongRightArrow = "⟶";
+  var Longrightarrow = "⟹";
+  var looparrowleft = "↫";
+  var looparrowright = "↬";
+  var lopar = "⦅";
+  var Lopf = "𝕃";
+  var lopf = "𝕝";
+  var loplus = "⨭";
+  var lotimes = "⨴";
+  var lowast = "∗";
+  var lowbar = "_";
+  var LowerLeftArrow = "↙";
+  var LowerRightArrow = "↘";
+  var loz = "◊";
+  var lozenge = "◊";
+  var lozf = "⧫";
+  var lpar = "(";
+  var lparlt = "⦓";
+  var lrarr = "⇆";
+  var lrcorner = "⌟";
+  var lrhar = "⇋";
+  var lrhard = "⥭";
+  var lrm = "‎";
+  var lrtri = "⊿";
+  var lsaquo = "‹";
+  var lscr = "𝓁";
+  var Lscr = "ℒ";
+  var lsh = "↰";
+  var Lsh = "↰";
+  var lsim = "≲";
+  var lsime = "⪍";
+  var lsimg = "⪏";
+  var lsqb = "[";
+  var lsquo = "‘";
+  var lsquor = "‚";
+  var Lstrok = "Ł";
+  var lstrok = "ł";
+  var ltcc = "⪦";
+  var ltcir = "⩹";
+  var lt = "<";
+  var LT = "<";
+  var Lt = "≪";
+  var ltdot = "⋖";
+  var lthree = "⋋";
+  var ltimes = "⋉";
+  var ltlarr = "⥶";
+  var ltquest = "⩻";
+  var ltri = "◃";
+  var ltrie = "⊴";
+  var ltrif = "◂";
+  var ltrPar = "⦖";
+  var lurdshar = "⥊";
+  var luruhar = "⥦";
+  var lvertneqq = "≨︀";
+  var lvnE = "≨︀";
+  var macr = "¯";
+  var male = "♂";
+  var malt = "✠";
+  var maltese = "✠";
+  var map$2 = "↦";
+  var mapsto = "↦";
+  var mapstodown = "↧";
+  var mapstoleft = "↤";
+  var mapstoup = "↥";
+  var marker = "▮";
+  var mcomma = "⨩";
+  var Mcy = "М";
+  var mcy = "м";
+  var mdash = "—";
+  var mDDot = "∺";
+  var measuredangle = "∡";
+  var MediumSpace = " ";
+  var Mellintrf = "ℳ";
+  var Mfr = "𝔐";
+  var mfr = "𝔪";
+  var mho = "℧";
+  var micro = "µ";
+  var midast = "*";
+  var midcir = "⫰";
+  var mid = "∣";
+  var middot = "·";
+  var minusb = "⊟";
+  var minus = "−";
+  var minusd = "∸";
+  var minusdu = "⨪";
+  var MinusPlus = "∓";
+  var mlcp = "⫛";
+  var mldr = "…";
+  var mnplus = "∓";
+  var models = "⊧";
+  var Mopf = "𝕄";
+  var mopf = "𝕞";
+  var mp = "∓";
+  var mscr = "𝓂";
+  var Mscr = "ℳ";
+  var mstpos = "∾";
+  var Mu = "Μ";
+  var mu = "μ";
+  var multimap = "⊸";
+  var mumap = "⊸";
+  var nabla = "∇";
+  var Nacute = "Ń";
+  var nacute = "ń";
+  var nang = "∠⃒";
+  var nap$1 = "≉";
+  var napE = "⩰̸";
+  var napid = "≋̸";
+  var napos = "ŉ";
+  var napprox = "≉";
+  var natural = "♮";
+  var naturals = "ℕ";
+  var natur = "♮";
+  var nbsp = " ";
+  var nbump = "≎̸";
+  var nbumpe = "≏̸";
+  var ncap = "⩃";
+  var Ncaron = "Ň";
+  var ncaron = "ň";
+  var Ncedil = "Ņ";
+  var ncedil = "ņ";
+  var ncong = "≇";
+  var ncongdot = "⩭̸";
+  var ncup = "⩂";
+  var Ncy = "Н";
+  var ncy = "н";
+  var ndash = "–";
+  var nearhk = "⤤";
+  var nearr = "↗";
+  var neArr = "⇗";
+  var nearrow = "↗";
+  var ne = "≠";
+  var nedot = "≐̸";
+  var NegativeMediumSpace = "​";
+  var NegativeThickSpace = "​";
+  var NegativeThinSpace = "​";
+  var NegativeVeryThinSpace = "​";
+  var nequiv = "≢";
+  var nesear = "⤨";
+  var nesim = "≂̸";
+  var NestedGreaterGreater = "≫";
+  var NestedLessLess = "≪";
+  var NewLine = "\n";
+  var nexist = "∄";
+  var nexists = "∄";
+  var Nfr = "𝔑";
+  var nfr = "𝔫";
+  var ngE = "≧̸";
+  var nge = "≱";
+  var ngeq = "≱";
+  var ngeqq = "≧̸";
+  var ngeqslant = "⩾̸";
+  var nges = "⩾̸";
+  var nGg = "⋙̸";
+  var ngsim = "≵";
+  var nGt = "≫⃒";
+  var ngt = "≯";
+  var ngtr = "≯";
+  var nGtv = "≫̸";
+  var nharr = "↮";
+  var nhArr = "⇎";
+  var nhpar = "⫲";
+  var ni = "∋";
+  var nis = "⋼";
+  var nisd = "⋺";
+  var niv = "∋";
+  var NJcy = "Њ";
+  var njcy = "њ";
+  var nlarr = "↚";
+  var nlArr = "⇍";
+  var nldr = "‥";
+  var nlE = "≦̸";
+  var nle = "≰";
+  var nleftarrow = "↚";
+  var nLeftarrow = "⇍";
+  var nleftrightarrow = "↮";
+  var nLeftrightarrow = "⇎";
+  var nleq = "≰";
+  var nleqq = "≦̸";
+  var nleqslant = "⩽̸";
+  var nles = "⩽̸";
+  var nless = "≮";
+  var nLl = "⋘̸";
+  var nlsim = "≴";
+  var nLt = "≪⃒";
+  var nlt = "≮";
+  var nltri = "⋪";
+  var nltrie = "⋬";
+  var nLtv = "≪̸";
+  var nmid = "∤";
+  var NoBreak = "⁠";
+  var NonBreakingSpace = " ";
+  var nopf = "𝕟";
+  var Nopf = "ℕ";
+  var Not = "⫬";
+  var not = "¬";
+  var NotCongruent = "≢";
+  var NotCupCap = "≭";
+  var NotDoubleVerticalBar = "∦";
+  var NotElement = "∉";
+  var NotEqual = "≠";
+  var NotEqualTilde = "≂̸";
+  var NotExists = "∄";
+  var NotGreater = "≯";
+  var NotGreaterEqual = "≱";
+  var NotGreaterFullEqual = "≧̸";
+  var NotGreaterGreater = "≫̸";
+  var NotGreaterLess = "≹";
+  var NotGreaterSlantEqual = "⩾̸";
+  var NotGreaterTilde = "≵";
+  var NotHumpDownHump = "≎̸";
+  var NotHumpEqual = "≏̸";
+  var notin = "∉";
+  var notindot = "⋵̸";
+  var notinE = "⋹̸";
+  var notinva = "∉";
+  var notinvb = "⋷";
+  var notinvc = "⋶";
+  var NotLeftTriangleBar = "⧏̸";
+  var NotLeftTriangle = "⋪";
+  var NotLeftTriangleEqual = "⋬";
+  var NotLess = "≮";
+  var NotLessEqual = "≰";
+  var NotLessGreater = "≸";
+  var NotLessLess = "≪̸";
+  var NotLessSlantEqual = "⩽̸";
+  var NotLessTilde = "≴";
+  var NotNestedGreaterGreater = "⪢̸";
+  var NotNestedLessLess = "⪡̸";
+  var notni = "∌";
+  var notniva = "∌";
+  var notnivb = "⋾";
+  var notnivc = "⋽";
+  var NotPrecedes = "⊀";
+  var NotPrecedesEqual = "⪯̸";
+  var NotPrecedesSlantEqual = "⋠";
+  var NotReverseElement = "∌";
+  var NotRightTriangleBar = "⧐̸";
+  var NotRightTriangle = "⋫";
+  var NotRightTriangleEqual = "⋭";
+  var NotSquareSubset = "⊏̸";
+  var NotSquareSubsetEqual = "⋢";
+  var NotSquareSuperset = "⊐̸";
+  var NotSquareSupersetEqual = "⋣";
+  var NotSubset = "⊂⃒";
+  var NotSubsetEqual = "⊈";
+  var NotSucceeds = "⊁";
+  var NotSucceedsEqual = "⪰̸";
+  var NotSucceedsSlantEqual = "⋡";
+  var NotSucceedsTilde = "≿̸";
+  var NotSuperset = "⊃⃒";
+  var NotSupersetEqual = "⊉";
+  var NotTilde = "≁";
+  var NotTildeEqual = "≄";
+  var NotTildeFullEqual = "≇";
+  var NotTildeTilde = "≉";
+  var NotVerticalBar = "∤";
+  var nparallel = "∦";
+  var npar = "∦";
+  var nparsl = "⫽⃥";
+  var npart = "∂̸";
+  var npolint = "⨔";
+  var npr = "⊀";
+  var nprcue = "⋠";
+  var nprec = "⊀";
+  var npreceq = "⪯̸";
+  var npre = "⪯̸";
+  var nrarrc = "⤳̸";
+  var nrarr = "↛";
+  var nrArr = "⇏";
+  var nrarrw = "↝̸";
+  var nrightarrow = "↛";
+  var nRightarrow = "⇏";
+  var nrtri = "⋫";
+  var nrtrie = "⋭";
+  var nsc = "⊁";
+  var nsccue = "⋡";
+  var nsce = "⪰̸";
+  var Nscr = "𝒩";
+  var nscr = "𝓃";
+  var nshortmid = "∤";
+  var nshortparallel = "∦";
+  var nsim = "≁";
+  var nsime = "≄";
+  var nsimeq = "≄";
+  var nsmid = "∤";
+  var nspar = "∦";
+  var nsqsube = "⋢";
+  var nsqsupe = "⋣";
+  var nsub = "⊄";
+  var nsubE = "⫅̸";
+  var nsube = "⊈";
+  var nsubset = "⊂⃒";
+  var nsubseteq = "⊈";
+  var nsubseteqq = "⫅̸";
+  var nsucc = "⊁";
+  var nsucceq = "⪰̸";
+  var nsup = "⊅";
+  var nsupE = "⫆̸";
+  var nsupe = "⊉";
+  var nsupset = "⊃⃒";
+  var nsupseteq = "⊉";
+  var nsupseteqq = "⫆̸";
+  var ntgl = "≹";
+  var Ntilde = "Ñ";
+  var ntilde = "ñ";
+  var ntlg = "≸";
+  var ntriangleleft = "⋪";
+  var ntrianglelefteq = "⋬";
+  var ntriangleright = "⋫";
+  var ntrianglerighteq = "⋭";
+  var Nu = "Ν";
+  var nu = "ν";
+  var num = "#";
+  var numero = "№";
+  var numsp = " ";
+  var nvap = "≍⃒";
+  var nvdash = "⊬";
+  var nvDash = "⊭";
+  var nVdash = "⊮";
+  var nVDash = "⊯";
+  var nvge = "≥⃒";
+  var nvgt = ">⃒";
+  var nvHarr = "⤄";
+  var nvinfin = "⧞";
+  var nvlArr = "⤂";
+  var nvle = "≤⃒";
+  var nvlt = "<⃒";
+  var nvltrie = "⊴⃒";
+  var nvrArr = "⤃";
+  var nvrtrie = "⊵⃒";
+  var nvsim = "∼⃒";
+  var nwarhk = "⤣";
+  var nwarr = "↖";
+  var nwArr = "⇖";
+  var nwarrow = "↖";
+  var nwnear = "⤧";
+  var Oacute = "Ó";
+  var oacute = "ó";
+  var oast = "⊛";
+  var Ocirc = "Ô";
+  var ocirc = "ô";
+  var ocir = "⊚";
+  var Ocy = "О";
+  var ocy = "о";
+  var odash = "⊝";
+  var Odblac = "Ő";
+  var odblac = "ő";
+  var odiv = "⨸";
+  var odot = "⊙";
+  var odsold = "⦼";
+  var OElig = "Œ";
+  var oelig = "œ";
+  var ofcir = "⦿";
+  var Ofr = "𝔒";
+  var ofr = "𝔬";
+  var ogon = "˛";
+  var Ograve = "Ò";
+  var ograve = "ò";
+  var ogt = "⧁";
+  var ohbar = "⦵";
+  var ohm = "Ω";
+  var oint = "∮";
+  var olarr = "↺";
+  var olcir = "⦾";
+  var olcross = "⦻";
+  var oline = "‾";
+  var olt = "⧀";
+  var Omacr = "Ō";
+  var omacr = "ō";
+  var Omega = "Ω";
+  var omega = "ω";
+  var Omicron = "Ο";
+  var omicron = "ο";
+  var omid = "⦶";
+  var ominus = "⊖";
+  var Oopf = "𝕆";
+  var oopf = "𝕠";
+  var opar = "⦷";
+  var OpenCurlyDoubleQuote = "“";
+  var OpenCurlyQuote = "‘";
+  var operp = "⦹";
+  var oplus = "⊕";
+  var orarr = "↻";
+  var Or = "⩔";
+  var or = "∨";
+  var ord = "⩝";
+  var order = "ℴ";
+  var orderof = "ℴ";
+  var ordf = "ª";
+  var ordm = "º";
+  var origof = "⊶";
+  var oror = "⩖";
+  var orslope = "⩗";
+  var orv = "⩛";
+  var oS = "Ⓢ";
+  var Oscr = "𝒪";
+  var oscr = "ℴ";
+  var Oslash = "Ø";
+  var oslash = "ø";
+  var osol = "⊘";
+  var Otilde = "Õ";
+  var otilde = "õ";
+  var otimesas = "⨶";
+  var Otimes = "⨷";
+  var otimes = "⊗";
+  var Ouml = "Ö";
+  var ouml = "ö";
+  var ovbar = "⌽";
+  var OverBar = "‾";
+  var OverBrace = "⏞";
+  var OverBracket = "⎴";
+  var OverParenthesis = "⏜";
+  var para = "¶";
+  var parallel = "∥";
+  var par = "∥";
+  var parsim = "⫳";
+  var parsl = "⫽";
+  var part = "∂";
+  var PartialD = "∂";
+  var Pcy = "П";
+  var pcy = "п";
+  var percnt = "%";
+  var period = ".";
+  var permil = "‰";
+  var perp = "⊥";
+  var pertenk = "‱";
+  var Pfr = "𝔓";
+  var pfr = "𝔭";
+  var Phi = "Φ";
+  var phi = "φ";
+  var phiv = "ϕ";
+  var phmmat = "ℳ";
+  var phone = "☎";
+  var Pi = "Π";
+  var pi = "π";
+  var pitchfork = "⋔";
+  var piv = "ϖ";
+  var planck = "ℏ";
+  var planckh = "ℎ";
+  var plankv = "ℏ";
+  var plusacir = "⨣";
+  var plusb = "⊞";
+  var pluscir = "⨢";
+  var plus = "+";
+  var plusdo = "∔";
+  var plusdu = "⨥";
+  var pluse = "⩲";
+  var PlusMinus = "±";
+  var plusmn = "±";
+  var plussim = "⨦";
+  var plustwo = "⨧";
+  var pm = "±";
+  var Poincareplane = "ℌ";
+  var pointint = "⨕";
+  var popf = "𝕡";
+  var Popf = "ℙ";
+  var pound = "£";
+  var prap = "⪷";
+  var Pr = "⪻";
+  var pr = "≺";
+  var prcue = "≼";
+  var precapprox = "⪷";
+  var prec = "≺";
+  var preccurlyeq = "≼";
+  var Precedes = "≺";
+  var PrecedesEqual = "⪯";
+  var PrecedesSlantEqual = "≼";
+  var PrecedesTilde = "≾";
+  var preceq = "⪯";
+  var precnapprox = "⪹";
+  var precneqq = "⪵";
+  var precnsim = "⋨";
+  var pre = "⪯";
+  var prE = "⪳";
+  var precsim = "≾";
+  var prime = "′";
+  var Prime = "″";
+  var primes = "ℙ";
+  var prnap = "⪹";
+  var prnE = "⪵";
+  var prnsim = "⋨";
+  var prod = "∏";
+  var Product = "∏";
+  var profalar = "⌮";
+  var profline = "⌒";
+  var profsurf = "⌓";
+  var prop = "∝";
+  var Proportional = "∝";
+  var Proportion = "∷";
+  var propto = "∝";
+  var prsim = "≾";
+  var prurel = "⊰";
+  var Pscr = "𝒫";
+  var pscr = "𝓅";
+  var Psi = "Ψ";
+  var psi = "ψ";
+  var puncsp = " ";
+  var Qfr = "𝔔";
+  var qfr = "𝔮";
+  var qint = "⨌";
+  var qopf = "𝕢";
+  var Qopf = "ℚ";
+  var qprime = "⁗";
+  var Qscr = "𝒬";
+  var qscr = "𝓆";
+  var quaternions = "ℍ";
+  var quatint = "⨖";
+  var quest = "?";
+  var questeq = "≟";
+  var quot = "\"";
+  var QUOT = "\"";
+  var rAarr = "⇛";
+  var race = "∽̱";
+  var Racute = "Ŕ";
+  var racute = "ŕ";
+  var radic = "√";
+  var raemptyv = "⦳";
+  var rang = "⟩";
+  var Rang = "⟫";
+  var rangd = "⦒";
+  var range = "⦥";
+  var rangle = "⟩";
+  var raquo = "»";
+  var rarrap = "⥵";
+  var rarrb = "⇥";
+  var rarrbfs = "⤠";
+  var rarrc = "⤳";
+  var rarr = "→";
+  var Rarr = "↠";
+  var rArr = "⇒";
+  var rarrfs = "⤞";
+  var rarrhk = "↪";
+  var rarrlp = "↬";
+  var rarrpl = "⥅";
+  var rarrsim = "⥴";
+  var Rarrtl = "⤖";
+  var rarrtl = "↣";
+  var rarrw = "↝";
+  var ratail = "⤚";
+  var rAtail = "⤜";
+  var ratio = "∶";
+  var rationals = "ℚ";
+  var rbarr = "⤍";
+  var rBarr = "⤏";
+  var RBarr = "⤐";
+  var rbbrk = "❳";
+  var rbrace = "}";
+  var rbrack = "]";
+  var rbrke = "⦌";
+  var rbrksld = "⦎";
+  var rbrkslu = "⦐";
+  var Rcaron = "Ř";
+  var rcaron = "ř";
+  var Rcedil = "Ŗ";
+  var rcedil = "ŗ";
+  var rceil = "⌉";
+  var rcub = "}";
+  var Rcy = "Р";
+  var rcy = "р";
+  var rdca = "⤷";
+  var rdldhar = "⥩";
+  var rdquo = "”";
+  var rdquor = "”";
+  var rdsh = "↳";
+  var real = "ℜ";
+  var realine = "ℛ";
+  var realpart = "ℜ";
+  var reals = "ℝ";
+  var Re = "ℜ";
+  var rect = "▭";
+  var reg = "®";
+  var REG = "®";
+  var ReverseElement = "∋";
+  var ReverseEquilibrium = "⇋";
+  var ReverseUpEquilibrium = "⥯";
+  var rfisht = "⥽";
+  var rfloor = "⌋";
+  var rfr = "𝔯";
+  var Rfr = "ℜ";
+  var rHar = "⥤";
+  var rhard = "⇁";
+  var rharu = "⇀";
+  var rharul = "⥬";
+  var Rho = "Ρ";
+  var rho = "ρ";
+  var rhov = "ϱ";
+  var RightAngleBracket = "⟩";
+  var RightArrowBar = "⇥";
+  var rightarrow = "→";
+  var RightArrow = "→";
+  var Rightarrow = "⇒";
+  var RightArrowLeftArrow = "⇄";
+  var rightarrowtail = "↣";
+  var RightCeiling = "⌉";
+  var RightDoubleBracket = "⟧";
+  var RightDownTeeVector = "⥝";
+  var RightDownVectorBar = "⥕";
+  var RightDownVector = "⇂";
+  var RightFloor = "⌋";
+  var rightharpoondown = "⇁";
+  var rightharpoonup = "⇀";
+  var rightleftarrows = "⇄";
+  var rightleftharpoons = "⇌";
+  var rightrightarrows = "⇉";
+  var rightsquigarrow = "↝";
+  var RightTeeArrow = "↦";
+  var RightTee = "⊢";
+  var RightTeeVector = "⥛";
+  var rightthreetimes = "⋌";
+  var RightTriangleBar = "⧐";
+  var RightTriangle = "⊳";
+  var RightTriangleEqual = "⊵";
+  var RightUpDownVector = "⥏";
+  var RightUpTeeVector = "⥜";
+  var RightUpVectorBar = "⥔";
+  var RightUpVector = "↾";
+  var RightVectorBar = "⥓";
+  var RightVector = "⇀";
+  var ring = "˚";
+  var risingdotseq = "≓";
+  var rlarr = "⇄";
+  var rlhar = "⇌";
+  var rlm = "‏";
+  var rmoustache = "⎱";
+  var rmoust = "⎱";
+  var rnmid = "⫮";
+  var roang = "⟭";
+  var roarr = "⇾";
+  var robrk = "⟧";
+  var ropar = "⦆";
+  var ropf = "𝕣";
+  var Ropf = "ℝ";
+  var roplus = "⨮";
+  var rotimes = "⨵";
+  var RoundImplies = "⥰";
+  var rpar = ")";
+  var rpargt = "⦔";
+  var rppolint = "⨒";
+  var rrarr = "⇉";
+  var Rrightarrow = "⇛";
+  var rsaquo = "›";
+  var rscr = "𝓇";
+  var Rscr = "ℛ";
+  var rsh = "↱";
+  var Rsh = "↱";
+  var rsqb = "]";
+  var rsquo = "’";
+  var rsquor = "’";
+  var rthree = "⋌";
+  var rtimes = "⋊";
+  var rtri = "▹";
+  var rtrie = "⊵";
+  var rtrif = "▸";
+  var rtriltri = "⧎";
+  var RuleDelayed = "⧴";
+  var ruluhar = "⥨";
+  var rx = "℞";
+  var Sacute = "Ś";
+  var sacute = "ś";
+  var sbquo = "‚";
+  var scap = "⪸";
+  var Scaron = "Š";
+  var scaron = "š";
+  var Sc = "⪼";
+  var sc = "≻";
+  var sccue = "≽";
+  var sce = "⪰";
+  var scE = "⪴";
+  var Scedil = "Ş";
+  var scedil = "ş";
+  var Scirc = "Ŝ";
+  var scirc = "ŝ";
+  var scnap = "⪺";
+  var scnE = "⪶";
+  var scnsim = "⋩";
+  var scpolint = "⨓";
+  var scsim = "≿";
+  var Scy = "С";
+  var scy = "с";
+  var sdotb = "⊡";
+  var sdot = "⋅";
+  var sdote = "⩦";
+  var searhk = "⤥";
+  var searr = "↘";
+  var seArr = "⇘";
+  var searrow = "↘";
+  var sect = "§";
+  var semi = ";";
+  var seswar = "⤩";
+  var setminus = "∖";
+  var setmn = "∖";
+  var sext = "✶";
+  var Sfr = "𝔖";
+  var sfr = "𝔰";
+  var sfrown = "⌢";
+  var sharp = "♯";
+  var SHCHcy = "Щ";
+  var shchcy = "щ";
+  var SHcy = "Ш";
+  var shcy = "ш";
+  var ShortDownArrow = "↓";
+  var ShortLeftArrow = "←";
+  var shortmid = "∣";
+  var shortparallel = "∥";
+  var ShortRightArrow = "→";
+  var ShortUpArrow = "↑";
+  var shy = "­";
+  var Sigma = "Σ";
+  var sigma = "σ";
+  var sigmaf = "ς";
+  var sigmav = "ς";
+  var sim = "∼";
+  var simdot = "⩪";
+  var sime = "≃";
+  var simeq = "≃";
+  var simg = "⪞";
+  var simgE = "⪠";
+  var siml = "⪝";
+  var simlE = "⪟";
+  var simne = "≆";
+  var simplus = "⨤";
+  var simrarr = "⥲";
+  var slarr = "←";
+  var SmallCircle = "∘";
+  var smallsetminus = "∖";
+  var smashp = "⨳";
+  var smeparsl = "⧤";
+  var smid = "∣";
+  var smile = "⌣";
+  var smt = "⪪";
+  var smte = "⪬";
+  var smtes = "⪬︀";
+  var SOFTcy = "Ь";
+  var softcy = "ь";
+  var solbar = "⌿";
+  var solb = "⧄";
+  var sol = "/";
+  var Sopf = "𝕊";
+  var sopf = "𝕤";
+  var spades = "♠";
+  var spadesuit = "♠";
+  var spar = "∥";
+  var sqcap = "⊓";
+  var sqcaps = "⊓︀";
+  var sqcup = "⊔";
+  var sqcups = "⊔︀";
+  var Sqrt = "√";
+  var sqsub = "⊏";
+  var sqsube = "⊑";
+  var sqsubset = "⊏";
+  var sqsubseteq = "⊑";
+  var sqsup = "⊐";
+  var sqsupe = "⊒";
+  var sqsupset = "⊐";
+  var sqsupseteq = "⊒";
+  var square = "□";
+  var Square = "□";
+  var SquareIntersection = "⊓";
+  var SquareSubset = "⊏";
+  var SquareSubsetEqual = "⊑";
+  var SquareSuperset = "⊐";
+  var SquareSupersetEqual = "⊒";
+  var SquareUnion = "⊔";
+  var squarf = "▪";
+  var squ = "□";
+  var squf = "▪";
+  var srarr = "→";
+  var Sscr = "𝒮";
+  var sscr = "𝓈";
+  var ssetmn = "∖";
+  var ssmile = "⌣";
+  var sstarf = "⋆";
+  var Star = "⋆";
+  var star = "☆";
+  var starf = "★";
+  var straightepsilon = "ϵ";
+  var straightphi = "ϕ";
+  var strns = "¯";
+  var sub = "⊂";
+  var Sub = "⋐";
+  var subdot = "⪽";
+  var subE = "⫅";
+  var sube = "⊆";
+  var subedot = "⫃";
+  var submult = "⫁";
+  var subnE = "⫋";
+  var subne = "⊊";
+  var subplus = "⪿";
+  var subrarr = "⥹";
+  var subset = "⊂";
+  var Subset = "⋐";
+  var subseteq = "⊆";
+  var subseteqq = "⫅";
+  var SubsetEqual = "⊆";
+  var subsetneq = "⊊";
+  var subsetneqq = "⫋";
+  var subsim = "⫇";
+  var subsub = "⫕";
+  var subsup = "⫓";
+  var succapprox = "⪸";
+  var succ = "≻";
+  var succcurlyeq = "≽";
+  var Succeeds = "≻";
+  var SucceedsEqual = "⪰";
+  var SucceedsSlantEqual = "≽";
+  var SucceedsTilde = "≿";
+  var succeq = "⪰";
+  var succnapprox = "⪺";
+  var succneqq = "⪶";
+  var succnsim = "⋩";
+  var succsim = "≿";
+  var SuchThat = "∋";
+  var sum = "∑";
+  var Sum = "∑";
+  var sung = "♪";
+  var sup1 = "¹";
+  var sup2 = "²";
+  var sup3 = "³";
+  var sup = "⊃";
+  var Sup = "⋑";
+  var supdot = "⪾";
+  var supdsub = "⫘";
+  var supE = "⫆";
+  var supe = "⊇";
+  var supedot = "⫄";
+  var Superset = "⊃";
+  var SupersetEqual = "⊇";
+  var suphsol = "⟉";
+  var suphsub = "⫗";
+  var suplarr = "⥻";
+  var supmult = "⫂";
+  var supnE = "⫌";
+  var supne = "⊋";
+  var supplus = "⫀";
+  var supset = "⊃";
+  var Supset = "⋑";
+  var supseteq = "⊇";
+  var supseteqq = "⫆";
+  var supsetneq = "⊋";
+  var supsetneqq = "⫌";
+  var supsim = "⫈";
+  var supsub = "⫔";
+  var supsup = "⫖";
+  var swarhk = "⤦";
+  var swarr = "↙";
+  var swArr = "⇙";
+  var swarrow = "↙";
+  var swnwar = "⤪";
+  var szlig = "ß";
+  var Tab = "\t";
+  var target = "⌖";
+  var Tau = "Τ";
+  var tau = "τ";
+  var tbrk = "⎴";
+  var Tcaron = "Ť";
+  var tcaron = "ť";
+  var Tcedil = "Ţ";
+  var tcedil = "ţ";
+  var Tcy = "Т";
+  var tcy = "т";
+  var tdot = "⃛";
+  var telrec = "⌕";
+  var Tfr = "𝔗";
+  var tfr = "𝔱";
+  var there4 = "∴";
+  var therefore = "∴";
+  var Therefore = "∴";
+  var Theta = "Θ";
+  var theta = "θ";
+  var thetasym = "ϑ";
+  var thetav = "ϑ";
+  var thickapprox = "≈";
+  var thicksim = "∼";
+  var ThickSpace = "  ";
+  var ThinSpace = " ";
+  var thinsp = " ";
+  var thkap = "≈";
+  var thksim = "∼";
+  var THORN = "Þ";
+  var thorn = "þ";
+  var tilde = "˜";
+  var Tilde = "∼";
+  var TildeEqual = "≃";
+  var TildeFullEqual = "≅";
+  var TildeTilde = "≈";
+  var timesbar = "⨱";
+  var timesb = "⊠";
+  var times = "×";
+  var timesd = "⨰";
+  var tint = "∭";
+  var toea = "⤨";
+  var topbot = "⌶";
+  var topcir = "⫱";
+  var top = "⊤";
+  var Topf = "𝕋";
+  var topf = "𝕥";
+  var topfork = "⫚";
+  var tosa = "⤩";
+  var tprime = "‴";
+  var trade = "™";
+  var TRADE = "™";
+  var triangle = "▵";
+  var triangledown = "▿";
+  var triangleleft = "◃";
+  var trianglelefteq = "⊴";
+  var triangleq = "≜";
+  var triangleright = "▹";
+  var trianglerighteq = "⊵";
+  var tridot = "◬";
+  var trie = "≜";
+  var triminus = "⨺";
+  var TripleDot = "⃛";
+  var triplus = "⨹";
+  var trisb = "⧍";
+  var tritime = "⨻";
+  var trpezium = "⏢";
+  var Tscr = "𝒯";
+  var tscr = "𝓉";
+  var TScy = "Ц";
+  var tscy = "ц";
+  var TSHcy = "Ћ";
+  var tshcy = "ћ";
+  var Tstrok = "Ŧ";
+  var tstrok = "ŧ";
+  var twixt = "≬";
+  var twoheadleftarrow = "↞";
+  var twoheadrightarrow = "↠";
+  var Uacute = "Ú";
+  var uacute = "ú";
+  var uarr = "↑";
+  var Uarr = "↟";
+  var uArr = "⇑";
+  var Uarrocir = "⥉";
+  var Ubrcy = "Ў";
+  var ubrcy = "ў";
+  var Ubreve = "Ŭ";
+  var ubreve = "ŭ";
+  var Ucirc = "Û";
+  var ucirc = "û";
+  var Ucy = "У";
+  var ucy = "у";
+  var udarr = "⇅";
+  var Udblac = "Ű";
+  var udblac = "ű";
+  var udhar = "⥮";
+  var ufisht = "⥾";
+  var Ufr = "𝔘";
+  var ufr = "𝔲";
+  var Ugrave = "Ù";
+  var ugrave = "ù";
+  var uHar = "⥣";
+  var uharl = "↿";
+  var uharr = "↾";
+  var uhblk = "▀";
+  var ulcorn = "⌜";
+  var ulcorner = "⌜";
+  var ulcrop = "⌏";
+  var ultri = "◸";
+  var Umacr = "Ū";
+  var umacr = "ū";
+  var uml = "¨";
+  var UnderBar = "_";
+  var UnderBrace = "⏟";
+  var UnderBracket = "⎵";
+  var UnderParenthesis = "⏝";
+  var Union = "⋃";
+  var UnionPlus = "⊎";
+  var Uogon = "Ų";
+  var uogon = "ų";
+  var Uopf = "𝕌";
+  var uopf = "𝕦";
+  var UpArrowBar = "⤒";
+  var uparrow = "↑";
+  var UpArrow = "↑";
+  var Uparrow = "⇑";
+  var UpArrowDownArrow = "⇅";
+  var updownarrow = "↕";
+  var UpDownArrow = "↕";
+  var Updownarrow = "⇕";
+  var UpEquilibrium = "⥮";
+  var upharpoonleft = "↿";
+  var upharpoonright = "↾";
+  var uplus = "⊎";
+  var UpperLeftArrow = "↖";
+  var UpperRightArrow = "↗";
+  var upsi = "υ";
+  var Upsi = "ϒ";
+  var upsih = "ϒ";
+  var Upsilon = "Υ";
+  var upsilon = "υ";
+  var UpTeeArrow = "↥";
+  var UpTee = "⊥";
+  var upuparrows = "⇈";
+  var urcorn = "⌝";
+  var urcorner = "⌝";
+  var urcrop = "⌎";
+  var Uring = "Ů";
+  var uring = "ů";
+  var urtri = "◹";
+  var Uscr = "𝒰";
+  var uscr = "𝓊";
+  var utdot = "⋰";
+  var Utilde = "Ũ";
+  var utilde = "ũ";
+  var utri = "▵";
+  var utrif = "▴";
+  var uuarr = "⇈";
+  var Uuml = "Ü";
+  var uuml = "ü";
+  var uwangle = "⦧";
+  var vangrt = "⦜";
+  var varepsilon = "ϵ";
+  var varkappa = "ϰ";
+  var varnothing = "∅";
+  var varphi = "ϕ";
+  var varpi = "ϖ";
+  var varpropto = "∝";
+  var varr = "↕";
+  var vArr = "⇕";
+  var varrho = "ϱ";
+  var varsigma = "ς";
+  var varsubsetneq = "⊊︀";
+  var varsubsetneqq = "⫋︀";
+  var varsupsetneq = "⊋︀";
+  var varsupsetneqq = "⫌︀";
+  var vartheta = "ϑ";
+  var vartriangleleft = "⊲";
+  var vartriangleright = "⊳";
+  var vBar = "⫨";
+  var Vbar = "⫫";
+  var vBarv = "⫩";
+  var Vcy = "В";
+  var vcy = "в";
+  var vdash = "⊢";
+  var vDash = "⊨";
+  var Vdash = "⊩";
+  var VDash = "⊫";
+  var Vdashl = "⫦";
+  var veebar = "⊻";
+  var vee = "∨";
+  var Vee = "⋁";
+  var veeeq = "≚";
+  var vellip = "⋮";
+  var verbar = "|";
+  var Verbar = "‖";
+  var vert = "|";
+  var Vert = "‖";
+  var VerticalBar = "∣";
+  var VerticalLine = "|";
+  var VerticalSeparator = "❘";
+  var VerticalTilde = "≀";
+  var VeryThinSpace = " ";
+  var Vfr = "𝔙";
+  var vfr = "𝔳";
+  var vltri = "⊲";
+  var vnsub = "⊂⃒";
+  var vnsup = "⊃⃒";
+  var Vopf = "𝕍";
+  var vopf = "𝕧";
+  var vprop = "∝";
+  var vrtri = "⊳";
+  var Vscr = "𝒱";
+  var vscr = "𝓋";
+  var vsubnE = "⫋︀";
+  var vsubne = "⊊︀";
+  var vsupnE = "⫌︀";
+  var vsupne = "⊋︀";
+  var Vvdash = "⊪";
+  var vzigzag = "⦚";
+  var Wcirc = "Ŵ";
+  var wcirc = "ŵ";
+  var wedbar = "⩟";
+  var wedge = "∧";
+  var Wedge = "⋀";
+  var wedgeq = "≙";
+  var weierp = "℘";
+  var Wfr = "𝔚";
+  var wfr = "𝔴";
+  var Wopf = "𝕎";
+  var wopf = "𝕨";
+  var wp = "℘";
+  var wr = "≀";
+  var wreath = "≀";
+  var Wscr = "𝒲";
+  var wscr = "𝓌";
+  var xcap = "⋂";
+  var xcirc = "◯";
+  var xcup = "⋃";
+  var xdtri = "▽";
+  var Xfr = "𝔛";
+  var xfr = "𝔵";
+  var xharr = "⟷";
+  var xhArr = "⟺";
+  var Xi = "Ξ";
+  var xi = "ξ";
+  var xlarr = "⟵";
+  var xlArr = "⟸";
+  var xmap = "⟼";
+  var xnis = "⋻";
+  var xodot = "⨀";
+  var Xopf = "𝕏";
+  var xopf = "𝕩";
+  var xoplus = "⨁";
+  var xotime = "⨂";
+  var xrarr = "⟶";
+  var xrArr = "⟹";
+  var Xscr = "𝒳";
+  var xscr = "𝓍";
+  var xsqcup = "⨆";
+  var xuplus = "⨄";
+  var xutri = "△";
+  var xvee = "⋁";
+  var xwedge = "⋀";
+  var Yacute = "Ý";
+  var yacute = "ý";
+  var YAcy = "Я";
+  var yacy = "я";
+  var Ycirc = "Ŷ";
+  var ycirc = "ŷ";
+  var Ycy = "Ы";
+  var ycy = "ы";
+  var yen = "¥";
+  var Yfr = "𝔜";
+  var yfr = "𝔶";
+  var YIcy = "Ї";
+  var yicy = "ї";
+  var Yopf = "𝕐";
+  var yopf = "𝕪";
+  var Yscr = "𝒴";
+  var yscr = "𝓎";
+  var YUcy = "Ю";
+  var yucy = "ю";
+  var yuml = "ÿ";
+  var Yuml = "Ÿ";
+  var Zacute = "Ź";
+  var zacute = "ź";
+  var Zcaron = "Ž";
+  var zcaron = "ž";
+  var Zcy = "З";
+  var zcy = "з";
+  var Zdot = "Ż";
+  var zdot = "ż";
+  var zeetrf = "ℨ";
+  var ZeroWidthSpace = "​";
+  var Zeta = "Ζ";
+  var zeta = "ζ";
+  var zfr = "𝔷";
+  var Zfr = "ℨ";
+  var ZHcy = "Ж";
+  var zhcy = "ж";
+  var zigrarr = "⇝";
+  var zopf = "𝕫";
+  var Zopf = "ℤ";
+  var Zscr = "𝒵";
+  var zscr = "𝓏";
+  var zwj = "‍";
+  var zwnj = "‌";
+  var require$$0 = {
+  	Aacute: Aacute,
+  	aacute: aacute,
+  	Abreve: Abreve,
+  	abreve: abreve,
+  	ac: ac,
+  	acd: acd,
+  	acE: acE,
+  	Acirc: Acirc,
+  	acirc: acirc,
+  	acute: acute,
+  	Acy: Acy,
+  	acy: acy,
+  	AElig: AElig,
+  	aelig: aelig,
+  	af: af,
+  	Afr: Afr,
+  	afr: afr,
+  	Agrave: Agrave,
+  	agrave: agrave,
+  	alefsym: alefsym,
+  	aleph: aleph,
+  	Alpha: Alpha,
+  	alpha: alpha,
+  	Amacr: Amacr,
+  	amacr: amacr,
+  	amalg: amalg,
+  	amp: amp,
+  	AMP: AMP,
+  	andand: andand,
+  	And: And,
+  	and: and,
+  	andd: andd,
+  	andslope: andslope,
+  	andv: andv,
+  	ang: ang,
+  	ange: ange,
+  	angle: angle,
+  	angmsdaa: angmsdaa,
+  	angmsdab: angmsdab,
+  	angmsdac: angmsdac,
+  	angmsdad: angmsdad,
+  	angmsdae: angmsdae,
+  	angmsdaf: angmsdaf,
+  	angmsdag: angmsdag,
+  	angmsdah: angmsdah,
+  	angmsd: angmsd,
+  	angrt: angrt,
+  	angrtvb: angrtvb,
+  	angrtvbd: angrtvbd,
+  	angsph: angsph,
+  	angst: angst,
+  	angzarr: angzarr,
+  	Aogon: Aogon,
+  	aogon: aogon,
+  	Aopf: Aopf,
+  	aopf: aopf,
+  	apacir: apacir,
+  	ap: ap,
+  	apE: apE,
+  	ape: ape,
+  	apid: apid,
+  	apos: apos,
+  	ApplyFunction: ApplyFunction,
+  	approx: approx,
+  	approxeq: approxeq,
+  	Aring: Aring,
+  	aring: aring,
+  	Ascr: Ascr,
+  	ascr: ascr,
+  	Assign: Assign,
+  	ast: ast,
+  	asymp: asymp,
+  	asympeq: asympeq,
+  	Atilde: Atilde,
+  	atilde: atilde,
+  	Auml: Auml,
+  	auml: auml,
+  	awconint: awconint,
+  	awint: awint,
+  	backcong: backcong,
+  	backepsilon: backepsilon,
+  	backprime: backprime,
+  	backsim: backsim,
+  	backsimeq: backsimeq,
+  	Backslash: Backslash,
+  	Barv: Barv,
+  	barvee: barvee,
+  	barwed: barwed,
+  	Barwed: Barwed,
+  	barwedge: barwedge,
+  	bbrk: bbrk,
+  	bbrktbrk: bbrktbrk,
+  	bcong: bcong,
+  	Bcy: Bcy,
+  	bcy: bcy,
+  	bdquo: bdquo,
+  	becaus: becaus,
+  	because: because,
+  	Because: Because,
+  	bemptyv: bemptyv,
+  	bepsi: bepsi,
+  	bernou: bernou,
+  	Bernoullis: Bernoullis,
+  	Beta: Beta,
+  	beta: beta,
+  	beth: beth,
+  	between: between,
+  	Bfr: Bfr,
+  	bfr: bfr,
+  	bigcap: bigcap,
+  	bigcirc: bigcirc,
+  	bigcup: bigcup,
+  	bigodot: bigodot,
+  	bigoplus: bigoplus,
+  	bigotimes: bigotimes,
+  	bigsqcup: bigsqcup,
+  	bigstar: bigstar,
+  	bigtriangledown: bigtriangledown,
+  	bigtriangleup: bigtriangleup,
+  	biguplus: biguplus,
+  	bigvee: bigvee,
+  	bigwedge: bigwedge,
+  	bkarow: bkarow,
+  	blacklozenge: blacklozenge,
+  	blacksquare: blacksquare,
+  	blacktriangle: blacktriangle,
+  	blacktriangledown: blacktriangledown,
+  	blacktriangleleft: blacktriangleleft,
+  	blacktriangleright: blacktriangleright,
+  	blank: blank,
+  	blk12: blk12,
+  	blk14: blk14,
+  	blk34: blk34,
+  	block: block$1,
+  	bne: bne,
+  	bnequiv: bnequiv,
+  	bNot: bNot,
+  	bnot: bnot,
+  	Bopf: Bopf,
+  	bopf: bopf,
+  	bot: bot,
+  	bottom: bottom,
+  	bowtie: bowtie,
+  	boxbox: boxbox,
+  	boxdl: boxdl,
+  	boxdL: boxdL,
+  	boxDl: boxDl,
+  	boxDL: boxDL,
+  	boxdr: boxdr,
+  	boxdR: boxdR,
+  	boxDr: boxDr,
+  	boxDR: boxDR,
+  	boxh: boxh,
+  	boxH: boxH,
+  	boxhd: boxhd,
+  	boxHd: boxHd,
+  	boxhD: boxhD,
+  	boxHD: boxHD,
+  	boxhu: boxhu,
+  	boxHu: boxHu,
+  	boxhU: boxhU,
+  	boxHU: boxHU,
+  	boxminus: boxminus,
+  	boxplus: boxplus,
+  	boxtimes: boxtimes,
+  	boxul: boxul,
+  	boxuL: boxuL,
+  	boxUl: boxUl,
+  	boxUL: boxUL,
+  	boxur: boxur,
+  	boxuR: boxuR,
+  	boxUr: boxUr,
+  	boxUR: boxUR,
+  	boxv: boxv,
+  	boxV: boxV,
+  	boxvh: boxvh,
+  	boxvH: boxvH,
+  	boxVh: boxVh,
+  	boxVH: boxVH,
+  	boxvl: boxvl,
+  	boxvL: boxvL,
+  	boxVl: boxVl,
+  	boxVL: boxVL,
+  	boxvr: boxvr,
+  	boxvR: boxvR,
+  	boxVr: boxVr,
+  	boxVR: boxVR,
+  	bprime: bprime,
+  	breve: breve,
+  	Breve: Breve,
+  	brvbar: brvbar,
+  	bscr: bscr,
+  	Bscr: Bscr,
+  	bsemi: bsemi,
+  	bsim: bsim,
+  	bsime: bsime,
+  	bsolb: bsolb,
+  	bsol: bsol,
+  	bsolhsub: bsolhsub,
+  	bull: bull,
+  	bullet: bullet,
+  	bump: bump,
+  	bumpE: bumpE,
+  	bumpe: bumpe,
+  	Bumpeq: Bumpeq,
+  	bumpeq: bumpeq,
+  	Cacute: Cacute,
+  	cacute: cacute,
+  	capand: capand,
+  	capbrcup: capbrcup,
+  	capcap: capcap,
+  	cap: cap,
+  	Cap: Cap,
+  	capcup: capcup,
+  	capdot: capdot,
+  	CapitalDifferentialD: CapitalDifferentialD,
+  	caps: caps,
+  	caret: caret,
+  	caron: caron,
+  	Cayleys: Cayleys,
+  	ccaps: ccaps,
+  	Ccaron: Ccaron,
+  	ccaron: ccaron,
+  	Ccedil: Ccedil,
+  	ccedil: ccedil,
+  	Ccirc: Ccirc,
+  	ccirc: ccirc,
+  	Cconint: Cconint,
+  	ccups: ccups,
+  	ccupssm: ccupssm,
+  	Cdot: Cdot,
+  	cdot: cdot,
+  	cedil: cedil,
+  	Cedilla: Cedilla,
+  	cemptyv: cemptyv,
+  	cent: cent,
+  	centerdot: centerdot,
+  	CenterDot: CenterDot,
+  	cfr: cfr,
+  	Cfr: Cfr,
+  	CHcy: CHcy,
+  	chcy: chcy,
+  	check: check,
+  	checkmark: checkmark,
+  	Chi: Chi,
+  	chi: chi,
+  	circ: circ,
+  	circeq: circeq,
+  	circlearrowleft: circlearrowleft,
+  	circlearrowright: circlearrowright,
+  	circledast: circledast,
+  	circledcirc: circledcirc,
+  	circleddash: circleddash,
+  	CircleDot: CircleDot,
+  	circledR: circledR,
+  	circledS: circledS,
+  	CircleMinus: CircleMinus,
+  	CirclePlus: CirclePlus,
+  	CircleTimes: CircleTimes,
+  	cir: cir,
+  	cirE: cirE,
+  	cire: cire,
+  	cirfnint: cirfnint,
+  	cirmid: cirmid,
+  	cirscir: cirscir,
+  	ClockwiseContourIntegral: ClockwiseContourIntegral,
+  	CloseCurlyDoubleQuote: CloseCurlyDoubleQuote,
+  	CloseCurlyQuote: CloseCurlyQuote,
+  	clubs: clubs,
+  	clubsuit: clubsuit,
+  	colon: colon,
+  	Colon: Colon,
+  	Colone: Colone,
+  	colone: colone,
+  	coloneq: coloneq,
+  	comma: comma,
+  	commat: commat,
+  	comp: comp,
+  	compfn: compfn,
+  	complement: complement,
+  	complexes: complexes,
+  	cong: cong,
+  	congdot: congdot,
+  	Congruent: Congruent,
+  	conint: conint,
+  	Conint: Conint,
+  	ContourIntegral: ContourIntegral,
+  	copf: copf,
+  	Copf: Copf,
+  	coprod: coprod,
+  	Coproduct: Coproduct,
+  	copy: copy$1,
+  	COPY: COPY,
+  	copysr: copysr,
+  	CounterClockwiseContourIntegral: CounterClockwiseContourIntegral,
+  	crarr: crarr,
+  	cross: cross,
+  	Cross: Cross,
+  	Cscr: Cscr,
+  	cscr: cscr,
+  	csub: csub,
+  	csube: csube,
+  	csup: csup,
+  	csupe: csupe,
+  	ctdot: ctdot,
+  	cudarrl: cudarrl,
+  	cudarrr: cudarrr,
+  	cuepr: cuepr,
+  	cuesc: cuesc,
+  	cularr: cularr,
+  	cularrp: cularrp,
+  	cupbrcap: cupbrcap,
+  	cupcap: cupcap,
+  	CupCap: CupCap,
+  	cup: cup,
+  	Cup: Cup,
+  	cupcup: cupcup,
+  	cupdot: cupdot,
+  	cupor: cupor,
+  	cups: cups,
+  	curarr: curarr,
+  	curarrm: curarrm,
+  	curlyeqprec: curlyeqprec,
+  	curlyeqsucc: curlyeqsucc,
+  	curlyvee: curlyvee,
+  	curlywedge: curlywedge,
+  	curren: curren,
+  	curvearrowleft: curvearrowleft,
+  	curvearrowright: curvearrowright,
+  	cuvee: cuvee,
+  	cuwed: cuwed,
+  	cwconint: cwconint,
+  	cwint: cwint,
+  	cylcty: cylcty,
+  	dagger: dagger,
+  	Dagger: Dagger,
+  	daleth: daleth,
+  	darr: darr,
+  	Darr: Darr,
+  	dArr: dArr,
+  	dash: dash,
+  	Dashv: Dashv,
+  	dashv: dashv,
+  	dbkarow: dbkarow,
+  	dblac: dblac,
+  	Dcaron: Dcaron,
+  	dcaron: dcaron,
+  	Dcy: Dcy,
+  	dcy: dcy,
+  	ddagger: ddagger,
+  	ddarr: ddarr,
+  	DD: DD,
+  	dd: dd,
+  	DDotrahd: DDotrahd,
+  	ddotseq: ddotseq,
+  	deg: deg,
+  	Del: Del,
+  	Delta: Delta,
+  	delta: delta,
+  	demptyv: demptyv,
+  	dfisht: dfisht,
+  	Dfr: Dfr,
+  	dfr: dfr,
+  	dHar: dHar,
+  	dharl: dharl,
+  	dharr: dharr,
+  	DiacriticalAcute: DiacriticalAcute,
+  	DiacriticalDot: DiacriticalDot,
+  	DiacriticalDoubleAcute: DiacriticalDoubleAcute,
+  	DiacriticalGrave: DiacriticalGrave,
+  	DiacriticalTilde: DiacriticalTilde,
+  	diam: diam,
+  	diamond: diamond,
+  	Diamond: Diamond,
+  	diamondsuit: diamondsuit,
+  	diams: diams,
+  	die: die,
+  	DifferentialD: DifferentialD,
+  	digamma: digamma,
+  	disin: disin,
+  	div: div,
+  	divide: divide,
+  	divideontimes: divideontimes,
+  	divonx: divonx,
+  	DJcy: DJcy,
+  	djcy: djcy,
+  	dlcorn: dlcorn,
+  	dlcrop: dlcrop,
+  	dollar: dollar,
+  	Dopf: Dopf,
+  	dopf: dopf,
+  	Dot: Dot,
+  	dot: dot,
+  	DotDot: DotDot,
+  	doteq: doteq,
+  	doteqdot: doteqdot,
+  	DotEqual: DotEqual,
+  	dotminus: dotminus,
+  	dotplus: dotplus,
+  	dotsquare: dotsquare,
+  	doublebarwedge: doublebarwedge,
+  	DoubleContourIntegral: DoubleContourIntegral,
+  	DoubleDot: DoubleDot,
+  	DoubleDownArrow: DoubleDownArrow,
+  	DoubleLeftArrow: DoubleLeftArrow,
+  	DoubleLeftRightArrow: DoubleLeftRightArrow,
+  	DoubleLeftTee: DoubleLeftTee,
+  	DoubleLongLeftArrow: DoubleLongLeftArrow,
+  	DoubleLongLeftRightArrow: DoubleLongLeftRightArrow,
+  	DoubleLongRightArrow: DoubleLongRightArrow,
+  	DoubleRightArrow: DoubleRightArrow,
+  	DoubleRightTee: DoubleRightTee,
+  	DoubleUpArrow: DoubleUpArrow,
+  	DoubleUpDownArrow: DoubleUpDownArrow,
+  	DoubleVerticalBar: DoubleVerticalBar,
+  	DownArrowBar: DownArrowBar,
+  	downarrow: downarrow,
+  	DownArrow: DownArrow,
+  	Downarrow: Downarrow,
+  	DownArrowUpArrow: DownArrowUpArrow,
+  	DownBreve: DownBreve,
+  	downdownarrows: downdownarrows,
+  	downharpoonleft: downharpoonleft,
+  	downharpoonright: downharpoonright,
+  	DownLeftRightVector: DownLeftRightVector,
+  	DownLeftTeeVector: DownLeftTeeVector,
+  	DownLeftVectorBar: DownLeftVectorBar,
+  	DownLeftVector: DownLeftVector,
+  	DownRightTeeVector: DownRightTeeVector,
+  	DownRightVectorBar: DownRightVectorBar,
+  	DownRightVector: DownRightVector,
+  	DownTeeArrow: DownTeeArrow,
+  	DownTee: DownTee,
+  	drbkarow: drbkarow,
+  	drcorn: drcorn,
+  	drcrop: drcrop,
+  	Dscr: Dscr,
+  	dscr: dscr,
+  	DScy: DScy,
+  	dscy: dscy,
+  	dsol: dsol,
+  	Dstrok: Dstrok,
+  	dstrok: dstrok,
+  	dtdot: dtdot,
+  	dtri: dtri,
+  	dtrif: dtrif,
+  	duarr: duarr,
+  	duhar: duhar,
+  	dwangle: dwangle,
+  	DZcy: DZcy,
+  	dzcy: dzcy,
+  	dzigrarr: dzigrarr,
+  	Eacute: Eacute,
+  	eacute: eacute,
+  	easter: easter,
+  	Ecaron: Ecaron,
+  	ecaron: ecaron,
+  	Ecirc: Ecirc,
+  	ecirc: ecirc,
+  	ecir: ecir,
+  	ecolon: ecolon,
+  	Ecy: Ecy,
+  	ecy: ecy,
+  	eDDot: eDDot,
+  	Edot: Edot,
+  	edot: edot,
+  	eDot: eDot,
+  	ee: ee,
+  	efDot: efDot,
+  	Efr: Efr,
+  	efr: efr,
+  	eg: eg,
+  	Egrave: Egrave,
+  	egrave: egrave,
+  	egs: egs,
+  	egsdot: egsdot,
+  	el: el,
+  	Element: Element,
+  	elinters: elinters,
+  	ell: ell,
+  	els: els,
+  	elsdot: elsdot,
+  	Emacr: Emacr,
+  	emacr: emacr,
+  	empty: empty$1,
+  	emptyset: emptyset,
+  	EmptySmallSquare: EmptySmallSquare,
+  	emptyv: emptyv,
+  	EmptyVerySmallSquare: EmptyVerySmallSquare,
+  	emsp13: emsp13,
+  	emsp14: emsp14,
+  	emsp: emsp,
+  	ENG: ENG,
+  	eng: eng,
+  	ensp: ensp,
+  	Eogon: Eogon,
+  	eogon: eogon,
+  	Eopf: Eopf,
+  	eopf: eopf,
+  	epar: epar,
+  	eparsl: eparsl,
+  	eplus: eplus,
+  	epsi: epsi,
+  	Epsilon: Epsilon,
+  	epsilon: epsilon,
+  	epsiv: epsiv,
+  	eqcirc: eqcirc,
+  	eqcolon: eqcolon,
+  	eqsim: eqsim,
+  	eqslantgtr: eqslantgtr,
+  	eqslantless: eqslantless,
+  	Equal: Equal,
+  	equals: equals$1,
+  	EqualTilde: EqualTilde,
+  	equest: equest,
+  	Equilibrium: Equilibrium,
+  	equiv: equiv,
+  	equivDD: equivDD,
+  	eqvparsl: eqvparsl,
+  	erarr: erarr,
+  	erDot: erDot,
+  	escr: escr,
+  	Escr: Escr,
+  	esdot: esdot,
+  	Esim: Esim,
+  	esim: esim,
+  	Eta: Eta,
+  	eta: eta,
+  	ETH: ETH,
+  	eth: eth,
+  	Euml: Euml,
+  	euml: euml,
+  	euro: euro,
+  	excl: excl,
+  	exist: exist,
+  	Exists: Exists,
+  	expectation: expectation,
+  	exponentiale: exponentiale,
+  	ExponentialE: ExponentialE,
+  	fallingdotseq: fallingdotseq,
+  	Fcy: Fcy,
+  	fcy: fcy,
+  	female: female,
+  	ffilig: ffilig,
+  	fflig: fflig,
+  	ffllig: ffllig,
+  	Ffr: Ffr,
+  	ffr: ffr,
+  	filig: filig,
+  	FilledSmallSquare: FilledSmallSquare,
+  	FilledVerySmallSquare: FilledVerySmallSquare,
+  	fjlig: fjlig,
+  	flat: flat,
+  	fllig: fllig,
+  	fltns: fltns,
+  	fnof: fnof,
+  	Fopf: Fopf,
+  	fopf: fopf,
+  	forall: forall,
+  	ForAll: ForAll,
+  	fork: fork,
+  	forkv: forkv,
+  	Fouriertrf: Fouriertrf,
+  	fpartint: fpartint,
+  	frac12: frac12,
+  	frac13: frac13,
+  	frac14: frac14,
+  	frac15: frac15,
+  	frac16: frac16,
+  	frac18: frac18,
+  	frac23: frac23,
+  	frac25: frac25,
+  	frac34: frac34,
+  	frac35: frac35,
+  	frac38: frac38,
+  	frac45: frac45,
+  	frac56: frac56,
+  	frac58: frac58,
+  	frac78: frac78,
+  	frasl: frasl,
+  	frown: frown,
+  	fscr: fscr,
+  	Fscr: Fscr,
+  	gacute: gacute,
+  	Gamma: Gamma,
+  	gamma: gamma$1,
+  	Gammad: Gammad,
+  	gammad: gammad,
+  	gap: gap,
+  	Gbreve: Gbreve,
+  	gbreve: gbreve,
+  	Gcedil: Gcedil,
+  	Gcirc: Gcirc,
+  	gcirc: gcirc,
+  	Gcy: Gcy,
+  	gcy: gcy,
+  	Gdot: Gdot,
+  	gdot: gdot,
+  	ge: ge,
+  	gE: gE,
+  	gEl: gEl,
+  	gel: gel,
+  	geq: geq,
+  	geqq: geqq,
+  	geqslant: geqslant,
+  	gescc: gescc,
+  	ges: ges,
+  	gesdot: gesdot,
+  	gesdoto: gesdoto,
+  	gesdotol: gesdotol,
+  	gesl: gesl,
+  	gesles: gesles,
+  	Gfr: Gfr,
+  	gfr: gfr,
+  	gg: gg,
+  	Gg: Gg,
+  	ggg: ggg,
+  	gimel: gimel,
+  	GJcy: GJcy,
+  	gjcy: gjcy,
+  	gla: gla,
+  	gl: gl,
+  	glE: glE,
+  	glj: glj,
+  	gnap: gnap,
+  	gnapprox: gnapprox,
+  	gne: gne,
+  	gnE: gnE,
+  	gneq: gneq,
+  	gneqq: gneqq,
+  	gnsim: gnsim,
+  	Gopf: Gopf,
+  	gopf: gopf,
+  	grave: grave,
+  	GreaterEqual: GreaterEqual,
+  	GreaterEqualLess: GreaterEqualLess,
+  	GreaterFullEqual: GreaterFullEqual,
+  	GreaterGreater: GreaterGreater,
+  	GreaterLess: GreaterLess,
+  	GreaterSlantEqual: GreaterSlantEqual,
+  	GreaterTilde: GreaterTilde,
+  	Gscr: Gscr,
+  	gscr: gscr,
+  	gsim: gsim,
+  	gsime: gsime,
+  	gsiml: gsiml,
+  	gtcc: gtcc,
+  	gtcir: gtcir,
+  	gt: gt,
+  	GT: GT,
+  	Gt: Gt,
+  	gtdot: gtdot,
+  	gtlPar: gtlPar,
+  	gtquest: gtquest,
+  	gtrapprox: gtrapprox,
+  	gtrarr: gtrarr,
+  	gtrdot: gtrdot,
+  	gtreqless: gtreqless,
+  	gtreqqless: gtreqqless,
+  	gtrless: gtrless,
+  	gtrsim: gtrsim,
+  	gvertneqq: gvertneqq,
+  	gvnE: gvnE,
+  	Hacek: Hacek,
+  	hairsp: hairsp,
+  	half: half,
+  	hamilt: hamilt,
+  	HARDcy: HARDcy,
+  	hardcy: hardcy,
+  	harrcir: harrcir,
+  	harr: harr,
+  	hArr: hArr,
+  	harrw: harrw,
+  	Hat: Hat,
+  	hbar: hbar,
+  	Hcirc: Hcirc,
+  	hcirc: hcirc,
+  	hearts: hearts,
+  	heartsuit: heartsuit,
+  	hellip: hellip,
+  	hercon: hercon,
+  	hfr: hfr,
+  	Hfr: Hfr,
+  	HilbertSpace: HilbertSpace,
+  	hksearow: hksearow,
+  	hkswarow: hkswarow,
+  	hoarr: hoarr,
+  	homtht: homtht,
+  	hookleftarrow: hookleftarrow,
+  	hookrightarrow: hookrightarrow,
+  	hopf: hopf,
+  	Hopf: Hopf,
+  	horbar: horbar,
+  	HorizontalLine: HorizontalLine,
+  	hscr: hscr,
+  	Hscr: Hscr,
+  	hslash: hslash,
+  	Hstrok: Hstrok,
+  	hstrok: hstrok,
+  	HumpDownHump: HumpDownHump,
+  	HumpEqual: HumpEqual,
+  	hybull: hybull,
+  	hyphen: hyphen,
+  	Iacute: Iacute,
+  	iacute: iacute,
+  	ic: ic,
+  	Icirc: Icirc,
+  	icirc: icirc,
+  	Icy: Icy,
+  	icy: icy,
+  	Idot: Idot,
+  	IEcy: IEcy,
+  	iecy: iecy,
+  	iexcl: iexcl,
+  	iff: iff,
+  	ifr: ifr,
+  	Ifr: Ifr,
+  	Igrave: Igrave,
+  	igrave: igrave,
+  	ii: ii,
+  	iiiint: iiiint,
+  	iiint: iiint,
+  	iinfin: iinfin,
+  	iiota: iiota,
+  	IJlig: IJlig,
+  	ijlig: ijlig,
+  	Imacr: Imacr,
+  	imacr: imacr,
+  	image: image$1,
+  	ImaginaryI: ImaginaryI,
+  	imagline: imagline,
+  	imagpart: imagpart,
+  	imath: imath,
+  	Im: Im,
+  	imof: imof,
+  	imped: imped,
+  	Implies: Implies,
+  	incare: incare,
+  	"in": "∈",
+  	infin: infin,
+  	infintie: infintie,
+  	inodot: inodot,
+  	intcal: intcal,
+  	int: int$1,
+  	Int: Int,
+  	integers: integers,
+  	Integral: Integral,
+  	intercal: intercal,
+  	Intersection: Intersection,
+  	intlarhk: intlarhk,
+  	intprod: intprod,
+  	InvisibleComma: InvisibleComma,
+  	InvisibleTimes: InvisibleTimes,
+  	IOcy: IOcy,
+  	iocy: iocy,
+  	Iogon: Iogon,
+  	iogon: iogon,
+  	Iopf: Iopf,
+  	iopf: iopf,
+  	Iota: Iota,
+  	iota: iota,
+  	iprod: iprod,
+  	iquest: iquest,
+  	iscr: iscr,
+  	Iscr: Iscr,
+  	isin: isin,
+  	isindot: isindot,
+  	isinE: isinE,
+  	isins: isins,
+  	isinsv: isinsv,
+  	isinv: isinv,
+  	it: it,
+  	Itilde: Itilde,
+  	itilde: itilde,
+  	Iukcy: Iukcy,
+  	iukcy: iukcy,
+  	Iuml: Iuml,
+  	iuml: iuml,
+  	Jcirc: Jcirc,
+  	jcirc: jcirc,
+  	Jcy: Jcy,
+  	jcy: jcy,
+  	Jfr: Jfr,
+  	jfr: jfr,
+  	jmath: jmath,
+  	Jopf: Jopf,
+  	jopf: jopf,
+  	Jscr: Jscr,
+  	jscr: jscr,
+  	Jsercy: Jsercy,
+  	jsercy: jsercy,
+  	Jukcy: Jukcy,
+  	jukcy: jukcy,
+  	Kappa: Kappa,
+  	kappa: kappa,
+  	kappav: kappav,
+  	Kcedil: Kcedil,
+  	kcedil: kcedil,
+  	Kcy: Kcy,
+  	kcy: kcy,
+  	Kfr: Kfr,
+  	kfr: kfr,
+  	kgreen: kgreen,
+  	KHcy: KHcy,
+  	khcy: khcy,
+  	KJcy: KJcy,
+  	kjcy: kjcy,
+  	Kopf: Kopf,
+  	kopf: kopf,
+  	Kscr: Kscr,
+  	kscr: kscr,
+  	lAarr: lAarr,
+  	Lacute: Lacute,
+  	lacute: lacute,
+  	laemptyv: laemptyv,
+  	lagran: lagran,
+  	Lambda: Lambda,
+  	lambda: lambda,
+  	lang: lang,
+  	Lang: Lang,
+  	langd: langd,
+  	langle: langle,
+  	lap: lap,
+  	Laplacetrf: Laplacetrf,
+  	laquo: laquo,
+  	larrb: larrb,
+  	larrbfs: larrbfs,
+  	larr: larr,
+  	Larr: Larr,
+  	lArr: lArr,
+  	larrfs: larrfs,
+  	larrhk: larrhk,
+  	larrlp: larrlp,
+  	larrpl: larrpl,
+  	larrsim: larrsim,
+  	larrtl: larrtl,
+  	latail: latail,
+  	lAtail: lAtail,
+  	lat: lat,
+  	late: late,
+  	lates: lates,
+  	lbarr: lbarr,
+  	lBarr: lBarr,
+  	lbbrk: lbbrk,
+  	lbrace: lbrace,
+  	lbrack: lbrack,
+  	lbrke: lbrke,
+  	lbrksld: lbrksld,
+  	lbrkslu: lbrkslu,
+  	Lcaron: Lcaron,
+  	lcaron: lcaron,
+  	Lcedil: Lcedil,
+  	lcedil: lcedil,
+  	lceil: lceil,
+  	lcub: lcub,
+  	Lcy: Lcy,
+  	lcy: lcy,
+  	ldca: ldca,
+  	ldquo: ldquo,
+  	ldquor: ldquor,
+  	ldrdhar: ldrdhar,
+  	ldrushar: ldrushar,
+  	ldsh: ldsh,
+  	le: le,
+  	lE: lE,
+  	LeftAngleBracket: LeftAngleBracket,
+  	LeftArrowBar: LeftArrowBar,
+  	leftarrow: leftarrow,
+  	LeftArrow: LeftArrow,
+  	Leftarrow: Leftarrow,
+  	LeftArrowRightArrow: LeftArrowRightArrow,
+  	leftarrowtail: leftarrowtail,
+  	LeftCeiling: LeftCeiling,
+  	LeftDoubleBracket: LeftDoubleBracket,
+  	LeftDownTeeVector: LeftDownTeeVector,
+  	LeftDownVectorBar: LeftDownVectorBar,
+  	LeftDownVector: LeftDownVector,
+  	LeftFloor: LeftFloor,
+  	leftharpoondown: leftharpoondown,
+  	leftharpoonup: leftharpoonup,
+  	leftleftarrows: leftleftarrows,
+  	leftrightarrow: leftrightarrow,
+  	LeftRightArrow: LeftRightArrow,
+  	Leftrightarrow: Leftrightarrow,
+  	leftrightarrows: leftrightarrows,
+  	leftrightharpoons: leftrightharpoons,
+  	leftrightsquigarrow: leftrightsquigarrow,
+  	LeftRightVector: LeftRightVector,
+  	LeftTeeArrow: LeftTeeArrow,
+  	LeftTee: LeftTee,
+  	LeftTeeVector: LeftTeeVector,
+  	leftthreetimes: leftthreetimes,
+  	LeftTriangleBar: LeftTriangleBar,
+  	LeftTriangle: LeftTriangle,
+  	LeftTriangleEqual: LeftTriangleEqual,
+  	LeftUpDownVector: LeftUpDownVector,
+  	LeftUpTeeVector: LeftUpTeeVector,
+  	LeftUpVectorBar: LeftUpVectorBar,
+  	LeftUpVector: LeftUpVector,
+  	LeftVectorBar: LeftVectorBar,
+  	LeftVector: LeftVector,
+  	lEg: lEg,
+  	leg: leg,
+  	leq: leq,
+  	leqq: leqq,
+  	leqslant: leqslant,
+  	lescc: lescc,
+  	les: les,
+  	lesdot: lesdot,
+  	lesdoto: lesdoto,
+  	lesdotor: lesdotor,
+  	lesg: lesg,
+  	lesges: lesges,
+  	lessapprox: lessapprox,
+  	lessdot: lessdot,
+  	lesseqgtr: lesseqgtr,
+  	lesseqqgtr: lesseqqgtr,
+  	LessEqualGreater: LessEqualGreater,
+  	LessFullEqual: LessFullEqual,
+  	LessGreater: LessGreater,
+  	lessgtr: lessgtr,
+  	LessLess: LessLess,
+  	lesssim: lesssim,
+  	LessSlantEqual: LessSlantEqual,
+  	LessTilde: LessTilde,
+  	lfisht: lfisht,
+  	lfloor: lfloor,
+  	Lfr: Lfr,
+  	lfr: lfr,
+  	lg: lg,
+  	lgE: lgE,
+  	lHar: lHar,
+  	lhard: lhard,
+  	lharu: lharu,
+  	lharul: lharul,
+  	lhblk: lhblk,
+  	LJcy: LJcy,
+  	ljcy: ljcy,
+  	llarr: llarr,
+  	ll: ll,
+  	Ll: Ll,
+  	llcorner: llcorner,
+  	Lleftarrow: Lleftarrow,
+  	llhard: llhard,
+  	lltri: lltri,
+  	Lmidot: Lmidot,
+  	lmidot: lmidot,
+  	lmoustache: lmoustache,
+  	lmoust: lmoust,
+  	lnap: lnap,
+  	lnapprox: lnapprox,
+  	lne: lne,
+  	lnE: lnE,
+  	lneq: lneq,
+  	lneqq: lneqq,
+  	lnsim: lnsim,
+  	loang: loang,
+  	loarr: loarr,
+  	lobrk: lobrk,
+  	longleftarrow: longleftarrow,
+  	LongLeftArrow: LongLeftArrow,
+  	Longleftarrow: Longleftarrow,
+  	longleftrightarrow: longleftrightarrow,
+  	LongLeftRightArrow: LongLeftRightArrow,
+  	Longleftrightarrow: Longleftrightarrow,
+  	longmapsto: longmapsto,
+  	longrightarrow: longrightarrow,
+  	LongRightArrow: LongRightArrow,
+  	Longrightarrow: Longrightarrow,
+  	looparrowleft: looparrowleft,
+  	looparrowright: looparrowright,
+  	lopar: lopar,
+  	Lopf: Lopf,
+  	lopf: lopf,
+  	loplus: loplus,
+  	lotimes: lotimes,
+  	lowast: lowast,
+  	lowbar: lowbar,
+  	LowerLeftArrow: LowerLeftArrow,
+  	LowerRightArrow: LowerRightArrow,
+  	loz: loz,
+  	lozenge: lozenge,
+  	lozf: lozf,
+  	lpar: lpar,
+  	lparlt: lparlt,
+  	lrarr: lrarr,
+  	lrcorner: lrcorner,
+  	lrhar: lrhar,
+  	lrhard: lrhard,
+  	lrm: lrm,
+  	lrtri: lrtri,
+  	lsaquo: lsaquo,
+  	lscr: lscr,
+  	Lscr: Lscr,
+  	lsh: lsh,
+  	Lsh: Lsh,
+  	lsim: lsim,
+  	lsime: lsime,
+  	lsimg: lsimg,
+  	lsqb: lsqb,
+  	lsquo: lsquo,
+  	lsquor: lsquor,
+  	Lstrok: Lstrok,
+  	lstrok: lstrok,
+  	ltcc: ltcc,
+  	ltcir: ltcir,
+  	lt: lt,
+  	LT: LT,
+  	Lt: Lt,
+  	ltdot: ltdot,
+  	lthree: lthree,
+  	ltimes: ltimes,
+  	ltlarr: ltlarr,
+  	ltquest: ltquest,
+  	ltri: ltri,
+  	ltrie: ltrie,
+  	ltrif: ltrif,
+  	ltrPar: ltrPar,
+  	lurdshar: lurdshar,
+  	luruhar: luruhar,
+  	lvertneqq: lvertneqq,
+  	lvnE: lvnE,
+  	macr: macr,
+  	male: male,
+  	malt: malt,
+  	maltese: maltese,
+  	"Map": "⤅",
+  	map: map$2,
+  	mapsto: mapsto,
+  	mapstodown: mapstodown,
+  	mapstoleft: mapstoleft,
+  	mapstoup: mapstoup,
+  	marker: marker,
+  	mcomma: mcomma,
+  	Mcy: Mcy,
+  	mcy: mcy,
+  	mdash: mdash,
+  	mDDot: mDDot,
+  	measuredangle: measuredangle,
+  	MediumSpace: MediumSpace,
+  	Mellintrf: Mellintrf,
+  	Mfr: Mfr,
+  	mfr: mfr,
+  	mho: mho,
+  	micro: micro,
+  	midast: midast,
+  	midcir: midcir,
+  	mid: mid,
+  	middot: middot,
+  	minusb: minusb,
+  	minus: minus,
+  	minusd: minusd,
+  	minusdu: minusdu,
+  	MinusPlus: MinusPlus,
+  	mlcp: mlcp,
+  	mldr: mldr,
+  	mnplus: mnplus,
+  	models: models,
+  	Mopf: Mopf,
+  	mopf: mopf,
+  	mp: mp,
+  	mscr: mscr,
+  	Mscr: Mscr,
+  	mstpos: mstpos,
+  	Mu: Mu,
+  	mu: mu,
+  	multimap: multimap,
+  	mumap: mumap,
+  	nabla: nabla,
+  	Nacute: Nacute,
+  	nacute: nacute,
+  	nang: nang,
+  	nap: nap$1,
+  	napE: napE,
+  	napid: napid,
+  	napos: napos,
+  	napprox: napprox,
+  	natural: natural,
+  	naturals: naturals,
+  	natur: natur,
+  	nbsp: nbsp,
+  	nbump: nbump,
+  	nbumpe: nbumpe,
+  	ncap: ncap,
+  	Ncaron: Ncaron,
+  	ncaron: ncaron,
+  	Ncedil: Ncedil,
+  	ncedil: ncedil,
+  	ncong: ncong,
+  	ncongdot: ncongdot,
+  	ncup: ncup,
+  	Ncy: Ncy,
+  	ncy: ncy,
+  	ndash: ndash,
+  	nearhk: nearhk,
+  	nearr: nearr,
+  	neArr: neArr,
+  	nearrow: nearrow,
+  	ne: ne,
+  	nedot: nedot,
+  	NegativeMediumSpace: NegativeMediumSpace,
+  	NegativeThickSpace: NegativeThickSpace,
+  	NegativeThinSpace: NegativeThinSpace,
+  	NegativeVeryThinSpace: NegativeVeryThinSpace,
+  	nequiv: nequiv,
+  	nesear: nesear,
+  	nesim: nesim,
+  	NestedGreaterGreater: NestedGreaterGreater,
+  	NestedLessLess: NestedLessLess,
+  	NewLine: NewLine,
+  	nexist: nexist,
+  	nexists: nexists,
+  	Nfr: Nfr,
+  	nfr: nfr,
+  	ngE: ngE,
+  	nge: nge,
+  	ngeq: ngeq,
+  	ngeqq: ngeqq,
+  	ngeqslant: ngeqslant,
+  	nges: nges,
+  	nGg: nGg,
+  	ngsim: ngsim,
+  	nGt: nGt,
+  	ngt: ngt,
+  	ngtr: ngtr,
+  	nGtv: nGtv,
+  	nharr: nharr,
+  	nhArr: nhArr,
+  	nhpar: nhpar,
+  	ni: ni,
+  	nis: nis,
+  	nisd: nisd,
+  	niv: niv,
+  	NJcy: NJcy,
+  	njcy: njcy,
+  	nlarr: nlarr,
+  	nlArr: nlArr,
+  	nldr: nldr,
+  	nlE: nlE,
+  	nle: nle,
+  	nleftarrow: nleftarrow,
+  	nLeftarrow: nLeftarrow,
+  	nleftrightarrow: nleftrightarrow,
+  	nLeftrightarrow: nLeftrightarrow,
+  	nleq: nleq,
+  	nleqq: nleqq,
+  	nleqslant: nleqslant,
+  	nles: nles,
+  	nless: nless,
+  	nLl: nLl,
+  	nlsim: nlsim,
+  	nLt: nLt,
+  	nlt: nlt,
+  	nltri: nltri,
+  	nltrie: nltrie,
+  	nLtv: nLtv,
+  	nmid: nmid,
+  	NoBreak: NoBreak,
+  	NonBreakingSpace: NonBreakingSpace,
+  	nopf: nopf,
+  	Nopf: Nopf,
+  	Not: Not,
+  	not: not,
+  	NotCongruent: NotCongruent,
+  	NotCupCap: NotCupCap,
+  	NotDoubleVerticalBar: NotDoubleVerticalBar,
+  	NotElement: NotElement,
+  	NotEqual: NotEqual,
+  	NotEqualTilde: NotEqualTilde,
+  	NotExists: NotExists,
+  	NotGreater: NotGreater,
+  	NotGreaterEqual: NotGreaterEqual,
+  	NotGreaterFullEqual: NotGreaterFullEqual,
+  	NotGreaterGreater: NotGreaterGreater,
+  	NotGreaterLess: NotGreaterLess,
+  	NotGreaterSlantEqual: NotGreaterSlantEqual,
+  	NotGreaterTilde: NotGreaterTilde,
+  	NotHumpDownHump: NotHumpDownHump,
+  	NotHumpEqual: NotHumpEqual,
+  	notin: notin,
+  	notindot: notindot,
+  	notinE: notinE,
+  	notinva: notinva,
+  	notinvb: notinvb,
+  	notinvc: notinvc,
+  	NotLeftTriangleBar: NotLeftTriangleBar,
+  	NotLeftTriangle: NotLeftTriangle,
+  	NotLeftTriangleEqual: NotLeftTriangleEqual,
+  	NotLess: NotLess,
+  	NotLessEqual: NotLessEqual,
+  	NotLessGreater: NotLessGreater,
+  	NotLessLess: NotLessLess,
+  	NotLessSlantEqual: NotLessSlantEqual,
+  	NotLessTilde: NotLessTilde,
+  	NotNestedGreaterGreater: NotNestedGreaterGreater,
+  	NotNestedLessLess: NotNestedLessLess,
+  	notni: notni,
+  	notniva: notniva,
+  	notnivb: notnivb,
+  	notnivc: notnivc,
+  	NotPrecedes: NotPrecedes,
+  	NotPrecedesEqual: NotPrecedesEqual,
+  	NotPrecedesSlantEqual: NotPrecedesSlantEqual,
+  	NotReverseElement: NotReverseElement,
+  	NotRightTriangleBar: NotRightTriangleBar,
+  	NotRightTriangle: NotRightTriangle,
+  	NotRightTriangleEqual: NotRightTriangleEqual,
+  	NotSquareSubset: NotSquareSubset,
+  	NotSquareSubsetEqual: NotSquareSubsetEqual,
+  	NotSquareSuperset: NotSquareSuperset,
+  	NotSquareSupersetEqual: NotSquareSupersetEqual,
+  	NotSubset: NotSubset,
+  	NotSubsetEqual: NotSubsetEqual,
+  	NotSucceeds: NotSucceeds,
+  	NotSucceedsEqual: NotSucceedsEqual,
+  	NotSucceedsSlantEqual: NotSucceedsSlantEqual,
+  	NotSucceedsTilde: NotSucceedsTilde,
+  	NotSuperset: NotSuperset,
+  	NotSupersetEqual: NotSupersetEqual,
+  	NotTilde: NotTilde,
+  	NotTildeEqual: NotTildeEqual,
+  	NotTildeFullEqual: NotTildeFullEqual,
+  	NotTildeTilde: NotTildeTilde,
+  	NotVerticalBar: NotVerticalBar,
+  	nparallel: nparallel,
+  	npar: npar,
+  	nparsl: nparsl,
+  	npart: npart,
+  	npolint: npolint,
+  	npr: npr,
+  	nprcue: nprcue,
+  	nprec: nprec,
+  	npreceq: npreceq,
+  	npre: npre,
+  	nrarrc: nrarrc,
+  	nrarr: nrarr,
+  	nrArr: nrArr,
+  	nrarrw: nrarrw,
+  	nrightarrow: nrightarrow,
+  	nRightarrow: nRightarrow,
+  	nrtri: nrtri,
+  	nrtrie: nrtrie,
+  	nsc: nsc,
+  	nsccue: nsccue,
+  	nsce: nsce,
+  	Nscr: Nscr,
+  	nscr: nscr,
+  	nshortmid: nshortmid,
+  	nshortparallel: nshortparallel,
+  	nsim: nsim,
+  	nsime: nsime,
+  	nsimeq: nsimeq,
+  	nsmid: nsmid,
+  	nspar: nspar,
+  	nsqsube: nsqsube,
+  	nsqsupe: nsqsupe,
+  	nsub: nsub,
+  	nsubE: nsubE,
+  	nsube: nsube,
+  	nsubset: nsubset,
+  	nsubseteq: nsubseteq,
+  	nsubseteqq: nsubseteqq,
+  	nsucc: nsucc,
+  	nsucceq: nsucceq,
+  	nsup: nsup,
+  	nsupE: nsupE,
+  	nsupe: nsupe,
+  	nsupset: nsupset,
+  	nsupseteq: nsupseteq,
+  	nsupseteqq: nsupseteqq,
+  	ntgl: ntgl,
+  	Ntilde: Ntilde,
+  	ntilde: ntilde,
+  	ntlg: ntlg,
+  	ntriangleleft: ntriangleleft,
+  	ntrianglelefteq: ntrianglelefteq,
+  	ntriangleright: ntriangleright,
+  	ntrianglerighteq: ntrianglerighteq,
+  	Nu: Nu,
+  	nu: nu,
+  	num: num,
+  	numero: numero,
+  	numsp: numsp,
+  	nvap: nvap,
+  	nvdash: nvdash,
+  	nvDash: nvDash,
+  	nVdash: nVdash,
+  	nVDash: nVDash,
+  	nvge: nvge,
+  	nvgt: nvgt,
+  	nvHarr: nvHarr,
+  	nvinfin: nvinfin,
+  	nvlArr: nvlArr,
+  	nvle: nvle,
+  	nvlt: nvlt,
+  	nvltrie: nvltrie,
+  	nvrArr: nvrArr,
+  	nvrtrie: nvrtrie,
+  	nvsim: nvsim,
+  	nwarhk: nwarhk,
+  	nwarr: nwarr,
+  	nwArr: nwArr,
+  	nwarrow: nwarrow,
+  	nwnear: nwnear,
+  	Oacute: Oacute,
+  	oacute: oacute,
+  	oast: oast,
+  	Ocirc: Ocirc,
+  	ocirc: ocirc,
+  	ocir: ocir,
+  	Ocy: Ocy,
+  	ocy: ocy,
+  	odash: odash,
+  	Odblac: Odblac,
+  	odblac: odblac,
+  	odiv: odiv,
+  	odot: odot,
+  	odsold: odsold,
+  	OElig: OElig,
+  	oelig: oelig,
+  	ofcir: ofcir,
+  	Ofr: Ofr,
+  	ofr: ofr,
+  	ogon: ogon,
+  	Ograve: Ograve,
+  	ograve: ograve,
+  	ogt: ogt,
+  	ohbar: ohbar,
+  	ohm: ohm,
+  	oint: oint,
+  	olarr: olarr,
+  	olcir: olcir,
+  	olcross: olcross,
+  	oline: oline,
+  	olt: olt,
+  	Omacr: Omacr,
+  	omacr: omacr,
+  	Omega: Omega,
+  	omega: omega,
+  	Omicron: Omicron,
+  	omicron: omicron,
+  	omid: omid,
+  	ominus: ominus,
+  	Oopf: Oopf,
+  	oopf: oopf,
+  	opar: opar,
+  	OpenCurlyDoubleQuote: OpenCurlyDoubleQuote,
+  	OpenCurlyQuote: OpenCurlyQuote,
+  	operp: operp,
+  	oplus: oplus,
+  	orarr: orarr,
+  	Or: Or,
+  	or: or,
+  	ord: ord,
+  	order: order,
+  	orderof: orderof,
+  	ordf: ordf,
+  	ordm: ordm,
+  	origof: origof,
+  	oror: oror,
+  	orslope: orslope,
+  	orv: orv,
+  	oS: oS,
+  	Oscr: Oscr,
+  	oscr: oscr,
+  	Oslash: Oslash,
+  	oslash: oslash,
+  	osol: osol,
+  	Otilde: Otilde,
+  	otilde: otilde,
+  	otimesas: otimesas,
+  	Otimes: Otimes,
+  	otimes: otimes,
+  	Ouml: Ouml,
+  	ouml: ouml,
+  	ovbar: ovbar,
+  	OverBar: OverBar,
+  	OverBrace: OverBrace,
+  	OverBracket: OverBracket,
+  	OverParenthesis: OverParenthesis,
+  	para: para,
+  	parallel: parallel,
+  	par: par,
+  	parsim: parsim,
+  	parsl: parsl,
+  	part: part,
+  	PartialD: PartialD,
+  	Pcy: Pcy,
+  	pcy: pcy,
+  	percnt: percnt,
+  	period: period,
+  	permil: permil,
+  	perp: perp,
+  	pertenk: pertenk,
+  	Pfr: Pfr,
+  	pfr: pfr,
+  	Phi: Phi,
+  	phi: phi,
+  	phiv: phiv,
+  	phmmat: phmmat,
+  	phone: phone,
+  	Pi: Pi,
+  	pi: pi,
+  	pitchfork: pitchfork,
+  	piv: piv,
+  	planck: planck,
+  	planckh: planckh,
+  	plankv: plankv,
+  	plusacir: plusacir,
+  	plusb: plusb,
+  	pluscir: pluscir,
+  	plus: plus,
+  	plusdo: plusdo,
+  	plusdu: plusdu,
+  	pluse: pluse,
+  	PlusMinus: PlusMinus,
+  	plusmn: plusmn,
+  	plussim: plussim,
+  	plustwo: plustwo,
+  	pm: pm,
+  	Poincareplane: Poincareplane,
+  	pointint: pointint,
+  	popf: popf,
+  	Popf: Popf,
+  	pound: pound,
+  	prap: prap,
+  	Pr: Pr,
+  	pr: pr,
+  	prcue: prcue,
+  	precapprox: precapprox,
+  	prec: prec,
+  	preccurlyeq: preccurlyeq,
+  	Precedes: Precedes,
+  	PrecedesEqual: PrecedesEqual,
+  	PrecedesSlantEqual: PrecedesSlantEqual,
+  	PrecedesTilde: PrecedesTilde,
+  	preceq: preceq,
+  	precnapprox: precnapprox,
+  	precneqq: precneqq,
+  	precnsim: precnsim,
+  	pre: pre,
+  	prE: prE,
+  	precsim: precsim,
+  	prime: prime,
+  	Prime: Prime,
+  	primes: primes,
+  	prnap: prnap,
+  	prnE: prnE,
+  	prnsim: prnsim,
+  	prod: prod,
+  	Product: Product,
+  	profalar: profalar,
+  	profline: profline,
+  	profsurf: profsurf,
+  	prop: prop,
+  	Proportional: Proportional,
+  	Proportion: Proportion,
+  	propto: propto,
+  	prsim: prsim,
+  	prurel: prurel,
+  	Pscr: Pscr,
+  	pscr: pscr,
+  	Psi: Psi,
+  	psi: psi,
+  	puncsp: puncsp,
+  	Qfr: Qfr,
+  	qfr: qfr,
+  	qint: qint,
+  	qopf: qopf,
+  	Qopf: Qopf,
+  	qprime: qprime,
+  	Qscr: Qscr,
+  	qscr: qscr,
+  	quaternions: quaternions,
+  	quatint: quatint,
+  	quest: quest,
+  	questeq: questeq,
+  	quot: quot,
+  	QUOT: QUOT,
+  	rAarr: rAarr,
+  	race: race,
+  	Racute: Racute,
+  	racute: racute,
+  	radic: radic,
+  	raemptyv: raemptyv,
+  	rang: rang,
+  	Rang: Rang,
+  	rangd: rangd,
+  	range: range,
+  	rangle: rangle,
+  	raquo: raquo,
+  	rarrap: rarrap,
+  	rarrb: rarrb,
+  	rarrbfs: rarrbfs,
+  	rarrc: rarrc,
+  	rarr: rarr,
+  	Rarr: Rarr,
+  	rArr: rArr,
+  	rarrfs: rarrfs,
+  	rarrhk: rarrhk,
+  	rarrlp: rarrlp,
+  	rarrpl: rarrpl,
+  	rarrsim: rarrsim,
+  	Rarrtl: Rarrtl,
+  	rarrtl: rarrtl,
+  	rarrw: rarrw,
+  	ratail: ratail,
+  	rAtail: rAtail,
+  	ratio: ratio,
+  	rationals: rationals,
+  	rbarr: rbarr,
+  	rBarr: rBarr,
+  	RBarr: RBarr,
+  	rbbrk: rbbrk,
+  	rbrace: rbrace,
+  	rbrack: rbrack,
+  	rbrke: rbrke,
+  	rbrksld: rbrksld,
+  	rbrkslu: rbrkslu,
+  	Rcaron: Rcaron,
+  	rcaron: rcaron,
+  	Rcedil: Rcedil,
+  	rcedil: rcedil,
+  	rceil: rceil,
+  	rcub: rcub,
+  	Rcy: Rcy,
+  	rcy: rcy,
+  	rdca: rdca,
+  	rdldhar: rdldhar,
+  	rdquo: rdquo,
+  	rdquor: rdquor,
+  	rdsh: rdsh,
+  	real: real,
+  	realine: realine,
+  	realpart: realpart,
+  	reals: reals,
+  	Re: Re,
+  	rect: rect,
+  	reg: reg,
+  	REG: REG,
+  	ReverseElement: ReverseElement,
+  	ReverseEquilibrium: ReverseEquilibrium,
+  	ReverseUpEquilibrium: ReverseUpEquilibrium,
+  	rfisht: rfisht,
+  	rfloor: rfloor,
+  	rfr: rfr,
+  	Rfr: Rfr,
+  	rHar: rHar,
+  	rhard: rhard,
+  	rharu: rharu,
+  	rharul: rharul,
+  	Rho: Rho,
+  	rho: rho,
+  	rhov: rhov,
+  	RightAngleBracket: RightAngleBracket,
+  	RightArrowBar: RightArrowBar,
+  	rightarrow: rightarrow,
+  	RightArrow: RightArrow,
+  	Rightarrow: Rightarrow,
+  	RightArrowLeftArrow: RightArrowLeftArrow,
+  	rightarrowtail: rightarrowtail,
+  	RightCeiling: RightCeiling,
+  	RightDoubleBracket: RightDoubleBracket,
+  	RightDownTeeVector: RightDownTeeVector,
+  	RightDownVectorBar: RightDownVectorBar,
+  	RightDownVector: RightDownVector,
+  	RightFloor: RightFloor,
+  	rightharpoondown: rightharpoondown,
+  	rightharpoonup: rightharpoonup,
+  	rightleftarrows: rightleftarrows,
+  	rightleftharpoons: rightleftharpoons,
+  	rightrightarrows: rightrightarrows,
+  	rightsquigarrow: rightsquigarrow,
+  	RightTeeArrow: RightTeeArrow,
+  	RightTee: RightTee,
+  	RightTeeVector: RightTeeVector,
+  	rightthreetimes: rightthreetimes,
+  	RightTriangleBar: RightTriangleBar,
+  	RightTriangle: RightTriangle,
+  	RightTriangleEqual: RightTriangleEqual,
+  	RightUpDownVector: RightUpDownVector,
+  	RightUpTeeVector: RightUpTeeVector,
+  	RightUpVectorBar: RightUpVectorBar,
+  	RightUpVector: RightUpVector,
+  	RightVectorBar: RightVectorBar,
+  	RightVector: RightVector,
+  	ring: ring,
+  	risingdotseq: risingdotseq,
+  	rlarr: rlarr,
+  	rlhar: rlhar,
+  	rlm: rlm,
+  	rmoustache: rmoustache,
+  	rmoust: rmoust,
+  	rnmid: rnmid,
+  	roang: roang,
+  	roarr: roarr,
+  	robrk: robrk,
+  	ropar: ropar,
+  	ropf: ropf,
+  	Ropf: Ropf,
+  	roplus: roplus,
+  	rotimes: rotimes,
+  	RoundImplies: RoundImplies,
+  	rpar: rpar,
+  	rpargt: rpargt,
+  	rppolint: rppolint,
+  	rrarr: rrarr,
+  	Rrightarrow: Rrightarrow,
+  	rsaquo: rsaquo,
+  	rscr: rscr,
+  	Rscr: Rscr,
+  	rsh: rsh,
+  	Rsh: Rsh,
+  	rsqb: rsqb,
+  	rsquo: rsquo,
+  	rsquor: rsquor,
+  	rthree: rthree,
+  	rtimes: rtimes,
+  	rtri: rtri,
+  	rtrie: rtrie,
+  	rtrif: rtrif,
+  	rtriltri: rtriltri,
+  	RuleDelayed: RuleDelayed,
+  	ruluhar: ruluhar,
+  	rx: rx,
+  	Sacute: Sacute,
+  	sacute: sacute,
+  	sbquo: sbquo,
+  	scap: scap,
+  	Scaron: Scaron,
+  	scaron: scaron,
+  	Sc: Sc,
+  	sc: sc,
+  	sccue: sccue,
+  	sce: sce,
+  	scE: scE,
+  	Scedil: Scedil,
+  	scedil: scedil,
+  	Scirc: Scirc,
+  	scirc: scirc,
+  	scnap: scnap,
+  	scnE: scnE,
+  	scnsim: scnsim,
+  	scpolint: scpolint,
+  	scsim: scsim,
+  	Scy: Scy,
+  	scy: scy,
+  	sdotb: sdotb,
+  	sdot: sdot,
+  	sdote: sdote,
+  	searhk: searhk,
+  	searr: searr,
+  	seArr: seArr,
+  	searrow: searrow,
+  	sect: sect,
+  	semi: semi,
+  	seswar: seswar,
+  	setminus: setminus,
+  	setmn: setmn,
+  	sext: sext,
+  	Sfr: Sfr,
+  	sfr: sfr,
+  	sfrown: sfrown,
+  	sharp: sharp,
+  	SHCHcy: SHCHcy,
+  	shchcy: shchcy,
+  	SHcy: SHcy,
+  	shcy: shcy,
+  	ShortDownArrow: ShortDownArrow,
+  	ShortLeftArrow: ShortLeftArrow,
+  	shortmid: shortmid,
+  	shortparallel: shortparallel,
+  	ShortRightArrow: ShortRightArrow,
+  	ShortUpArrow: ShortUpArrow,
+  	shy: shy,
+  	Sigma: Sigma,
+  	sigma: sigma,
+  	sigmaf: sigmaf,
+  	sigmav: sigmav,
+  	sim: sim,
+  	simdot: simdot,
+  	sime: sime,
+  	simeq: simeq,
+  	simg: simg,
+  	simgE: simgE,
+  	siml: siml,
+  	simlE: simlE,
+  	simne: simne,
+  	simplus: simplus,
+  	simrarr: simrarr,
+  	slarr: slarr,
+  	SmallCircle: SmallCircle,
+  	smallsetminus: smallsetminus,
+  	smashp: smashp,
+  	smeparsl: smeparsl,
+  	smid: smid,
+  	smile: smile,
+  	smt: smt,
+  	smte: smte,
+  	smtes: smtes,
+  	SOFTcy: SOFTcy,
+  	softcy: softcy,
+  	solbar: solbar,
+  	solb: solb,
+  	sol: sol,
+  	Sopf: Sopf,
+  	sopf: sopf,
+  	spades: spades,
+  	spadesuit: spadesuit,
+  	spar: spar,
+  	sqcap: sqcap,
+  	sqcaps: sqcaps,
+  	sqcup: sqcup,
+  	sqcups: sqcups,
+  	Sqrt: Sqrt,
+  	sqsub: sqsub,
+  	sqsube: sqsube,
+  	sqsubset: sqsubset,
+  	sqsubseteq: sqsubseteq,
+  	sqsup: sqsup,
+  	sqsupe: sqsupe,
+  	sqsupset: sqsupset,
+  	sqsupseteq: sqsupseteq,
+  	square: square,
+  	Square: Square,
+  	SquareIntersection: SquareIntersection,
+  	SquareSubset: SquareSubset,
+  	SquareSubsetEqual: SquareSubsetEqual,
+  	SquareSuperset: SquareSuperset,
+  	SquareSupersetEqual: SquareSupersetEqual,
+  	SquareUnion: SquareUnion,
+  	squarf: squarf,
+  	squ: squ,
+  	squf: squf,
+  	srarr: srarr,
+  	Sscr: Sscr,
+  	sscr: sscr,
+  	ssetmn: ssetmn,
+  	ssmile: ssmile,
+  	sstarf: sstarf,
+  	Star: Star,
+  	star: star,
+  	starf: starf,
+  	straightepsilon: straightepsilon,
+  	straightphi: straightphi,
+  	strns: strns,
+  	sub: sub,
+  	Sub: Sub,
+  	subdot: subdot,
+  	subE: subE,
+  	sube: sube,
+  	subedot: subedot,
+  	submult: submult,
+  	subnE: subnE,
+  	subne: subne,
+  	subplus: subplus,
+  	subrarr: subrarr,
+  	subset: subset,
+  	Subset: Subset,
+  	subseteq: subseteq,
+  	subseteqq: subseteqq,
+  	SubsetEqual: SubsetEqual,
+  	subsetneq: subsetneq,
+  	subsetneqq: subsetneqq,
+  	subsim: subsim,
+  	subsub: subsub,
+  	subsup: subsup,
+  	succapprox: succapprox,
+  	succ: succ,
+  	succcurlyeq: succcurlyeq,
+  	Succeeds: Succeeds,
+  	SucceedsEqual: SucceedsEqual,
+  	SucceedsSlantEqual: SucceedsSlantEqual,
+  	SucceedsTilde: SucceedsTilde,
+  	succeq: succeq,
+  	succnapprox: succnapprox,
+  	succneqq: succneqq,
+  	succnsim: succnsim,
+  	succsim: succsim,
+  	SuchThat: SuchThat,
+  	sum: sum,
+  	Sum: Sum,
+  	sung: sung,
+  	sup1: sup1,
+  	sup2: sup2,
+  	sup3: sup3,
+  	sup: sup,
+  	Sup: Sup,
+  	supdot: supdot,
+  	supdsub: supdsub,
+  	supE: supE,
+  	supe: supe,
+  	supedot: supedot,
+  	Superset: Superset,
+  	SupersetEqual: SupersetEqual,
+  	suphsol: suphsol,
+  	suphsub: suphsub,
+  	suplarr: suplarr,
+  	supmult: supmult,
+  	supnE: supnE,
+  	supne: supne,
+  	supplus: supplus,
+  	supset: supset,
+  	Supset: Supset,
+  	supseteq: supseteq,
+  	supseteqq: supseteqq,
+  	supsetneq: supsetneq,
+  	supsetneqq: supsetneqq,
+  	supsim: supsim,
+  	supsub: supsub,
+  	supsup: supsup,
+  	swarhk: swarhk,
+  	swarr: swarr,
+  	swArr: swArr,
+  	swarrow: swarrow,
+  	swnwar: swnwar,
+  	szlig: szlig,
+  	Tab: Tab,
+  	target: target,
+  	Tau: Tau,
+  	tau: tau,
+  	tbrk: tbrk,
+  	Tcaron: Tcaron,
+  	tcaron: tcaron,
+  	Tcedil: Tcedil,
+  	tcedil: tcedil,
+  	Tcy: Tcy,
+  	tcy: tcy,
+  	tdot: tdot,
+  	telrec: telrec,
+  	Tfr: Tfr,
+  	tfr: tfr,
+  	there4: there4,
+  	therefore: therefore,
+  	Therefore: Therefore,
+  	Theta: Theta,
+  	theta: theta,
+  	thetasym: thetasym,
+  	thetav: thetav,
+  	thickapprox: thickapprox,
+  	thicksim: thicksim,
+  	ThickSpace: ThickSpace,
+  	ThinSpace: ThinSpace,
+  	thinsp: thinsp,
+  	thkap: thkap,
+  	thksim: thksim,
+  	THORN: THORN,
+  	thorn: thorn,
+  	tilde: tilde,
+  	Tilde: Tilde,
+  	TildeEqual: TildeEqual,
+  	TildeFullEqual: TildeFullEqual,
+  	TildeTilde: TildeTilde,
+  	timesbar: timesbar,
+  	timesb: timesb,
+  	times: times,
+  	timesd: timesd,
+  	tint: tint,
+  	toea: toea,
+  	topbot: topbot,
+  	topcir: topcir,
+  	top: top,
+  	Topf: Topf,
+  	topf: topf,
+  	topfork: topfork,
+  	tosa: tosa,
+  	tprime: tprime,
+  	trade: trade,
+  	TRADE: TRADE,
+  	triangle: triangle,
+  	triangledown: triangledown,
+  	triangleleft: triangleleft,
+  	trianglelefteq: trianglelefteq,
+  	triangleq: triangleq,
+  	triangleright: triangleright,
+  	trianglerighteq: trianglerighteq,
+  	tridot: tridot,
+  	trie: trie,
+  	triminus: triminus,
+  	TripleDot: TripleDot,
+  	triplus: triplus,
+  	trisb: trisb,
+  	tritime: tritime,
+  	trpezium: trpezium,
+  	Tscr: Tscr,
+  	tscr: tscr,
+  	TScy: TScy,
+  	tscy: tscy,
+  	TSHcy: TSHcy,
+  	tshcy: tshcy,
+  	Tstrok: Tstrok,
+  	tstrok: tstrok,
+  	twixt: twixt,
+  	twoheadleftarrow: twoheadleftarrow,
+  	twoheadrightarrow: twoheadrightarrow,
+  	Uacute: Uacute,
+  	uacute: uacute,
+  	uarr: uarr,
+  	Uarr: Uarr,
+  	uArr: uArr,
+  	Uarrocir: Uarrocir,
+  	Ubrcy: Ubrcy,
+  	ubrcy: ubrcy,
+  	Ubreve: Ubreve,
+  	ubreve: ubreve,
+  	Ucirc: Ucirc,
+  	ucirc: ucirc,
+  	Ucy: Ucy,
+  	ucy: ucy,
+  	udarr: udarr,
+  	Udblac: Udblac,
+  	udblac: udblac,
+  	udhar: udhar,
+  	ufisht: ufisht,
+  	Ufr: Ufr,
+  	ufr: ufr,
+  	Ugrave: Ugrave,
+  	ugrave: ugrave,
+  	uHar: uHar,
+  	uharl: uharl,
+  	uharr: uharr,
+  	uhblk: uhblk,
+  	ulcorn: ulcorn,
+  	ulcorner: ulcorner,
+  	ulcrop: ulcrop,
+  	ultri: ultri,
+  	Umacr: Umacr,
+  	umacr: umacr,
+  	uml: uml,
+  	UnderBar: UnderBar,
+  	UnderBrace: UnderBrace,
+  	UnderBracket: UnderBracket,
+  	UnderParenthesis: UnderParenthesis,
+  	Union: Union,
+  	UnionPlus: UnionPlus,
+  	Uogon: Uogon,
+  	uogon: uogon,
+  	Uopf: Uopf,
+  	uopf: uopf,
+  	UpArrowBar: UpArrowBar,
+  	uparrow: uparrow,
+  	UpArrow: UpArrow,
+  	Uparrow: Uparrow,
+  	UpArrowDownArrow: UpArrowDownArrow,
+  	updownarrow: updownarrow,
+  	UpDownArrow: UpDownArrow,
+  	Updownarrow: Updownarrow,
+  	UpEquilibrium: UpEquilibrium,
+  	upharpoonleft: upharpoonleft,
+  	upharpoonright: upharpoonright,
+  	uplus: uplus,
+  	UpperLeftArrow: UpperLeftArrow,
+  	UpperRightArrow: UpperRightArrow,
+  	upsi: upsi,
+  	Upsi: Upsi,
+  	upsih: upsih,
+  	Upsilon: Upsilon,
+  	upsilon: upsilon,
+  	UpTeeArrow: UpTeeArrow,
+  	UpTee: UpTee,
+  	upuparrows: upuparrows,
+  	urcorn: urcorn,
+  	urcorner: urcorner,
+  	urcrop: urcrop,
+  	Uring: Uring,
+  	uring: uring,
+  	urtri: urtri,
+  	Uscr: Uscr,
+  	uscr: uscr,
+  	utdot: utdot,
+  	Utilde: Utilde,
+  	utilde: utilde,
+  	utri: utri,
+  	utrif: utrif,
+  	uuarr: uuarr,
+  	Uuml: Uuml,
+  	uuml: uuml,
+  	uwangle: uwangle,
+  	vangrt: vangrt,
+  	varepsilon: varepsilon,
+  	varkappa: varkappa,
+  	varnothing: varnothing,
+  	varphi: varphi,
+  	varpi: varpi,
+  	varpropto: varpropto,
+  	varr: varr,
+  	vArr: vArr,
+  	varrho: varrho,
+  	varsigma: varsigma,
+  	varsubsetneq: varsubsetneq,
+  	varsubsetneqq: varsubsetneqq,
+  	varsupsetneq: varsupsetneq,
+  	varsupsetneqq: varsupsetneqq,
+  	vartheta: vartheta,
+  	vartriangleleft: vartriangleleft,
+  	vartriangleright: vartriangleright,
+  	vBar: vBar,
+  	Vbar: Vbar,
+  	vBarv: vBarv,
+  	Vcy: Vcy,
+  	vcy: vcy,
+  	vdash: vdash,
+  	vDash: vDash,
+  	Vdash: Vdash,
+  	VDash: VDash,
+  	Vdashl: Vdashl,
+  	veebar: veebar,
+  	vee: vee,
+  	Vee: Vee,
+  	veeeq: veeeq,
+  	vellip: vellip,
+  	verbar: verbar,
+  	Verbar: Verbar,
+  	vert: vert,
+  	Vert: Vert,
+  	VerticalBar: VerticalBar,
+  	VerticalLine: VerticalLine,
+  	VerticalSeparator: VerticalSeparator,
+  	VerticalTilde: VerticalTilde,
+  	VeryThinSpace: VeryThinSpace,
+  	Vfr: Vfr,
+  	vfr: vfr,
+  	vltri: vltri,
+  	vnsub: vnsub,
+  	vnsup: vnsup,
+  	Vopf: Vopf,
+  	vopf: vopf,
+  	vprop: vprop,
+  	vrtri: vrtri,
+  	Vscr: Vscr,
+  	vscr: vscr,
+  	vsubnE: vsubnE,
+  	vsubne: vsubne,
+  	vsupnE: vsupnE,
+  	vsupne: vsupne,
+  	Vvdash: Vvdash,
+  	vzigzag: vzigzag,
+  	Wcirc: Wcirc,
+  	wcirc: wcirc,
+  	wedbar: wedbar,
+  	wedge: wedge,
+  	Wedge: Wedge,
+  	wedgeq: wedgeq,
+  	weierp: weierp,
+  	Wfr: Wfr,
+  	wfr: wfr,
+  	Wopf: Wopf,
+  	wopf: wopf,
+  	wp: wp,
+  	wr: wr,
+  	wreath: wreath,
+  	Wscr: Wscr,
+  	wscr: wscr,
+  	xcap: xcap,
+  	xcirc: xcirc,
+  	xcup: xcup,
+  	xdtri: xdtri,
+  	Xfr: Xfr,
+  	xfr: xfr,
+  	xharr: xharr,
+  	xhArr: xhArr,
+  	Xi: Xi,
+  	xi: xi,
+  	xlarr: xlarr,
+  	xlArr: xlArr,
+  	xmap: xmap,
+  	xnis: xnis,
+  	xodot: xodot,
+  	Xopf: Xopf,
+  	xopf: xopf,
+  	xoplus: xoplus,
+  	xotime: xotime,
+  	xrarr: xrarr,
+  	xrArr: xrArr,
+  	Xscr: Xscr,
+  	xscr: xscr,
+  	xsqcup: xsqcup,
+  	xuplus: xuplus,
+  	xutri: xutri,
+  	xvee: xvee,
+  	xwedge: xwedge,
+  	Yacute: Yacute,
+  	yacute: yacute,
+  	YAcy: YAcy,
+  	yacy: yacy,
+  	Ycirc: Ycirc,
+  	ycirc: ycirc,
+  	Ycy: Ycy,
+  	ycy: ycy,
+  	yen: yen,
+  	Yfr: Yfr,
+  	yfr: yfr,
+  	YIcy: YIcy,
+  	yicy: yicy,
+  	Yopf: Yopf,
+  	yopf: yopf,
+  	Yscr: Yscr,
+  	yscr: yscr,
+  	YUcy: YUcy,
+  	yucy: yucy,
+  	yuml: yuml,
+  	Yuml: Yuml,
+  	Zacute: Zacute,
+  	zacute: zacute,
+  	Zcaron: Zcaron,
+  	zcaron: zcaron,
+  	Zcy: Zcy,
+  	zcy: zcy,
+  	Zdot: Zdot,
+  	zdot: zdot,
+  	zeetrf: zeetrf,
+  	ZeroWidthSpace: ZeroWidthSpace,
+  	Zeta: Zeta,
+  	zeta: zeta,
+  	zfr: zfr,
+  	Zfr: Zfr,
+  	ZHcy: ZHcy,
+  	zhcy: zhcy,
+  	zigrarr: zigrarr,
+  	zopf: zopf,
+  	Zopf: Zopf,
+  	Zscr: Zscr,
+  	zscr: zscr,
+  	zwj: zwj,
+  	zwnj: zwnj
+  };
 
-    return string.replace(/(%[a-f0-9]{2})+/gi, function (seq) {
-      let result = '';
+  /*eslint quotes:0*/
+  var entities$1 = require$$0;
 
-      for (let i = 0, l = seq.length; i < l; i += 3) {
-        const b1 = parseInt(seq.slice(i + 1, i + 3), 16);
+  var regex$4=/[!-#%-\*,-\/:;\?@\[-\]_\{\}\xA1\xA7\xAB\xB6\xB7\xBB\xBF\u037E\u0387\u055A-\u055F\u0589\u058A\u05BE\u05C0\u05C3\u05C6\u05F3\u05F4\u0609\u060A\u060C\u060D\u061B\u061E\u061F\u066A-\u066D\u06D4\u0700-\u070D\u07F7-\u07F9\u0830-\u083E\u085E\u0964\u0965\u0970\u09FD\u0A76\u0AF0\u0C84\u0DF4\u0E4F\u0E5A\u0E5B\u0F04-\u0F12\u0F14\u0F3A-\u0F3D\u0F85\u0FD0-\u0FD4\u0FD9\u0FDA\u104A-\u104F\u10FB\u1360-\u1368\u1400\u166D\u166E\u169B\u169C\u16EB-\u16ED\u1735\u1736\u17D4-\u17D6\u17D8-\u17DA\u1800-\u180A\u1944\u1945\u1A1E\u1A1F\u1AA0-\u1AA6\u1AA8-\u1AAD\u1B5A-\u1B60\u1BFC-\u1BFF\u1C3B-\u1C3F\u1C7E\u1C7F\u1CC0-\u1CC7\u1CD3\u2010-\u2027\u2030-\u2043\u2045-\u2051\u2053-\u205E\u207D\u207E\u208D\u208E\u2308-\u230B\u2329\u232A\u2768-\u2775\u27C5\u27C6\u27E6-\u27EF\u2983-\u2998\u29D8-\u29DB\u29FC\u29FD\u2CF9-\u2CFC\u2CFE\u2CFF\u2D70\u2E00-\u2E2E\u2E30-\u2E4E\u3001-\u3003\u3008-\u3011\u3014-\u301F\u3030\u303D\u30A0\u30FB\uA4FE\uA4FF\uA60D-\uA60F\uA673\uA67E\uA6F2-\uA6F7\uA874-\uA877\uA8CE\uA8CF\uA8F8-\uA8FA\uA8FC\uA92E\uA92F\uA95F\uA9C1-\uA9CD\uA9DE\uA9DF\uAA5C-\uAA5F\uAADE\uAADF\uAAF0\uAAF1\uABEB\uFD3E\uFD3F\uFE10-\uFE19\uFE30-\uFE52\uFE54-\uFE61\uFE63\uFE68\uFE6A\uFE6B\uFF01-\uFF03\uFF05-\uFF0A\uFF0C-\uFF0F\uFF1A\uFF1B\uFF1F\uFF20\uFF3B-\uFF3D\uFF3F\uFF5B\uFF5D\uFF5F-\uFF65]|\uD800[\uDD00-\uDD02\uDF9F\uDFD0]|\uD801\uDD6F|\uD802[\uDC57\uDD1F\uDD3F\uDE50-\uDE58\uDE7F\uDEF0-\uDEF6\uDF39-\uDF3F\uDF99-\uDF9C]|\uD803[\uDF55-\uDF59]|\uD804[\uDC47-\uDC4D\uDCBB\uDCBC\uDCBE-\uDCC1\uDD40-\uDD43\uDD74\uDD75\uDDC5-\uDDC8\uDDCD\uDDDB\uDDDD-\uDDDF\uDE38-\uDE3D\uDEA9]|\uD805[\uDC4B-\uDC4F\uDC5B\uDC5D\uDCC6\uDDC1-\uDDD7\uDE41-\uDE43\uDE60-\uDE6C\uDF3C-\uDF3E]|\uD806[\uDC3B\uDE3F-\uDE46\uDE9A-\uDE9C\uDE9E-\uDEA2]|\uD807[\uDC41-\uDC45\uDC70\uDC71\uDEF7\uDEF8]|\uD809[\uDC70-\uDC74]|\uD81A[\uDE6E\uDE6F\uDEF5\uDF37-\uDF3B\uDF44]|\uD81B[\uDE97-\uDE9A]|\uD82F\uDC9F|\uD836[\uDE87-\uDE8B]|\uD83A[\uDD5E\uDD5F]/;
 
-        if (b1 < 0x80) {
-          result += cache[b1];
-          continue
-        }
+  var mdurl$1 = {};
 
-        if ((b1 & 0xE0) === 0xC0 && (i + 3 < l)) {
-          // 110xxxxx 10xxxxxx
-          const b2 = parseInt(seq.slice(i + 4, i + 6), 16);
+  var encodeCache = {};
 
-          if ((b2 & 0xC0) === 0x80) {
-            const chr = ((b1 << 6) & 0x7C0) | (b2 & 0x3F);
-
-            if (chr < 0x80) {
-              result += '\ufffd\ufffd';
-            } else {
-              result += String.fromCharCode(chr);
-            }
-
-            i += 3;
-            continue
-          }
-        }
-
-        if ((b1 & 0xF0) === 0xE0 && (i + 6 < l)) {
-          // 1110xxxx 10xxxxxx 10xxxxxx
-          const b2 = parseInt(seq.slice(i + 4, i + 6), 16);
-          const b3 = parseInt(seq.slice(i + 7, i + 9), 16);
-
-          if ((b2 & 0xC0) === 0x80 && (b3 & 0xC0) === 0x80) {
-            const chr = ((b1 << 12) & 0xF000) | ((b2 << 6) & 0xFC0) | (b3 & 0x3F);
-
-            if (chr < 0x800 || (chr >= 0xD800 && chr <= 0xDFFF)) {
-              result += '\ufffd\ufffd\ufffd';
-            } else {
-              result += String.fromCharCode(chr);
-            }
-
-            i += 6;
-            continue
-          }
-        }
-
-        if ((b1 & 0xF8) === 0xF0 && (i + 9 < l)) {
-          // 111110xx 10xxxxxx 10xxxxxx 10xxxxxx
-          const b2 = parseInt(seq.slice(i + 4, i + 6), 16);
-          const b3 = parseInt(seq.slice(i + 7, i + 9), 16);
-          const b4 = parseInt(seq.slice(i + 10, i + 12), 16);
-
-          if ((b2 & 0xC0) === 0x80 && (b3 & 0xC0) === 0x80 && (b4 & 0xC0) === 0x80) {
-            let chr = ((b1 << 18) & 0x1C0000) | ((b2 << 12) & 0x3F000) | ((b3 << 6) & 0xFC0) | (b4 & 0x3F);
-
-            if (chr < 0x10000 || chr > 0x10FFFF) {
-              result += '\ufffd\ufffd\ufffd\ufffd';
-            } else {
-              chr -= 0x10000;
-              result += String.fromCharCode(0xD800 + (chr >> 10), 0xDC00 + (chr & 0x3FF));
-            }
-
-            i += 9;
-            continue
-          }
-        }
-
-        result += '\ufffd';
-      }
-
-      return result
-    })
-  }
-
-  decode$1.defaultChars = ';/?:@&=+$,#';
-  decode$1.componentChars = '';
-
-  const encodeCache = {};
 
   // Create a lookup array where anything but characters in `chars` string
   // and alphanumeric chars is percent-encoded.
   //
-  function getEncodeCache (exclude) {
-    let cache = encodeCache[exclude];
-    if (cache) { return cache }
+  function getEncodeCache(exclude) {
+    var i, ch, cache = encodeCache[exclude];
+    if (cache) { return cache; }
 
     cache = encodeCache[exclude] = [];
 
-    for (let i = 0; i < 128; i++) {
-      const ch = String.fromCharCode(i);
+    for (i = 0; i < 128; i++) {
+      ch = String.fromCharCode(i);
 
       if (/^[0-9a-z]$/i.test(ch)) {
         // always allow unencoded alphanumeric characters
@@ -14449,12 +18265,13 @@
       }
     }
 
-    for (let i = 0; i < exclude.length; i++) {
+    for (i = 0; i < exclude.length; i++) {
       cache[exclude.charCodeAt(i)] = exclude[i];
     }
 
-    return cache
+    return cache;
   }
+
 
   // Encode unsafe characters with percent-encoding, skipping already
   // encoded sequences.
@@ -14463,60 +18280,184 @@
   //  - exclude      - list of characters to ignore (in addition to a-zA-Z0-9)
   //  - keepEscaped  - don't encode '%' in a correct escape sequence (default: true)
   //
-  function encode$2 (string, exclude, keepEscaped) {
+  function encode(string, exclude, keepEscaped) {
+    var i, l, code, nextCode, cache,
+        result = '';
+
     if (typeof exclude !== 'string') {
       // encode(string, keepEscaped)
-      keepEscaped = exclude;
-      exclude = encode$2.defaultChars;
+      keepEscaped  = exclude;
+      exclude = encode.defaultChars;
     }
 
     if (typeof keepEscaped === 'undefined') {
       keepEscaped = true;
     }
 
-    const cache = getEncodeCache(exclude);
-    let result = '';
+    cache = getEncodeCache(exclude);
 
-    for (let i = 0, l = string.length; i < l; i++) {
-      const code = string.charCodeAt(i);
+    for (i = 0, l = string.length; i < l; i++) {
+      code = string.charCodeAt(i);
 
       if (keepEscaped && code === 0x25 /* % */ && i + 2 < l) {
         if (/^[0-9a-f]{2}$/i.test(string.slice(i + 1, i + 3))) {
           result += string.slice(i, i + 3);
           i += 2;
-          continue
+          continue;
         }
       }
 
       if (code < 128) {
         result += cache[code];
-        continue
+        continue;
       }
 
       if (code >= 0xD800 && code <= 0xDFFF) {
         if (code >= 0xD800 && code <= 0xDBFF && i + 1 < l) {
-          const nextCode = string.charCodeAt(i + 1);
+          nextCode = string.charCodeAt(i + 1);
           if (nextCode >= 0xDC00 && nextCode <= 0xDFFF) {
             result += encodeURIComponent(string[i] + string[i + 1]);
             i++;
-            continue
+            continue;
           }
         }
         result += '%EF%BF%BD';
-        continue
+        continue;
       }
 
       result += encodeURIComponent(string[i]);
     }
 
-    return result
+    return result;
   }
 
-  encode$2.defaultChars = ";/?:@&=+$,-_.!~*'()#";
-  encode$2.componentChars = "-_.!~*'()";
+  encode.defaultChars   = ";/?:@&=+$,-_.!~*'()#";
+  encode.componentChars = "-_.!~*'()";
 
-  function format$1 (url) {
-    let result = '';
+
+  var encode_1 = encode;
+
+  /* eslint-disable no-bitwise */
+
+  var decodeCache = {};
+
+  function getDecodeCache(exclude) {
+    var i, ch, cache = decodeCache[exclude];
+    if (cache) { return cache; }
+
+    cache = decodeCache[exclude] = [];
+
+    for (i = 0; i < 128; i++) {
+      ch = String.fromCharCode(i);
+      cache.push(ch);
+    }
+
+    for (i = 0; i < exclude.length; i++) {
+      ch = exclude.charCodeAt(i);
+      cache[ch] = '%' + ('0' + ch.toString(16).toUpperCase()).slice(-2);
+    }
+
+    return cache;
+  }
+
+
+  // Decode percent-encoded string.
+  //
+  function decode(string, exclude) {
+    var cache;
+
+    if (typeof exclude !== 'string') {
+      exclude = decode.defaultChars;
+    }
+
+    cache = getDecodeCache(exclude);
+
+    return string.replace(/(%[a-f0-9]{2})+/gi, function(seq) {
+      var i, l, b1, b2, b3, b4, chr,
+          result = '';
+
+      for (i = 0, l = seq.length; i < l; i += 3) {
+        b1 = parseInt(seq.slice(i + 1, i + 3), 16);
+
+        if (b1 < 0x80) {
+          result += cache[b1];
+          continue;
+        }
+
+        if ((b1 & 0xE0) === 0xC0 && (i + 3 < l)) {
+          // 110xxxxx 10xxxxxx
+          b2 = parseInt(seq.slice(i + 4, i + 6), 16);
+
+          if ((b2 & 0xC0) === 0x80) {
+            chr = ((b1 << 6) & 0x7C0) | (b2 & 0x3F);
+
+            if (chr < 0x80) {
+              result += '\ufffd\ufffd';
+            } else {
+              result += String.fromCharCode(chr);
+            }
+
+            i += 3;
+            continue;
+          }
+        }
+
+        if ((b1 & 0xF0) === 0xE0 && (i + 6 < l)) {
+          // 1110xxxx 10xxxxxx 10xxxxxx
+          b2 = parseInt(seq.slice(i + 4, i + 6), 16);
+          b3 = parseInt(seq.slice(i + 7, i + 9), 16);
+
+          if ((b2 & 0xC0) === 0x80 && (b3 & 0xC0) === 0x80) {
+            chr = ((b1 << 12) & 0xF000) | ((b2 << 6) & 0xFC0) | (b3 & 0x3F);
+
+            if (chr < 0x800 || (chr >= 0xD800 && chr <= 0xDFFF)) {
+              result += '\ufffd\ufffd\ufffd';
+            } else {
+              result += String.fromCharCode(chr);
+            }
+
+            i += 6;
+            continue;
+          }
+        }
+
+        if ((b1 & 0xF8) === 0xF0 && (i + 9 < l)) {
+          // 111110xx 10xxxxxx 10xxxxxx 10xxxxxx
+          b2 = parseInt(seq.slice(i + 4, i + 6), 16);
+          b3 = parseInt(seq.slice(i + 7, i + 9), 16);
+          b4 = parseInt(seq.slice(i + 10, i + 12), 16);
+
+          if ((b2 & 0xC0) === 0x80 && (b3 & 0xC0) === 0x80 && (b4 & 0xC0) === 0x80) {
+            chr = ((b1 << 18) & 0x1C0000) | ((b2 << 12) & 0x3F000) | ((b3 << 6) & 0xFC0) | (b4 & 0x3F);
+
+            if (chr < 0x10000 || chr > 0x10FFFF) {
+              result += '\ufffd\ufffd\ufffd\ufffd';
+            } else {
+              chr -= 0x10000;
+              result += String.fromCharCode(0xD800 + (chr >> 10), 0xDC00 + (chr & 0x3FF));
+            }
+
+            i += 9;
+            continue;
+          }
+        }
+
+        result += '\ufffd';
+      }
+
+      return result;
+    });
+  }
+
+
+  decode.defaultChars   = ';/?:@&=+$,#';
+  decode.componentChars = '';
+
+
+  var decode_1 = decode;
+
+  var format$1 = function format(url) {
+    var result = '';
 
     result += url.protocol || '';
     result += url.slashes ? '//' : '';
@@ -14534,29 +18475,8 @@
     result += url.search || '';
     result += url.hash || '';
 
-    return result
-  }
-
-  // Copyright Joyent, Inc. and other Node contributors.
-  //
-  // Permission is hereby granted, free of charge, to any person obtaining a
-  // copy of this software and associated documentation files (the
-  // "Software"), to deal in the Software without restriction, including
-  // without limitation the rights to use, copy, modify, merge, publish,
-  // distribute, sublicense, and/or sell copies of the Software, and to permit
-  // persons to whom the Software is furnished to do so, subject to the
-  // following conditions:
-  //
-  // The above copyright notice and this permission notice shall be included
-  // in all copies or substantial portions of the Software.
-  //
-  // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-  // OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-  // MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
-  // NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
-  // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
-  // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
-  // USE OR OTHER DEALINGS IN THE SOFTWARE.
+    return result;
+  };
 
   //
   // Changes from joyent/node:
@@ -14579,7 +18499,8 @@
   //    which can be constructed using other parts of the url.
   //
 
-  function Url () {
+
+  function Url() {
     this.protocol = null;
     this.slashes = null;
     this.auth = null;
@@ -14594,62 +18515,63 @@
 
   // define these here so at least they only have to be
   // compiled once on the first module load.
-  const protocolPattern = /^([a-z0-9.+-]+:)/i;
-  const portPattern = /:[0-9]*$/;
+  var protocolPattern = /^([a-z0-9.+-]+:)/i,
+      portPattern = /:[0-9]*$/,
 
-  // Special case for a simple path URL
-  /* eslint-disable-next-line no-useless-escape */
-  const simplePathPattern = /^(\/\/?(?!\/)[^\?\s]*)(\?[^\s]*)?$/;
+      // Special case for a simple path URL
+      simplePathPattern = /^(\/\/?(?!\/)[^\?\s]*)(\?[^\s]*)?$/,
 
-  // RFC 2396: characters reserved for delimiting URLs.
-  // We actually just auto-escape these.
-  const delims = ['<', '>', '"', '`', ' ', '\r', '\n', '\t'];
+      // RFC 2396: characters reserved for delimiting URLs.
+      // We actually just auto-escape these.
+      delims = [ '<', '>', '"', '`', ' ', '\r', '\n', '\t' ],
 
-  // RFC 2396: characters not allowed for various reasons.
-  const unwise = ['{', '}', '|', '\\', '^', '`'].concat(delims);
+      // RFC 2396: characters not allowed for various reasons.
+      unwise = [ '{', '}', '|', '\\', '^', '`' ].concat(delims),
 
-  // Allowed by RFCs, but cause of XSS attacks.  Always escape these.
-  const autoEscape = ['\''].concat(unwise);
-  // Characters that are never ever allowed in a hostname.
-  // Note that any invalid chars are also handled, but these
-  // are the ones that are *expected* to be seen, so we fast-path
-  // them.
-  const nonHostChars = ['%', '/', '?', ';', '#'].concat(autoEscape);
-  const hostEndingChars = ['/', '?', '#'];
-  const hostnameMaxLen = 255;
-  const hostnamePartPattern = /^[+a-z0-9A-Z_-]{0,63}$/;
-  const hostnamePartStart = /^([+a-z0-9A-Z_-]{0,63})(.*)$/;
-  // protocols that can allow "unsafe" and "unwise" chars.
-  // protocols that never have a hostname.
-  const hostlessProtocol = {
-    javascript: true,
-    'javascript:': true
-  };
-  // protocols that always contain a // bit.
-  const slashedProtocol = {
-    http: true,
-    https: true,
-    ftp: true,
-    gopher: true,
-    file: true,
-    'http:': true,
-    'https:': true,
-    'ftp:': true,
-    'gopher:': true,
-    'file:': true
-  };
+      // Allowed by RFCs, but cause of XSS attacks.  Always escape these.
+      autoEscape = [ '\'' ].concat(unwise),
+      // Characters that are never ever allowed in a hostname.
+      // Note that any invalid chars are also handled, but these
+      // are the ones that are *expected* to be seen, so we fast-path
+      // them.
+      nonHostChars = [ '%', '/', '?', ';', '#' ].concat(autoEscape),
+      hostEndingChars = [ '/', '?', '#' ],
+      hostnameMaxLen = 255,
+      hostnamePartPattern = /^[+a-z0-9A-Z_-]{0,63}$/,
+      hostnamePartStart = /^([+a-z0-9A-Z_-]{0,63})(.*)$/,
+      // protocols that can allow "unsafe" and "unwise" chars.
+      /* eslint-disable no-script-url */
+      // protocols that never have a hostname.
+      hostlessProtocol = {
+        'javascript': true,
+        'javascript:': true
+      },
+      // protocols that always contain a // bit.
+      slashedProtocol = {
+        'http': true,
+        'https': true,
+        'ftp': true,
+        'gopher': true,
+        'file': true,
+        'http:': true,
+        'https:': true,
+        'ftp:': true,
+        'gopher:': true,
+        'file:': true
+      };
+      /* eslint-enable no-script-url */
 
-  function urlParse (url, slashesDenoteHost) {
-    if (url && url instanceof Url) return url
+  function urlParse(url, slashesDenoteHost) {
+    if (url && url instanceof Url) { return url; }
 
-    const u = new Url();
+    var u = new Url();
     u.parse(url, slashesDenoteHost);
-    return u
+    return u;
   }
 
-  Url.prototype.parse = function (url, slashesDenoteHost) {
-    let lowerProto, hec, slashes;
-    let rest = url;
+  Url.prototype.parse = function(url, slashesDenoteHost) {
+    var i, l, lowerProto, hec, slashes,
+        rest = url;
 
     // trim before proceeding.
     // This is to support parse stuff like "  http://foo.com  \n"
@@ -14657,17 +18579,17 @@
 
     if (!slashesDenoteHost && url.split('#').length === 1) {
       // Try fast path regexp
-      const simplePath = simplePathPattern.exec(rest);
+      var simplePath = simplePathPattern.exec(rest);
       if (simplePath) {
         this.pathname = simplePath[1];
         if (simplePath[2]) {
           this.search = simplePath[2];
         }
-        return this
+        return this;
       }
     }
 
-    let proto = protocolPattern.exec(rest);
+    var proto = protocolPattern.exec(rest);
     if (proto) {
       proto = proto[0];
       lowerProto = proto.toLowerCase();
@@ -14679,7 +18601,6 @@
     // user@server is *always* interpreted as a hostname, and url
     // resolution will treat //foo/bar as host=foo,path=bar because that's
     // how the browser resolves relative URLs.
-    /* eslint-disable-next-line no-useless-escape */
     if (slashesDenoteHost || proto || rest.match(/^\/\/[^@\/]+@[^@\/]+/)) {
       slashes = rest.substr(0, 2) === '//';
       if (slashes && !(proto && hostlessProtocol[proto])) {
@@ -14690,6 +18611,7 @@
 
     if (!hostlessProtocol[proto] &&
         (slashes || (proto && !slashedProtocol[proto]))) {
+
       // there's a hostname.
       // the first instance of /, ?, ;, or # ends the host.
       //
@@ -14706,8 +18628,8 @@
       // Review our test case against browsers more comprehensively.
 
       // find the first instance of any hostEndingChars
-      let hostEnd = -1;
-      for (let i = 0; i < hostEndingChars.length; i++) {
+      var hostEnd = -1;
+      for (i = 0; i < hostEndingChars.length; i++) {
         hec = rest.indexOf(hostEndingChars[i]);
         if (hec !== -1 && (hostEnd === -1 || hec < hostEnd)) {
           hostEnd = hec;
@@ -14716,7 +18638,7 @@
 
       // at this point, either we have an explicit point where the
       // auth portion cannot go past, or the last @ char is the decider.
-      let auth, atSign;
+      var auth, atSign;
       if (hostEnd === -1) {
         // atSign can be anywhere.
         atSign = rest.lastIndexOf('@');
@@ -14736,7 +18658,7 @@
 
       // the host is the remaining to the left of the first non-host char
       hostEnd = -1;
-      for (let i = 0; i < nonHostChars.length; i++) {
+      for (i = 0; i < nonHostChars.length; i++) {
         hec = rest.indexOf(nonHostChars[i]);
         if (hec !== -1 && (hostEnd === -1 || hec < hostEnd)) {
           hostEnd = hec;
@@ -14748,7 +18670,7 @@
       }
 
       if (rest[hostEnd - 1] === ':') { hostEnd--; }
-      const host = rest.slice(0, hostEnd);
+      var host = rest.slice(0, hostEnd);
       rest = rest.slice(hostEnd);
 
       // pull out port.
@@ -14760,18 +18682,18 @@
 
       // if hostname begins with [ and ends with ]
       // assume that it's an IPv6 address.
-      const ipv6Hostname = this.hostname[0] === '[' &&
+      var ipv6Hostname = this.hostname[0] === '[' &&
           this.hostname[this.hostname.length - 1] === ']';
 
       // validate a little.
       if (!ipv6Hostname) {
-        const hostparts = this.hostname.split(/\./);
-        for (let i = 0, l = hostparts.length; i < l; i++) {
-          const part = hostparts[i];
-          if (!part) { continue }
+        var hostparts = this.hostname.split(/\./);
+        for (i = 0, l = hostparts.length; i < l; i++) {
+          var part = hostparts[i];
+          if (!part) { continue; }
           if (!part.match(hostnamePartPattern)) {
-            let newpart = '';
-            for (let j = 0, k = part.length; j < k; j++) {
+            var newpart = '';
+            for (var j = 0, k = part.length; j < k; j++) {
               if (part.charCodeAt(j) > 127) {
                 // we replace non-ASCII char with a temporary placeholder
                 // we need this to make sure size of hostname is not
@@ -14783,9 +18705,9 @@
             }
             // we test again with ASCII char only
             if (!newpart.match(hostnamePartPattern)) {
-              const validParts = hostparts.slice(0, i);
-              const notHost = hostparts.slice(i + 1);
-              const bit = part.match(hostnamePartStart);
+              var validParts = hostparts.slice(0, i);
+              var notHost = hostparts.slice(i + 1);
+              var bit = part.match(hostnamePartStart);
               if (bit) {
                 validParts.push(bit[1]);
                 notHost.unshift(bit[2]);
@@ -14794,7 +18716,7 @@
                 rest = notHost.join('.') + rest;
               }
               this.hostname = validParts.join('.');
-              break
+              break;
             }
           }
         }
@@ -14812,13 +18734,13 @@
     }
 
     // chop off from the tail first.
-    const hash = rest.indexOf('#');
+    var hash = rest.indexOf('#');
     if (hash !== -1) {
       // got a fragment string.
       this.hash = rest.substr(hash);
       rest = rest.slice(0, hash);
     }
-    const qm = rest.indexOf('?');
+    var qm = rest.indexOf('?');
     if (qm !== -1) {
       this.search = rest.substr(qm);
       rest = rest.slice(0, qm);
@@ -14829,11 +18751,11 @@
       this.pathname = '';
     }
 
-    return this
+    return this;
   };
 
-  Url.prototype.parseHost = function (host) {
-    let port = portPattern.exec(host);
+  Url.prototype.parseHost = function(host) {
+    var port = portPattern.exec(host);
     if (port) {
       port = port[0];
       if (port !== ':') {
@@ -14844,888 +18766,393 @@
     if (host) { this.hostname = host; }
   };
 
-  var mdurl = /*#__PURE__*/Object.freeze({
-    __proto__: null,
-    decode: decode$1,
-    encode: encode$2,
-    format: format$1,
-    parse: urlParse
-  });
+  var parse = urlParse;
 
-  var Any = /[\0-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]/;
+  mdurl$1.encode = encode_1;
+  mdurl$1.decode = decode_1;
+  mdurl$1.format = format$1;
+  mdurl$1.parse  = parse;
 
-  var Cc = /[\0-\x1F\x7F-\x9F]/;
+  var uc_micro = {};
 
-  var regex$1 = /[\xAD\u0600-\u0605\u061C\u06DD\u070F\u0890\u0891\u08E2\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\uFEFF\uFFF9-\uFFFB]|\uD804[\uDCBD\uDCCD]|\uD80D[\uDC30-\uDC3F]|\uD82F[\uDCA0-\uDCA3]|\uD834[\uDD73-\uDD7A]|\uDB40[\uDC01\uDC20-\uDC7F]/;
+  var regex$3;
+  var hasRequiredRegex$3;
 
-  var P = /[!-#%-\*,-\/:;\?@\[-\]_\{\}\xA1\xA7\xAB\xB6\xB7\xBB\xBF\u037E\u0387\u055A-\u055F\u0589\u058A\u05BE\u05C0\u05C3\u05C6\u05F3\u05F4\u0609\u060A\u060C\u060D\u061B\u061D-\u061F\u066A-\u066D\u06D4\u0700-\u070D\u07F7-\u07F9\u0830-\u083E\u085E\u0964\u0965\u0970\u09FD\u0A76\u0AF0\u0C77\u0C84\u0DF4\u0E4F\u0E5A\u0E5B\u0F04-\u0F12\u0F14\u0F3A-\u0F3D\u0F85\u0FD0-\u0FD4\u0FD9\u0FDA\u104A-\u104F\u10FB\u1360-\u1368\u1400\u166E\u169B\u169C\u16EB-\u16ED\u1735\u1736\u17D4-\u17D6\u17D8-\u17DA\u1800-\u180A\u1944\u1945\u1A1E\u1A1F\u1AA0-\u1AA6\u1AA8-\u1AAD\u1B5A-\u1B60\u1B7D\u1B7E\u1BFC-\u1BFF\u1C3B-\u1C3F\u1C7E\u1C7F\u1CC0-\u1CC7\u1CD3\u2010-\u2027\u2030-\u2043\u2045-\u2051\u2053-\u205E\u207D\u207E\u208D\u208E\u2308-\u230B\u2329\u232A\u2768-\u2775\u27C5\u27C6\u27E6-\u27EF\u2983-\u2998\u29D8-\u29DB\u29FC\u29FD\u2CF9-\u2CFC\u2CFE\u2CFF\u2D70\u2E00-\u2E2E\u2E30-\u2E4F\u2E52-\u2E5D\u3001-\u3003\u3008-\u3011\u3014-\u301F\u3030\u303D\u30A0\u30FB\uA4FE\uA4FF\uA60D-\uA60F\uA673\uA67E\uA6F2-\uA6F7\uA874-\uA877\uA8CE\uA8CF\uA8F8-\uA8FA\uA8FC\uA92E\uA92F\uA95F\uA9C1-\uA9CD\uA9DE\uA9DF\uAA5C-\uAA5F\uAADE\uAADF\uAAF0\uAAF1\uABEB\uFD3E\uFD3F\uFE10-\uFE19\uFE30-\uFE52\uFE54-\uFE61\uFE63\uFE68\uFE6A\uFE6B\uFF01-\uFF03\uFF05-\uFF0A\uFF0C-\uFF0F\uFF1A\uFF1B\uFF1F\uFF20\uFF3B-\uFF3D\uFF3F\uFF5B\uFF5D\uFF5F-\uFF65]|\uD800[\uDD00-\uDD02\uDF9F\uDFD0]|\uD801\uDD6F|\uD802[\uDC57\uDD1F\uDD3F\uDE50-\uDE58\uDE7F\uDEF0-\uDEF6\uDF39-\uDF3F\uDF99-\uDF9C]|\uD803[\uDEAD\uDF55-\uDF59\uDF86-\uDF89]|\uD804[\uDC47-\uDC4D\uDCBB\uDCBC\uDCBE-\uDCC1\uDD40-\uDD43\uDD74\uDD75\uDDC5-\uDDC8\uDDCD\uDDDB\uDDDD-\uDDDF\uDE38-\uDE3D\uDEA9]|\uD805[\uDC4B-\uDC4F\uDC5A\uDC5B\uDC5D\uDCC6\uDDC1-\uDDD7\uDE41-\uDE43\uDE60-\uDE6C\uDEB9\uDF3C-\uDF3E]|\uD806[\uDC3B\uDD44-\uDD46\uDDE2\uDE3F-\uDE46\uDE9A-\uDE9C\uDE9E-\uDEA2\uDF00-\uDF09]|\uD807[\uDC41-\uDC45\uDC70\uDC71\uDEF7\uDEF8\uDF43-\uDF4F\uDFFF]|\uD809[\uDC70-\uDC74]|\uD80B[\uDFF1\uDFF2]|\uD81A[\uDE6E\uDE6F\uDEF5\uDF37-\uDF3B\uDF44]|\uD81B[\uDE97-\uDE9A\uDFE2]|\uD82F\uDC9F|\uD836[\uDE87-\uDE8B]|\uD83A[\uDD5E\uDD5F]/;
-
-  var regex = /[\$\+<->\^`\|~\xA2-\xA6\xA8\xA9\xAC\xAE-\xB1\xB4\xB8\xD7\xF7\u02C2-\u02C5\u02D2-\u02DF\u02E5-\u02EB\u02ED\u02EF-\u02FF\u0375\u0384\u0385\u03F6\u0482\u058D-\u058F\u0606-\u0608\u060B\u060E\u060F\u06DE\u06E9\u06FD\u06FE\u07F6\u07FE\u07FF\u0888\u09F2\u09F3\u09FA\u09FB\u0AF1\u0B70\u0BF3-\u0BFA\u0C7F\u0D4F\u0D79\u0E3F\u0F01-\u0F03\u0F13\u0F15-\u0F17\u0F1A-\u0F1F\u0F34\u0F36\u0F38\u0FBE-\u0FC5\u0FC7-\u0FCC\u0FCE\u0FCF\u0FD5-\u0FD8\u109E\u109F\u1390-\u1399\u166D\u17DB\u1940\u19DE-\u19FF\u1B61-\u1B6A\u1B74-\u1B7C\u1FBD\u1FBF-\u1FC1\u1FCD-\u1FCF\u1FDD-\u1FDF\u1FED-\u1FEF\u1FFD\u1FFE\u2044\u2052\u207A-\u207C\u208A-\u208C\u20A0-\u20C0\u2100\u2101\u2103-\u2106\u2108\u2109\u2114\u2116-\u2118\u211E-\u2123\u2125\u2127\u2129\u212E\u213A\u213B\u2140-\u2144\u214A-\u214D\u214F\u218A\u218B\u2190-\u2307\u230C-\u2328\u232B-\u2426\u2440-\u244A\u249C-\u24E9\u2500-\u2767\u2794-\u27C4\u27C7-\u27E5\u27F0-\u2982\u2999-\u29D7\u29DC-\u29FB\u29FE-\u2B73\u2B76-\u2B95\u2B97-\u2BFF\u2CE5-\u2CEA\u2E50\u2E51\u2E80-\u2E99\u2E9B-\u2EF3\u2F00-\u2FD5\u2FF0-\u2FFF\u3004\u3012\u3013\u3020\u3036\u3037\u303E\u303F\u309B\u309C\u3190\u3191\u3196-\u319F\u31C0-\u31E3\u31EF\u3200-\u321E\u322A-\u3247\u3250\u3260-\u327F\u328A-\u32B0\u32C0-\u33FF\u4DC0-\u4DFF\uA490-\uA4C6\uA700-\uA716\uA720\uA721\uA789\uA78A\uA828-\uA82B\uA836-\uA839\uAA77-\uAA79\uAB5B\uAB6A\uAB6B\uFB29\uFBB2-\uFBC2\uFD40-\uFD4F\uFDCF\uFDFC-\uFDFF\uFE62\uFE64-\uFE66\uFE69\uFF04\uFF0B\uFF1C-\uFF1E\uFF3E\uFF40\uFF5C\uFF5E\uFFE0-\uFFE6\uFFE8-\uFFEE\uFFFC\uFFFD]|\uD800[\uDD37-\uDD3F\uDD79-\uDD89\uDD8C-\uDD8E\uDD90-\uDD9C\uDDA0\uDDD0-\uDDFC]|\uD802[\uDC77\uDC78\uDEC8]|\uD805\uDF3F|\uD807[\uDFD5-\uDFF1]|\uD81A[\uDF3C-\uDF3F\uDF45]|\uD82F\uDC9C|\uD833[\uDF50-\uDFC3]|\uD834[\uDC00-\uDCF5\uDD00-\uDD26\uDD29-\uDD64\uDD6A-\uDD6C\uDD83\uDD84\uDD8C-\uDDA9\uDDAE-\uDDEA\uDE00-\uDE41\uDE45\uDF00-\uDF56]|\uD835[\uDEC1\uDEDB\uDEFB\uDF15\uDF35\uDF4F\uDF6F\uDF89\uDFA9\uDFC3]|\uD836[\uDC00-\uDDFF\uDE37-\uDE3A\uDE6D-\uDE74\uDE76-\uDE83\uDE85\uDE86]|\uD838[\uDD4F\uDEFF]|\uD83B[\uDCAC\uDCB0\uDD2E\uDEF0\uDEF1]|\uD83C[\uDC00-\uDC2B\uDC30-\uDC93\uDCA0-\uDCAE\uDCB1-\uDCBF\uDCC1-\uDCCF\uDCD1-\uDCF5\uDD0D-\uDDAD\uDDE6-\uDE02\uDE10-\uDE3B\uDE40-\uDE48\uDE50\uDE51\uDE60-\uDE65\uDF00-\uDFFF]|\uD83D[\uDC00-\uDED7\uDEDC-\uDEEC\uDEF0-\uDEFC\uDF00-\uDF76\uDF7B-\uDFD9\uDFE0-\uDFEB\uDFF0]|\uD83E[\uDC00-\uDC0B\uDC10-\uDC47\uDC50-\uDC59\uDC60-\uDC87\uDC90-\uDCAD\uDCB0\uDCB1\uDD00-\uDE53\uDE60-\uDE6D\uDE70-\uDE7C\uDE80-\uDE88\uDE90-\uDEBD\uDEBF-\uDEC5\uDECE-\uDEDB\uDEE0-\uDEE8\uDEF0-\uDEF8\uDF00-\uDF92\uDF94-\uDFCA]/;
-
-  var Z = /[ \xA0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]/;
-
-  var ucmicro = /*#__PURE__*/Object.freeze({
-    __proto__: null,
-    Any: Any,
-    Cc: Cc,
-    Cf: regex$1,
-    P: P,
-    S: regex,
-    Z: Z
-  });
-
-  // Generated using scripts/write-decode-map.ts
-  var htmlDecodeTree = new Uint16Array(
-  // prettier-ignore
-  "\u1d41<\xd5\u0131\u028a\u049d\u057b\u05d0\u0675\u06de\u07a2\u07d6\u080f\u0a4a\u0a91\u0da1\u0e6d\u0f09\u0f26\u10ca\u1228\u12e1\u1415\u149d\u14c3\u14df\u1525\0\0\0\0\0\0\u156b\u16cd\u198d\u1c12\u1ddd\u1f7e\u2060\u21b0\u228d\u23c0\u23fb\u2442\u2824\u2912\u2d08\u2e48\u2fce\u3016\u32ba\u3639\u37ac\u38fe\u3a28\u3a71\u3ae0\u3b2e\u0800EMabcfglmnoprstu\\bfms\x7f\x84\x8b\x90\x95\x98\xa6\xb3\xb9\xc8\xcflig\u803b\xc6\u40c6P\u803b&\u4026cute\u803b\xc1\u40c1reve;\u4102\u0100iyx}rc\u803b\xc2\u40c2;\u4410r;\uc000\ud835\udd04rave\u803b\xc0\u40c0pha;\u4391acr;\u4100d;\u6a53\u0100gp\x9d\xa1on;\u4104f;\uc000\ud835\udd38plyFunction;\u6061ing\u803b\xc5\u40c5\u0100cs\xbe\xc3r;\uc000\ud835\udc9cign;\u6254ilde\u803b\xc3\u40c3ml\u803b\xc4\u40c4\u0400aceforsu\xe5\xfb\xfe\u0117\u011c\u0122\u0127\u012a\u0100cr\xea\xf2kslash;\u6216\u0176\xf6\xf8;\u6ae7ed;\u6306y;\u4411\u0180crt\u0105\u010b\u0114ause;\u6235noullis;\u612ca;\u4392r;\uc000\ud835\udd05pf;\uc000\ud835\udd39eve;\u42d8c\xf2\u0113mpeq;\u624e\u0700HOacdefhilorsu\u014d\u0151\u0156\u0180\u019e\u01a2\u01b5\u01b7\u01ba\u01dc\u0215\u0273\u0278\u027ecy;\u4427PY\u803b\xa9\u40a9\u0180cpy\u015d\u0162\u017aute;\u4106\u0100;i\u0167\u0168\u62d2talDifferentialD;\u6145leys;\u612d\u0200aeio\u0189\u018e\u0194\u0198ron;\u410cdil\u803b\xc7\u40c7rc;\u4108nint;\u6230ot;\u410a\u0100dn\u01a7\u01adilla;\u40b8terDot;\u40b7\xf2\u017fi;\u43a7rcle\u0200DMPT\u01c7\u01cb\u01d1\u01d6ot;\u6299inus;\u6296lus;\u6295imes;\u6297o\u0100cs\u01e2\u01f8kwiseContourIntegral;\u6232eCurly\u0100DQ\u0203\u020foubleQuote;\u601duote;\u6019\u0200lnpu\u021e\u0228\u0247\u0255on\u0100;e\u0225\u0226\u6237;\u6a74\u0180git\u022f\u0236\u023aruent;\u6261nt;\u622fourIntegral;\u622e\u0100fr\u024c\u024e;\u6102oduct;\u6210nterClockwiseContourIntegral;\u6233oss;\u6a2fcr;\uc000\ud835\udc9ep\u0100;C\u0284\u0285\u62d3ap;\u624d\u0580DJSZacefios\u02a0\u02ac\u02b0\u02b4\u02b8\u02cb\u02d7\u02e1\u02e6\u0333\u048d\u0100;o\u0179\u02a5trahd;\u6911cy;\u4402cy;\u4405cy;\u440f\u0180grs\u02bf\u02c4\u02c7ger;\u6021r;\u61a1hv;\u6ae4\u0100ay\u02d0\u02d5ron;\u410e;\u4414l\u0100;t\u02dd\u02de\u6207a;\u4394r;\uc000\ud835\udd07\u0100af\u02eb\u0327\u0100cm\u02f0\u0322ritical\u0200ADGT\u0300\u0306\u0316\u031ccute;\u40b4o\u0174\u030b\u030d;\u42d9bleAcute;\u42ddrave;\u4060ilde;\u42dcond;\u62c4ferentialD;\u6146\u0470\u033d\0\0\0\u0342\u0354\0\u0405f;\uc000\ud835\udd3b\u0180;DE\u0348\u0349\u034d\u40a8ot;\u60dcqual;\u6250ble\u0300CDLRUV\u0363\u0372\u0382\u03cf\u03e2\u03f8ontourIntegra\xec\u0239o\u0274\u0379\0\0\u037b\xbb\u0349nArrow;\u61d3\u0100eo\u0387\u03a4ft\u0180ART\u0390\u0396\u03a1rrow;\u61d0ightArrow;\u61d4e\xe5\u02cang\u0100LR\u03ab\u03c4eft\u0100AR\u03b3\u03b9rrow;\u67f8ightArrow;\u67faightArrow;\u67f9ight\u0100AT\u03d8\u03derrow;\u61d2ee;\u62a8p\u0241\u03e9\0\0\u03efrrow;\u61d1ownArrow;\u61d5erticalBar;\u6225n\u0300ABLRTa\u0412\u042a\u0430\u045e\u047f\u037crrow\u0180;BU\u041d\u041e\u0422\u6193ar;\u6913pArrow;\u61f5reve;\u4311eft\u02d2\u043a\0\u0446\0\u0450ightVector;\u6950eeVector;\u695eector\u0100;B\u0459\u045a\u61bdar;\u6956ight\u01d4\u0467\0\u0471eeVector;\u695fector\u0100;B\u047a\u047b\u61c1ar;\u6957ee\u0100;A\u0486\u0487\u62a4rrow;\u61a7\u0100ct\u0492\u0497r;\uc000\ud835\udc9frok;\u4110\u0800NTacdfglmopqstux\u04bd\u04c0\u04c4\u04cb\u04de\u04e2\u04e7\u04ee\u04f5\u0521\u052f\u0536\u0552\u055d\u0560\u0565G;\u414aH\u803b\xd0\u40d0cute\u803b\xc9\u40c9\u0180aiy\u04d2\u04d7\u04dcron;\u411arc\u803b\xca\u40ca;\u442dot;\u4116r;\uc000\ud835\udd08rave\u803b\xc8\u40c8ement;\u6208\u0100ap\u04fa\u04fecr;\u4112ty\u0253\u0506\0\0\u0512mallSquare;\u65fberySmallSquare;\u65ab\u0100gp\u0526\u052aon;\u4118f;\uc000\ud835\udd3csilon;\u4395u\u0100ai\u053c\u0549l\u0100;T\u0542\u0543\u6a75ilde;\u6242librium;\u61cc\u0100ci\u0557\u055ar;\u6130m;\u6a73a;\u4397ml\u803b\xcb\u40cb\u0100ip\u056a\u056fsts;\u6203onentialE;\u6147\u0280cfios\u0585\u0588\u058d\u05b2\u05ccy;\u4424r;\uc000\ud835\udd09lled\u0253\u0597\0\0\u05a3mallSquare;\u65fcerySmallSquare;\u65aa\u0370\u05ba\0\u05bf\0\0\u05c4f;\uc000\ud835\udd3dAll;\u6200riertrf;\u6131c\xf2\u05cb\u0600JTabcdfgorst\u05e8\u05ec\u05ef\u05fa\u0600\u0612\u0616\u061b\u061d\u0623\u066c\u0672cy;\u4403\u803b>\u403emma\u0100;d\u05f7\u05f8\u4393;\u43dcreve;\u411e\u0180eiy\u0607\u060c\u0610dil;\u4122rc;\u411c;\u4413ot;\u4120r;\uc000\ud835\udd0a;\u62d9pf;\uc000\ud835\udd3eeater\u0300EFGLST\u0635\u0644\u064e\u0656\u065b\u0666qual\u0100;L\u063e\u063f\u6265ess;\u62dbullEqual;\u6267reater;\u6aa2ess;\u6277lantEqual;\u6a7eilde;\u6273cr;\uc000\ud835\udca2;\u626b\u0400Aacfiosu\u0685\u068b\u0696\u069b\u069e\u06aa\u06be\u06caRDcy;\u442a\u0100ct\u0690\u0694ek;\u42c7;\u405eirc;\u4124r;\u610clbertSpace;\u610b\u01f0\u06af\0\u06b2f;\u610dizontalLine;\u6500\u0100ct\u06c3\u06c5\xf2\u06a9rok;\u4126mp\u0144\u06d0\u06d8ownHum\xf0\u012fqual;\u624f\u0700EJOacdfgmnostu\u06fa\u06fe\u0703\u0707\u070e\u071a\u071e\u0721\u0728\u0744\u0778\u078b\u078f\u0795cy;\u4415lig;\u4132cy;\u4401cute\u803b\xcd\u40cd\u0100iy\u0713\u0718rc\u803b\xce\u40ce;\u4418ot;\u4130r;\u6111rave\u803b\xcc\u40cc\u0180;ap\u0720\u072f\u073f\u0100cg\u0734\u0737r;\u412ainaryI;\u6148lie\xf3\u03dd\u01f4\u0749\0\u0762\u0100;e\u074d\u074e\u622c\u0100gr\u0753\u0758ral;\u622bsection;\u62c2isible\u0100CT\u076c\u0772omma;\u6063imes;\u6062\u0180gpt\u077f\u0783\u0788on;\u412ef;\uc000\ud835\udd40a;\u4399cr;\u6110ilde;\u4128\u01eb\u079a\0\u079ecy;\u4406l\u803b\xcf\u40cf\u0280cfosu\u07ac\u07b7\u07bc\u07c2\u07d0\u0100iy\u07b1\u07b5rc;\u4134;\u4419r;\uc000\ud835\udd0dpf;\uc000\ud835\udd41\u01e3\u07c7\0\u07ccr;\uc000\ud835\udca5rcy;\u4408kcy;\u4404\u0380HJacfos\u07e4\u07e8\u07ec\u07f1\u07fd\u0802\u0808cy;\u4425cy;\u440cppa;\u439a\u0100ey\u07f6\u07fbdil;\u4136;\u441ar;\uc000\ud835\udd0epf;\uc000\ud835\udd42cr;\uc000\ud835\udca6\u0580JTaceflmost\u0825\u0829\u082c\u0850\u0863\u09b3\u09b8\u09c7\u09cd\u0a37\u0a47cy;\u4409\u803b<\u403c\u0280cmnpr\u0837\u083c\u0841\u0844\u084dute;\u4139bda;\u439bg;\u67ealacetrf;\u6112r;\u619e\u0180aey\u0857\u085c\u0861ron;\u413ddil;\u413b;\u441b\u0100fs\u0868\u0970t\u0500ACDFRTUVar\u087e\u08a9\u08b1\u08e0\u08e6\u08fc\u092f\u095b\u0390\u096a\u0100nr\u0883\u088fgleBracket;\u67e8row\u0180;BR\u0899\u089a\u089e\u6190ar;\u61e4ightArrow;\u61c6eiling;\u6308o\u01f5\u08b7\0\u08c3bleBracket;\u67e6n\u01d4\u08c8\0\u08d2eeVector;\u6961ector\u0100;B\u08db\u08dc\u61c3ar;\u6959loor;\u630aight\u0100AV\u08ef\u08f5rrow;\u6194ector;\u694e\u0100er\u0901\u0917e\u0180;AV\u0909\u090a\u0910\u62a3rrow;\u61a4ector;\u695aiangle\u0180;BE\u0924\u0925\u0929\u62b2ar;\u69cfqual;\u62b4p\u0180DTV\u0937\u0942\u094cownVector;\u6951eeVector;\u6960ector\u0100;B\u0956\u0957\u61bfar;\u6958ector\u0100;B\u0965\u0966\u61bcar;\u6952ight\xe1\u039cs\u0300EFGLST\u097e\u098b\u0995\u099d\u09a2\u09adqualGreater;\u62daullEqual;\u6266reater;\u6276ess;\u6aa1lantEqual;\u6a7dilde;\u6272r;\uc000\ud835\udd0f\u0100;e\u09bd\u09be\u62d8ftarrow;\u61daidot;\u413f\u0180npw\u09d4\u0a16\u0a1bg\u0200LRlr\u09de\u09f7\u0a02\u0a10eft\u0100AR\u09e6\u09ecrrow;\u67f5ightArrow;\u67f7ightArrow;\u67f6eft\u0100ar\u03b3\u0a0aight\xe1\u03bfight\xe1\u03caf;\uc000\ud835\udd43er\u0100LR\u0a22\u0a2ceftArrow;\u6199ightArrow;\u6198\u0180cht\u0a3e\u0a40\u0a42\xf2\u084c;\u61b0rok;\u4141;\u626a\u0400acefiosu\u0a5a\u0a5d\u0a60\u0a77\u0a7c\u0a85\u0a8b\u0a8ep;\u6905y;\u441c\u0100dl\u0a65\u0a6fiumSpace;\u605flintrf;\u6133r;\uc000\ud835\udd10nusPlus;\u6213pf;\uc000\ud835\udd44c\xf2\u0a76;\u439c\u0480Jacefostu\u0aa3\u0aa7\u0aad\u0ac0\u0b14\u0b19\u0d91\u0d97\u0d9ecy;\u440acute;\u4143\u0180aey\u0ab4\u0ab9\u0aberon;\u4147dil;\u4145;\u441d\u0180gsw\u0ac7\u0af0\u0b0eative\u0180MTV\u0ad3\u0adf\u0ae8ediumSpace;\u600bhi\u0100cn\u0ae6\u0ad8\xeb\u0ad9eryThi\xee\u0ad9ted\u0100GL\u0af8\u0b06reaterGreate\xf2\u0673essLes\xf3\u0a48Line;\u400ar;\uc000\ud835\udd11\u0200Bnpt\u0b22\u0b28\u0b37\u0b3areak;\u6060BreakingSpace;\u40a0f;\u6115\u0680;CDEGHLNPRSTV\u0b55\u0b56\u0b6a\u0b7c\u0ba1\u0beb\u0c04\u0c5e\u0c84\u0ca6\u0cd8\u0d61\u0d85\u6aec\u0100ou\u0b5b\u0b64ngruent;\u6262pCap;\u626doubleVerticalBar;\u6226\u0180lqx\u0b83\u0b8a\u0b9bement;\u6209ual\u0100;T\u0b92\u0b93\u6260ilde;\uc000\u2242\u0338ists;\u6204reater\u0380;EFGLST\u0bb6\u0bb7\u0bbd\u0bc9\u0bd3\u0bd8\u0be5\u626fqual;\u6271ullEqual;\uc000\u2267\u0338reater;\uc000\u226b\u0338ess;\u6279lantEqual;\uc000\u2a7e\u0338ilde;\u6275ump\u0144\u0bf2\u0bfdownHump;\uc000\u224e\u0338qual;\uc000\u224f\u0338e\u0100fs\u0c0a\u0c27tTriangle\u0180;BE\u0c1a\u0c1b\u0c21\u62eaar;\uc000\u29cf\u0338qual;\u62ecs\u0300;EGLST\u0c35\u0c36\u0c3c\u0c44\u0c4b\u0c58\u626equal;\u6270reater;\u6278ess;\uc000\u226a\u0338lantEqual;\uc000\u2a7d\u0338ilde;\u6274ested\u0100GL\u0c68\u0c79reaterGreater;\uc000\u2aa2\u0338essLess;\uc000\u2aa1\u0338recedes\u0180;ES\u0c92\u0c93\u0c9b\u6280qual;\uc000\u2aaf\u0338lantEqual;\u62e0\u0100ei\u0cab\u0cb9verseElement;\u620cghtTriangle\u0180;BE\u0ccb\u0ccc\u0cd2\u62ebar;\uc000\u29d0\u0338qual;\u62ed\u0100qu\u0cdd\u0d0cuareSu\u0100bp\u0ce8\u0cf9set\u0100;E\u0cf0\u0cf3\uc000\u228f\u0338qual;\u62e2erset\u0100;E\u0d03\u0d06\uc000\u2290\u0338qual;\u62e3\u0180bcp\u0d13\u0d24\u0d4eset\u0100;E\u0d1b\u0d1e\uc000\u2282\u20d2qual;\u6288ceeds\u0200;EST\u0d32\u0d33\u0d3b\u0d46\u6281qual;\uc000\u2ab0\u0338lantEqual;\u62e1ilde;\uc000\u227f\u0338erset\u0100;E\u0d58\u0d5b\uc000\u2283\u20d2qual;\u6289ilde\u0200;EFT\u0d6e\u0d6f\u0d75\u0d7f\u6241qual;\u6244ullEqual;\u6247ilde;\u6249erticalBar;\u6224cr;\uc000\ud835\udca9ilde\u803b\xd1\u40d1;\u439d\u0700Eacdfgmoprstuv\u0dbd\u0dc2\u0dc9\u0dd5\u0ddb\u0de0\u0de7\u0dfc\u0e02\u0e20\u0e22\u0e32\u0e3f\u0e44lig;\u4152cute\u803b\xd3\u40d3\u0100iy\u0dce\u0dd3rc\u803b\xd4\u40d4;\u441eblac;\u4150r;\uc000\ud835\udd12rave\u803b\xd2\u40d2\u0180aei\u0dee\u0df2\u0df6cr;\u414cga;\u43a9cron;\u439fpf;\uc000\ud835\udd46enCurly\u0100DQ\u0e0e\u0e1aoubleQuote;\u601cuote;\u6018;\u6a54\u0100cl\u0e27\u0e2cr;\uc000\ud835\udcaaash\u803b\xd8\u40d8i\u016c\u0e37\u0e3cde\u803b\xd5\u40d5es;\u6a37ml\u803b\xd6\u40d6er\u0100BP\u0e4b\u0e60\u0100ar\u0e50\u0e53r;\u603eac\u0100ek\u0e5a\u0e5c;\u63deet;\u63b4arenthesis;\u63dc\u0480acfhilors\u0e7f\u0e87\u0e8a\u0e8f\u0e92\u0e94\u0e9d\u0eb0\u0efcrtialD;\u6202y;\u441fr;\uc000\ud835\udd13i;\u43a6;\u43a0usMinus;\u40b1\u0100ip\u0ea2\u0eadncareplan\xe5\u069df;\u6119\u0200;eio\u0eb9\u0eba\u0ee0\u0ee4\u6abbcedes\u0200;EST\u0ec8\u0ec9\u0ecf\u0eda\u627aqual;\u6aaflantEqual;\u627cilde;\u627eme;\u6033\u0100dp\u0ee9\u0eeeuct;\u620fortion\u0100;a\u0225\u0ef9l;\u621d\u0100ci\u0f01\u0f06r;\uc000\ud835\udcab;\u43a8\u0200Ufos\u0f11\u0f16\u0f1b\u0f1fOT\u803b\"\u4022r;\uc000\ud835\udd14pf;\u611acr;\uc000\ud835\udcac\u0600BEacefhiorsu\u0f3e\u0f43\u0f47\u0f60\u0f73\u0fa7\u0faa\u0fad\u1096\u10a9\u10b4\u10bearr;\u6910G\u803b\xae\u40ae\u0180cnr\u0f4e\u0f53\u0f56ute;\u4154g;\u67ebr\u0100;t\u0f5c\u0f5d\u61a0l;\u6916\u0180aey\u0f67\u0f6c\u0f71ron;\u4158dil;\u4156;\u4420\u0100;v\u0f78\u0f79\u611cerse\u0100EU\u0f82\u0f99\u0100lq\u0f87\u0f8eement;\u620builibrium;\u61cbpEquilibrium;\u696fr\xbb\u0f79o;\u43a1ght\u0400ACDFTUVa\u0fc1\u0feb\u0ff3\u1022\u1028\u105b\u1087\u03d8\u0100nr\u0fc6\u0fd2gleBracket;\u67e9row\u0180;BL\u0fdc\u0fdd\u0fe1\u6192ar;\u61e5eftArrow;\u61c4eiling;\u6309o\u01f5\u0ff9\0\u1005bleBracket;\u67e7n\u01d4\u100a\0\u1014eeVector;\u695dector\u0100;B\u101d\u101e\u61c2ar;\u6955loor;\u630b\u0100er\u102d\u1043e\u0180;AV\u1035\u1036\u103c\u62a2rrow;\u61a6ector;\u695biangle\u0180;BE\u1050\u1051\u1055\u62b3ar;\u69d0qual;\u62b5p\u0180DTV\u1063\u106e\u1078ownVector;\u694feeVector;\u695cector\u0100;B\u1082\u1083\u61bear;\u6954ector\u0100;B\u1091\u1092\u61c0ar;\u6953\u0100pu\u109b\u109ef;\u611dndImplies;\u6970ightarrow;\u61db\u0100ch\u10b9\u10bcr;\u611b;\u61b1leDelayed;\u69f4\u0680HOacfhimoqstu\u10e4\u10f1\u10f7\u10fd\u1119\u111e\u1151\u1156\u1161\u1167\u11b5\u11bb\u11bf\u0100Cc\u10e9\u10eeHcy;\u4429y;\u4428FTcy;\u442ccute;\u415a\u0280;aeiy\u1108\u1109\u110e\u1113\u1117\u6abcron;\u4160dil;\u415erc;\u415c;\u4421r;\uc000\ud835\udd16ort\u0200DLRU\u112a\u1134\u113e\u1149ownArrow\xbb\u041eeftArrow\xbb\u089aightArrow\xbb\u0fddpArrow;\u6191gma;\u43a3allCircle;\u6218pf;\uc000\ud835\udd4a\u0272\u116d\0\0\u1170t;\u621aare\u0200;ISU\u117b\u117c\u1189\u11af\u65a1ntersection;\u6293u\u0100bp\u118f\u119eset\u0100;E\u1197\u1198\u628fqual;\u6291erset\u0100;E\u11a8\u11a9\u6290qual;\u6292nion;\u6294cr;\uc000\ud835\udcaear;\u62c6\u0200bcmp\u11c8\u11db\u1209\u120b\u0100;s\u11cd\u11ce\u62d0et\u0100;E\u11cd\u11d5qual;\u6286\u0100ch\u11e0\u1205eeds\u0200;EST\u11ed\u11ee\u11f4\u11ff\u627bqual;\u6ab0lantEqual;\u627dilde;\u627fTh\xe1\u0f8c;\u6211\u0180;es\u1212\u1213\u1223\u62d1rset\u0100;E\u121c\u121d\u6283qual;\u6287et\xbb\u1213\u0580HRSacfhiors\u123e\u1244\u1249\u1255\u125e\u1271\u1276\u129f\u12c2\u12c8\u12d1ORN\u803b\xde\u40deADE;\u6122\u0100Hc\u124e\u1252cy;\u440by;\u4426\u0100bu\u125a\u125c;\u4009;\u43a4\u0180aey\u1265\u126a\u126fron;\u4164dil;\u4162;\u4422r;\uc000\ud835\udd17\u0100ei\u127b\u1289\u01f2\u1280\0\u1287efore;\u6234a;\u4398\u0100cn\u128e\u1298kSpace;\uc000\u205f\u200aSpace;\u6009lde\u0200;EFT\u12ab\u12ac\u12b2\u12bc\u623cqual;\u6243ullEqual;\u6245ilde;\u6248pf;\uc000\ud835\udd4bipleDot;\u60db\u0100ct\u12d6\u12dbr;\uc000\ud835\udcafrok;\u4166\u0ae1\u12f7\u130e\u131a\u1326\0\u132c\u1331\0\0\0\0\0\u1338\u133d\u1377\u1385\0\u13ff\u1404\u140a\u1410\u0100cr\u12fb\u1301ute\u803b\xda\u40dar\u0100;o\u1307\u1308\u619fcir;\u6949r\u01e3\u1313\0\u1316y;\u440eve;\u416c\u0100iy\u131e\u1323rc\u803b\xdb\u40db;\u4423blac;\u4170r;\uc000\ud835\udd18rave\u803b\xd9\u40d9acr;\u416a\u0100di\u1341\u1369er\u0100BP\u1348\u135d\u0100ar\u134d\u1350r;\u405fac\u0100ek\u1357\u1359;\u63dfet;\u63b5arenthesis;\u63ddon\u0100;P\u1370\u1371\u62c3lus;\u628e\u0100gp\u137b\u137fon;\u4172f;\uc000\ud835\udd4c\u0400ADETadps\u1395\u13ae\u13b8\u13c4\u03e8\u13d2\u13d7\u13f3rrow\u0180;BD\u1150\u13a0\u13a4ar;\u6912ownArrow;\u61c5ownArrow;\u6195quilibrium;\u696eee\u0100;A\u13cb\u13cc\u62a5rrow;\u61a5own\xe1\u03f3er\u0100LR\u13de\u13e8eftArrow;\u6196ightArrow;\u6197i\u0100;l\u13f9\u13fa\u43d2on;\u43a5ing;\u416ecr;\uc000\ud835\udcb0ilde;\u4168ml\u803b\xdc\u40dc\u0480Dbcdefosv\u1427\u142c\u1430\u1433\u143e\u1485\u148a\u1490\u1496ash;\u62abar;\u6aeby;\u4412ash\u0100;l\u143b\u143c\u62a9;\u6ae6\u0100er\u1443\u1445;\u62c1\u0180bty\u144c\u1450\u147aar;\u6016\u0100;i\u144f\u1455cal\u0200BLST\u1461\u1465\u146a\u1474ar;\u6223ine;\u407ceparator;\u6758ilde;\u6240ThinSpace;\u600ar;\uc000\ud835\udd19pf;\uc000\ud835\udd4dcr;\uc000\ud835\udcb1dash;\u62aa\u0280cefos\u14a7\u14ac\u14b1\u14b6\u14bcirc;\u4174dge;\u62c0r;\uc000\ud835\udd1apf;\uc000\ud835\udd4ecr;\uc000\ud835\udcb2\u0200fios\u14cb\u14d0\u14d2\u14d8r;\uc000\ud835\udd1b;\u439epf;\uc000\ud835\udd4fcr;\uc000\ud835\udcb3\u0480AIUacfosu\u14f1\u14f5\u14f9\u14fd\u1504\u150f\u1514\u151a\u1520cy;\u442fcy;\u4407cy;\u442ecute\u803b\xdd\u40dd\u0100iy\u1509\u150drc;\u4176;\u442br;\uc000\ud835\udd1cpf;\uc000\ud835\udd50cr;\uc000\ud835\udcb4ml;\u4178\u0400Hacdefos\u1535\u1539\u153f\u154b\u154f\u155d\u1560\u1564cy;\u4416cute;\u4179\u0100ay\u1544\u1549ron;\u417d;\u4417ot;\u417b\u01f2\u1554\0\u155boWidt\xe8\u0ad9a;\u4396r;\u6128pf;\u6124cr;\uc000\ud835\udcb5\u0be1\u1583\u158a\u1590\0\u15b0\u15b6\u15bf\0\0\0\0\u15c6\u15db\u15eb\u165f\u166d\0\u1695\u169b\u16b2\u16b9\0\u16becute\u803b\xe1\u40e1reve;\u4103\u0300;Ediuy\u159c\u159d\u15a1\u15a3\u15a8\u15ad\u623e;\uc000\u223e\u0333;\u623frc\u803b\xe2\u40e2te\u80bb\xb4\u0306;\u4430lig\u803b\xe6\u40e6\u0100;r\xb2\u15ba;\uc000\ud835\udd1erave\u803b\xe0\u40e0\u0100ep\u15ca\u15d6\u0100fp\u15cf\u15d4sym;\u6135\xe8\u15d3ha;\u43b1\u0100ap\u15dfc\u0100cl\u15e4\u15e7r;\u4101g;\u6a3f\u0264\u15f0\0\0\u160a\u0280;adsv\u15fa\u15fb\u15ff\u1601\u1607\u6227nd;\u6a55;\u6a5clope;\u6a58;\u6a5a\u0380;elmrsz\u1618\u1619\u161b\u161e\u163f\u164f\u1659\u6220;\u69a4e\xbb\u1619sd\u0100;a\u1625\u1626\u6221\u0461\u1630\u1632\u1634\u1636\u1638\u163a\u163c\u163e;\u69a8;\u69a9;\u69aa;\u69ab;\u69ac;\u69ad;\u69ae;\u69aft\u0100;v\u1645\u1646\u621fb\u0100;d\u164c\u164d\u62be;\u699d\u0100pt\u1654\u1657h;\u6222\xbb\xb9arr;\u637c\u0100gp\u1663\u1667on;\u4105f;\uc000\ud835\udd52\u0380;Eaeiop\u12c1\u167b\u167d\u1682\u1684\u1687\u168a;\u6a70cir;\u6a6f;\u624ad;\u624bs;\u4027rox\u0100;e\u12c1\u1692\xf1\u1683ing\u803b\xe5\u40e5\u0180cty\u16a1\u16a6\u16a8r;\uc000\ud835\udcb6;\u402amp\u0100;e\u12c1\u16af\xf1\u0288ilde\u803b\xe3\u40e3ml\u803b\xe4\u40e4\u0100ci\u16c2\u16c8onin\xf4\u0272nt;\u6a11\u0800Nabcdefiklnoprsu\u16ed\u16f1\u1730\u173c\u1743\u1748\u1778\u177d\u17e0\u17e6\u1839\u1850\u170d\u193d\u1948\u1970ot;\u6aed\u0100cr\u16f6\u171ek\u0200ceps\u1700\u1705\u170d\u1713ong;\u624cpsilon;\u43f6rime;\u6035im\u0100;e\u171a\u171b\u623dq;\u62cd\u0176\u1722\u1726ee;\u62bded\u0100;g\u172c\u172d\u6305e\xbb\u172drk\u0100;t\u135c\u1737brk;\u63b6\u0100oy\u1701\u1741;\u4431quo;\u601e\u0280cmprt\u1753\u175b\u1761\u1764\u1768aus\u0100;e\u010a\u0109ptyv;\u69b0s\xe9\u170cno\xf5\u0113\u0180ahw\u176f\u1771\u1773;\u43b2;\u6136een;\u626cr;\uc000\ud835\udd1fg\u0380costuvw\u178d\u179d\u17b3\u17c1\u17d5\u17db\u17de\u0180aiu\u1794\u1796\u179a\xf0\u0760rc;\u65efp\xbb\u1371\u0180dpt\u17a4\u17a8\u17adot;\u6a00lus;\u6a01imes;\u6a02\u0271\u17b9\0\0\u17becup;\u6a06ar;\u6605riangle\u0100du\u17cd\u17d2own;\u65bdp;\u65b3plus;\u6a04e\xe5\u1444\xe5\u14adarow;\u690d\u0180ako\u17ed\u1826\u1835\u0100cn\u17f2\u1823k\u0180lst\u17fa\u05ab\u1802ozenge;\u69ebriangle\u0200;dlr\u1812\u1813\u1818\u181d\u65b4own;\u65beeft;\u65c2ight;\u65b8k;\u6423\u01b1\u182b\0\u1833\u01b2\u182f\0\u1831;\u6592;\u65914;\u6593ck;\u6588\u0100eo\u183e\u184d\u0100;q\u1843\u1846\uc000=\u20e5uiv;\uc000\u2261\u20e5t;\u6310\u0200ptwx\u1859\u185e\u1867\u186cf;\uc000\ud835\udd53\u0100;t\u13cb\u1863om\xbb\u13cctie;\u62c8\u0600DHUVbdhmptuv\u1885\u1896\u18aa\u18bb\u18d7\u18db\u18ec\u18ff\u1905\u190a\u1910\u1921\u0200LRlr\u188e\u1890\u1892\u1894;\u6557;\u6554;\u6556;\u6553\u0280;DUdu\u18a1\u18a2\u18a4\u18a6\u18a8\u6550;\u6566;\u6569;\u6564;\u6567\u0200LRlr\u18b3\u18b5\u18b7\u18b9;\u655d;\u655a;\u655c;\u6559\u0380;HLRhlr\u18ca\u18cb\u18cd\u18cf\u18d1\u18d3\u18d5\u6551;\u656c;\u6563;\u6560;\u656b;\u6562;\u655fox;\u69c9\u0200LRlr\u18e4\u18e6\u18e8\u18ea;\u6555;\u6552;\u6510;\u650c\u0280;DUdu\u06bd\u18f7\u18f9\u18fb\u18fd;\u6565;\u6568;\u652c;\u6534inus;\u629flus;\u629eimes;\u62a0\u0200LRlr\u1919\u191b\u191d\u191f;\u655b;\u6558;\u6518;\u6514\u0380;HLRhlr\u1930\u1931\u1933\u1935\u1937\u1939\u193b\u6502;\u656a;\u6561;\u655e;\u653c;\u6524;\u651c\u0100ev\u0123\u1942bar\u803b\xa6\u40a6\u0200ceio\u1951\u1956\u195a\u1960r;\uc000\ud835\udcb7mi;\u604fm\u0100;e\u171a\u171cl\u0180;bh\u1968\u1969\u196b\u405c;\u69c5sub;\u67c8\u016c\u1974\u197el\u0100;e\u1979\u197a\u6022t\xbb\u197ap\u0180;Ee\u012f\u1985\u1987;\u6aae\u0100;q\u06dc\u06db\u0ce1\u19a7\0\u19e8\u1a11\u1a15\u1a32\0\u1a37\u1a50\0\0\u1ab4\0\0\u1ac1\0\0\u1b21\u1b2e\u1b4d\u1b52\0\u1bfd\0\u1c0c\u0180cpr\u19ad\u19b2\u19ddute;\u4107\u0300;abcds\u19bf\u19c0\u19c4\u19ca\u19d5\u19d9\u6229nd;\u6a44rcup;\u6a49\u0100au\u19cf\u19d2p;\u6a4bp;\u6a47ot;\u6a40;\uc000\u2229\ufe00\u0100eo\u19e2\u19e5t;\u6041\xee\u0693\u0200aeiu\u19f0\u19fb\u1a01\u1a05\u01f0\u19f5\0\u19f8s;\u6a4don;\u410ddil\u803b\xe7\u40e7rc;\u4109ps\u0100;s\u1a0c\u1a0d\u6a4cm;\u6a50ot;\u410b\u0180dmn\u1a1b\u1a20\u1a26il\u80bb\xb8\u01adptyv;\u69b2t\u8100\xa2;e\u1a2d\u1a2e\u40a2r\xe4\u01b2r;\uc000\ud835\udd20\u0180cei\u1a3d\u1a40\u1a4dy;\u4447ck\u0100;m\u1a47\u1a48\u6713ark\xbb\u1a48;\u43c7r\u0380;Ecefms\u1a5f\u1a60\u1a62\u1a6b\u1aa4\u1aaa\u1aae\u65cb;\u69c3\u0180;el\u1a69\u1a6a\u1a6d\u42c6q;\u6257e\u0261\u1a74\0\0\u1a88rrow\u0100lr\u1a7c\u1a81eft;\u61baight;\u61bb\u0280RSacd\u1a92\u1a94\u1a96\u1a9a\u1a9f\xbb\u0f47;\u64c8st;\u629birc;\u629aash;\u629dnint;\u6a10id;\u6aefcir;\u69c2ubs\u0100;u\u1abb\u1abc\u6663it\xbb\u1abc\u02ec\u1ac7\u1ad4\u1afa\0\u1b0aon\u0100;e\u1acd\u1ace\u403a\u0100;q\xc7\xc6\u026d\u1ad9\0\0\u1ae2a\u0100;t\u1ade\u1adf\u402c;\u4040\u0180;fl\u1ae8\u1ae9\u1aeb\u6201\xee\u1160e\u0100mx\u1af1\u1af6ent\xbb\u1ae9e\xf3\u024d\u01e7\u1afe\0\u1b07\u0100;d\u12bb\u1b02ot;\u6a6dn\xf4\u0246\u0180fry\u1b10\u1b14\u1b17;\uc000\ud835\udd54o\xe4\u0254\u8100\xa9;s\u0155\u1b1dr;\u6117\u0100ao\u1b25\u1b29rr;\u61b5ss;\u6717\u0100cu\u1b32\u1b37r;\uc000\ud835\udcb8\u0100bp\u1b3c\u1b44\u0100;e\u1b41\u1b42\u6acf;\u6ad1\u0100;e\u1b49\u1b4a\u6ad0;\u6ad2dot;\u62ef\u0380delprvw\u1b60\u1b6c\u1b77\u1b82\u1bac\u1bd4\u1bf9arr\u0100lr\u1b68\u1b6a;\u6938;\u6935\u0270\u1b72\0\0\u1b75r;\u62dec;\u62dfarr\u0100;p\u1b7f\u1b80\u61b6;\u693d\u0300;bcdos\u1b8f\u1b90\u1b96\u1ba1\u1ba5\u1ba8\u622arcap;\u6a48\u0100au\u1b9b\u1b9ep;\u6a46p;\u6a4aot;\u628dr;\u6a45;\uc000\u222a\ufe00\u0200alrv\u1bb5\u1bbf\u1bde\u1be3rr\u0100;m\u1bbc\u1bbd\u61b7;\u693cy\u0180evw\u1bc7\u1bd4\u1bd8q\u0270\u1bce\0\0\u1bd2re\xe3\u1b73u\xe3\u1b75ee;\u62ceedge;\u62cfen\u803b\xa4\u40a4earrow\u0100lr\u1bee\u1bf3eft\xbb\u1b80ight\xbb\u1bbde\xe4\u1bdd\u0100ci\u1c01\u1c07onin\xf4\u01f7nt;\u6231lcty;\u632d\u0980AHabcdefhijlorstuwz\u1c38\u1c3b\u1c3f\u1c5d\u1c69\u1c75\u1c8a\u1c9e\u1cac\u1cb7\u1cfb\u1cff\u1d0d\u1d7b\u1d91\u1dab\u1dbb\u1dc6\u1dcdr\xf2\u0381ar;\u6965\u0200glrs\u1c48\u1c4d\u1c52\u1c54ger;\u6020eth;\u6138\xf2\u1133h\u0100;v\u1c5a\u1c5b\u6010\xbb\u090a\u016b\u1c61\u1c67arow;\u690fa\xe3\u0315\u0100ay\u1c6e\u1c73ron;\u410f;\u4434\u0180;ao\u0332\u1c7c\u1c84\u0100gr\u02bf\u1c81r;\u61catseq;\u6a77\u0180glm\u1c91\u1c94\u1c98\u803b\xb0\u40b0ta;\u43b4ptyv;\u69b1\u0100ir\u1ca3\u1ca8sht;\u697f;\uc000\ud835\udd21ar\u0100lr\u1cb3\u1cb5\xbb\u08dc\xbb\u101e\u0280aegsv\u1cc2\u0378\u1cd6\u1cdc\u1ce0m\u0180;os\u0326\u1cca\u1cd4nd\u0100;s\u0326\u1cd1uit;\u6666amma;\u43ddin;\u62f2\u0180;io\u1ce7\u1ce8\u1cf8\u40f7de\u8100\xf7;o\u1ce7\u1cf0ntimes;\u62c7n\xf8\u1cf7cy;\u4452c\u026f\u1d06\0\0\u1d0arn;\u631eop;\u630d\u0280lptuw\u1d18\u1d1d\u1d22\u1d49\u1d55lar;\u4024f;\uc000\ud835\udd55\u0280;emps\u030b\u1d2d\u1d37\u1d3d\u1d42q\u0100;d\u0352\u1d33ot;\u6251inus;\u6238lus;\u6214quare;\u62a1blebarwedg\xe5\xfan\u0180adh\u112e\u1d5d\u1d67ownarrow\xf3\u1c83arpoon\u0100lr\u1d72\u1d76ef\xf4\u1cb4igh\xf4\u1cb6\u0162\u1d7f\u1d85karo\xf7\u0f42\u026f\u1d8a\0\0\u1d8ern;\u631fop;\u630c\u0180cot\u1d98\u1da3\u1da6\u0100ry\u1d9d\u1da1;\uc000\ud835\udcb9;\u4455l;\u69f6rok;\u4111\u0100dr\u1db0\u1db4ot;\u62f1i\u0100;f\u1dba\u1816\u65bf\u0100ah\u1dc0\u1dc3r\xf2\u0429a\xf2\u0fa6angle;\u69a6\u0100ci\u1dd2\u1dd5y;\u445fgrarr;\u67ff\u0900Dacdefglmnopqrstux\u1e01\u1e09\u1e19\u1e38\u0578\u1e3c\u1e49\u1e61\u1e7e\u1ea5\u1eaf\u1ebd\u1ee1\u1f2a\u1f37\u1f44\u1f4e\u1f5a\u0100Do\u1e06\u1d34o\xf4\u1c89\u0100cs\u1e0e\u1e14ute\u803b\xe9\u40e9ter;\u6a6e\u0200aioy\u1e22\u1e27\u1e31\u1e36ron;\u411br\u0100;c\u1e2d\u1e2e\u6256\u803b\xea\u40ealon;\u6255;\u444dot;\u4117\u0100Dr\u1e41\u1e45ot;\u6252;\uc000\ud835\udd22\u0180;rs\u1e50\u1e51\u1e57\u6a9aave\u803b\xe8\u40e8\u0100;d\u1e5c\u1e5d\u6a96ot;\u6a98\u0200;ils\u1e6a\u1e6b\u1e72\u1e74\u6a99nters;\u63e7;\u6113\u0100;d\u1e79\u1e7a\u6a95ot;\u6a97\u0180aps\u1e85\u1e89\u1e97cr;\u4113ty\u0180;sv\u1e92\u1e93\u1e95\u6205et\xbb\u1e93p\u01001;\u1e9d\u1ea4\u0133\u1ea1\u1ea3;\u6004;\u6005\u6003\u0100gs\u1eaa\u1eac;\u414bp;\u6002\u0100gp\u1eb4\u1eb8on;\u4119f;\uc000\ud835\udd56\u0180als\u1ec4\u1ece\u1ed2r\u0100;s\u1eca\u1ecb\u62d5l;\u69e3us;\u6a71i\u0180;lv\u1eda\u1edb\u1edf\u43b5on\xbb\u1edb;\u43f5\u0200csuv\u1eea\u1ef3\u1f0b\u1f23\u0100io\u1eef\u1e31rc\xbb\u1e2e\u0269\u1ef9\0\0\u1efb\xed\u0548ant\u0100gl\u1f02\u1f06tr\xbb\u1e5dess\xbb\u1e7a\u0180aei\u1f12\u1f16\u1f1als;\u403dst;\u625fv\u0100;D\u0235\u1f20D;\u6a78parsl;\u69e5\u0100Da\u1f2f\u1f33ot;\u6253rr;\u6971\u0180cdi\u1f3e\u1f41\u1ef8r;\u612fo\xf4\u0352\u0100ah\u1f49\u1f4b;\u43b7\u803b\xf0\u40f0\u0100mr\u1f53\u1f57l\u803b\xeb\u40ebo;\u60ac\u0180cip\u1f61\u1f64\u1f67l;\u4021s\xf4\u056e\u0100eo\u1f6c\u1f74ctatio\xee\u0559nential\xe5\u0579\u09e1\u1f92\0\u1f9e\0\u1fa1\u1fa7\0\0\u1fc6\u1fcc\0\u1fd3\0\u1fe6\u1fea\u2000\0\u2008\u205allingdotse\xf1\u1e44y;\u4444male;\u6640\u0180ilr\u1fad\u1fb3\u1fc1lig;\u8000\ufb03\u0269\u1fb9\0\0\u1fbdg;\u8000\ufb00ig;\u8000\ufb04;\uc000\ud835\udd23lig;\u8000\ufb01lig;\uc000fj\u0180alt\u1fd9\u1fdc\u1fe1t;\u666dig;\u8000\ufb02ns;\u65b1of;\u4192\u01f0\u1fee\0\u1ff3f;\uc000\ud835\udd57\u0100ak\u05bf\u1ff7\u0100;v\u1ffc\u1ffd\u62d4;\u6ad9artint;\u6a0d\u0100ao\u200c\u2055\u0100cs\u2011\u2052\u03b1\u201a\u2030\u2038\u2045\u2048\0\u2050\u03b2\u2022\u2025\u2027\u202a\u202c\0\u202e\u803b\xbd\u40bd;\u6153\u803b\xbc\u40bc;\u6155;\u6159;\u615b\u01b3\u2034\0\u2036;\u6154;\u6156\u02b4\u203e\u2041\0\0\u2043\u803b\xbe\u40be;\u6157;\u615c5;\u6158\u01b6\u204c\0\u204e;\u615a;\u615d8;\u615el;\u6044wn;\u6322cr;\uc000\ud835\udcbb\u0880Eabcdefgijlnorstv\u2082\u2089\u209f\u20a5\u20b0\u20b4\u20f0\u20f5\u20fa\u20ff\u2103\u2112\u2138\u0317\u213e\u2152\u219e\u0100;l\u064d\u2087;\u6a8c\u0180cmp\u2090\u2095\u209dute;\u41f5ma\u0100;d\u209c\u1cda\u43b3;\u6a86reve;\u411f\u0100iy\u20aa\u20aerc;\u411d;\u4433ot;\u4121\u0200;lqs\u063e\u0642\u20bd\u20c9\u0180;qs\u063e\u064c\u20c4lan\xf4\u0665\u0200;cdl\u0665\u20d2\u20d5\u20e5c;\u6aa9ot\u0100;o\u20dc\u20dd\u6a80\u0100;l\u20e2\u20e3\u6a82;\u6a84\u0100;e\u20ea\u20ed\uc000\u22db\ufe00s;\u6a94r;\uc000\ud835\udd24\u0100;g\u0673\u061bmel;\u6137cy;\u4453\u0200;Eaj\u065a\u210c\u210e\u2110;\u6a92;\u6aa5;\u6aa4\u0200Eaes\u211b\u211d\u2129\u2134;\u6269p\u0100;p\u2123\u2124\u6a8arox\xbb\u2124\u0100;q\u212e\u212f\u6a88\u0100;q\u212e\u211bim;\u62e7pf;\uc000\ud835\udd58\u0100ci\u2143\u2146r;\u610am\u0180;el\u066b\u214e\u2150;\u6a8e;\u6a90\u8300>;cdlqr\u05ee\u2160\u216a\u216e\u2173\u2179\u0100ci\u2165\u2167;\u6aa7r;\u6a7aot;\u62d7Par;\u6995uest;\u6a7c\u0280adels\u2184\u216a\u2190\u0656\u219b\u01f0\u2189\0\u218epro\xf8\u209er;\u6978q\u0100lq\u063f\u2196les\xf3\u2088i\xed\u066b\u0100en\u21a3\u21adrtneqq;\uc000\u2269\ufe00\xc5\u21aa\u0500Aabcefkosy\u21c4\u21c7\u21f1\u21f5\u21fa\u2218\u221d\u222f\u2268\u227dr\xf2\u03a0\u0200ilmr\u21d0\u21d4\u21d7\u21dbrs\xf0\u1484f\xbb\u2024il\xf4\u06a9\u0100dr\u21e0\u21e4cy;\u444a\u0180;cw\u08f4\u21eb\u21efir;\u6948;\u61adar;\u610firc;\u4125\u0180alr\u2201\u220e\u2213rts\u0100;u\u2209\u220a\u6665it\xbb\u220alip;\u6026con;\u62b9r;\uc000\ud835\udd25s\u0100ew\u2223\u2229arow;\u6925arow;\u6926\u0280amopr\u223a\u223e\u2243\u225e\u2263rr;\u61fftht;\u623bk\u0100lr\u2249\u2253eftarrow;\u61a9ightarrow;\u61aaf;\uc000\ud835\udd59bar;\u6015\u0180clt\u226f\u2274\u2278r;\uc000\ud835\udcbdas\xe8\u21f4rok;\u4127\u0100bp\u2282\u2287ull;\u6043hen\xbb\u1c5b\u0ae1\u22a3\0\u22aa\0\u22b8\u22c5\u22ce\0\u22d5\u22f3\0\0\u22f8\u2322\u2367\u2362\u237f\0\u2386\u23aa\u23b4cute\u803b\xed\u40ed\u0180;iy\u0771\u22b0\u22b5rc\u803b\xee\u40ee;\u4438\u0100cx\u22bc\u22bfy;\u4435cl\u803b\xa1\u40a1\u0100fr\u039f\u22c9;\uc000\ud835\udd26rave\u803b\xec\u40ec\u0200;ino\u073e\u22dd\u22e9\u22ee\u0100in\u22e2\u22e6nt;\u6a0ct;\u622dfin;\u69dcta;\u6129lig;\u4133\u0180aop\u22fe\u231a\u231d\u0180cgt\u2305\u2308\u2317r;\u412b\u0180elp\u071f\u230f\u2313in\xe5\u078ear\xf4\u0720h;\u4131f;\u62b7ed;\u41b5\u0280;cfot\u04f4\u232c\u2331\u233d\u2341are;\u6105in\u0100;t\u2338\u2339\u621eie;\u69dddo\xf4\u2319\u0280;celp\u0757\u234c\u2350\u235b\u2361al;\u62ba\u0100gr\u2355\u2359er\xf3\u1563\xe3\u234darhk;\u6a17rod;\u6a3c\u0200cgpt\u236f\u2372\u2376\u237by;\u4451on;\u412ff;\uc000\ud835\udd5aa;\u43b9uest\u803b\xbf\u40bf\u0100ci\u238a\u238fr;\uc000\ud835\udcben\u0280;Edsv\u04f4\u239b\u239d\u23a1\u04f3;\u62f9ot;\u62f5\u0100;v\u23a6\u23a7\u62f4;\u62f3\u0100;i\u0777\u23aelde;\u4129\u01eb\u23b8\0\u23bccy;\u4456l\u803b\xef\u40ef\u0300cfmosu\u23cc\u23d7\u23dc\u23e1\u23e7\u23f5\u0100iy\u23d1\u23d5rc;\u4135;\u4439r;\uc000\ud835\udd27ath;\u4237pf;\uc000\ud835\udd5b\u01e3\u23ec\0\u23f1r;\uc000\ud835\udcbfrcy;\u4458kcy;\u4454\u0400acfghjos\u240b\u2416\u2422\u2427\u242d\u2431\u2435\u243bppa\u0100;v\u2413\u2414\u43ba;\u43f0\u0100ey\u241b\u2420dil;\u4137;\u443ar;\uc000\ud835\udd28reen;\u4138cy;\u4445cy;\u445cpf;\uc000\ud835\udd5ccr;\uc000\ud835\udcc0\u0b80ABEHabcdefghjlmnoprstuv\u2470\u2481\u2486\u248d\u2491\u250e\u253d\u255a\u2580\u264e\u265e\u2665\u2679\u267d\u269a\u26b2\u26d8\u275d\u2768\u278b\u27c0\u2801\u2812\u0180art\u2477\u247a\u247cr\xf2\u09c6\xf2\u0395ail;\u691barr;\u690e\u0100;g\u0994\u248b;\u6a8bar;\u6962\u0963\u24a5\0\u24aa\0\u24b1\0\0\0\0\0\u24b5\u24ba\0\u24c6\u24c8\u24cd\0\u24f9ute;\u413amptyv;\u69b4ra\xee\u084cbda;\u43bbg\u0180;dl\u088e\u24c1\u24c3;\u6991\xe5\u088e;\u6a85uo\u803b\xab\u40abr\u0400;bfhlpst\u0899\u24de\u24e6\u24e9\u24eb\u24ee\u24f1\u24f5\u0100;f\u089d\u24e3s;\u691fs;\u691d\xeb\u2252p;\u61abl;\u6939im;\u6973l;\u61a2\u0180;ae\u24ff\u2500\u2504\u6aabil;\u6919\u0100;s\u2509\u250a\u6aad;\uc000\u2aad\ufe00\u0180abr\u2515\u2519\u251drr;\u690crk;\u6772\u0100ak\u2522\u252cc\u0100ek\u2528\u252a;\u407b;\u405b\u0100es\u2531\u2533;\u698bl\u0100du\u2539\u253b;\u698f;\u698d\u0200aeuy\u2546\u254b\u2556\u2558ron;\u413e\u0100di\u2550\u2554il;\u413c\xec\u08b0\xe2\u2529;\u443b\u0200cqrs\u2563\u2566\u256d\u257da;\u6936uo\u0100;r\u0e19\u1746\u0100du\u2572\u2577har;\u6967shar;\u694bh;\u61b2\u0280;fgqs\u258b\u258c\u0989\u25f3\u25ff\u6264t\u0280ahlrt\u2598\u25a4\u25b7\u25c2\u25e8rrow\u0100;t\u0899\u25a1a\xe9\u24f6arpoon\u0100du\u25af\u25b4own\xbb\u045ap\xbb\u0966eftarrows;\u61c7ight\u0180ahs\u25cd\u25d6\u25derrow\u0100;s\u08f4\u08a7arpoon\xf3\u0f98quigarro\xf7\u21f0hreetimes;\u62cb\u0180;qs\u258b\u0993\u25falan\xf4\u09ac\u0280;cdgs\u09ac\u260a\u260d\u261d\u2628c;\u6aa8ot\u0100;o\u2614\u2615\u6a7f\u0100;r\u261a\u261b\u6a81;\u6a83\u0100;e\u2622\u2625\uc000\u22da\ufe00s;\u6a93\u0280adegs\u2633\u2639\u263d\u2649\u264bppro\xf8\u24c6ot;\u62d6q\u0100gq\u2643\u2645\xf4\u0989gt\xf2\u248c\xf4\u099bi\xed\u09b2\u0180ilr\u2655\u08e1\u265asht;\u697c;\uc000\ud835\udd29\u0100;E\u099c\u2663;\u6a91\u0161\u2669\u2676r\u0100du\u25b2\u266e\u0100;l\u0965\u2673;\u696alk;\u6584cy;\u4459\u0280;acht\u0a48\u2688\u268b\u2691\u2696r\xf2\u25c1orne\xf2\u1d08ard;\u696bri;\u65fa\u0100io\u269f\u26a4dot;\u4140ust\u0100;a\u26ac\u26ad\u63b0che\xbb\u26ad\u0200Eaes\u26bb\u26bd\u26c9\u26d4;\u6268p\u0100;p\u26c3\u26c4\u6a89rox\xbb\u26c4\u0100;q\u26ce\u26cf\u6a87\u0100;q\u26ce\u26bbim;\u62e6\u0400abnoptwz\u26e9\u26f4\u26f7\u271a\u272f\u2741\u2747\u2750\u0100nr\u26ee\u26f1g;\u67ecr;\u61fdr\xeb\u08c1g\u0180lmr\u26ff\u270d\u2714eft\u0100ar\u09e6\u2707ight\xe1\u09f2apsto;\u67fcight\xe1\u09fdparrow\u0100lr\u2725\u2729ef\xf4\u24edight;\u61ac\u0180afl\u2736\u2739\u273dr;\u6985;\uc000\ud835\udd5dus;\u6a2dimes;\u6a34\u0161\u274b\u274fst;\u6217\xe1\u134e\u0180;ef\u2757\u2758\u1800\u65cange\xbb\u2758ar\u0100;l\u2764\u2765\u4028t;\u6993\u0280achmt\u2773\u2776\u277c\u2785\u2787r\xf2\u08a8orne\xf2\u1d8car\u0100;d\u0f98\u2783;\u696d;\u600eri;\u62bf\u0300achiqt\u2798\u279d\u0a40\u27a2\u27ae\u27bbquo;\u6039r;\uc000\ud835\udcc1m\u0180;eg\u09b2\u27aa\u27ac;\u6a8d;\u6a8f\u0100bu\u252a\u27b3o\u0100;r\u0e1f\u27b9;\u601arok;\u4142\u8400<;cdhilqr\u082b\u27d2\u2639\u27dc\u27e0\u27e5\u27ea\u27f0\u0100ci\u27d7\u27d9;\u6aa6r;\u6a79re\xe5\u25f2mes;\u62c9arr;\u6976uest;\u6a7b\u0100Pi\u27f5\u27f9ar;\u6996\u0180;ef\u2800\u092d\u181b\u65c3r\u0100du\u2807\u280dshar;\u694ahar;\u6966\u0100en\u2817\u2821rtneqq;\uc000\u2268\ufe00\xc5\u281e\u0700Dacdefhilnopsu\u2840\u2845\u2882\u288e\u2893\u28a0\u28a5\u28a8\u28da\u28e2\u28e4\u0a83\u28f3\u2902Dot;\u623a\u0200clpr\u284e\u2852\u2863\u287dr\u803b\xaf\u40af\u0100et\u2857\u2859;\u6642\u0100;e\u285e\u285f\u6720se\xbb\u285f\u0100;s\u103b\u2868to\u0200;dlu\u103b\u2873\u2877\u287bow\xee\u048cef\xf4\u090f\xf0\u13d1ker;\u65ae\u0100oy\u2887\u288cmma;\u6a29;\u443cash;\u6014asuredangle\xbb\u1626r;\uc000\ud835\udd2ao;\u6127\u0180cdn\u28af\u28b4\u28c9ro\u803b\xb5\u40b5\u0200;acd\u1464\u28bd\u28c0\u28c4s\xf4\u16a7ir;\u6af0ot\u80bb\xb7\u01b5us\u0180;bd\u28d2\u1903\u28d3\u6212\u0100;u\u1d3c\u28d8;\u6a2a\u0163\u28de\u28e1p;\u6adb\xf2\u2212\xf0\u0a81\u0100dp\u28e9\u28eeels;\u62a7f;\uc000\ud835\udd5e\u0100ct\u28f8\u28fdr;\uc000\ud835\udcc2pos\xbb\u159d\u0180;lm\u2909\u290a\u290d\u43bctimap;\u62b8\u0c00GLRVabcdefghijlmoprstuvw\u2942\u2953\u297e\u2989\u2998\u29da\u29e9\u2a15\u2a1a\u2a58\u2a5d\u2a83\u2a95\u2aa4\u2aa8\u2b04\u2b07\u2b44\u2b7f\u2bae\u2c34\u2c67\u2c7c\u2ce9\u0100gt\u2947\u294b;\uc000\u22d9\u0338\u0100;v\u2950\u0bcf\uc000\u226b\u20d2\u0180elt\u295a\u2972\u2976ft\u0100ar\u2961\u2967rrow;\u61cdightarrow;\u61ce;\uc000\u22d8\u0338\u0100;v\u297b\u0c47\uc000\u226a\u20d2ightarrow;\u61cf\u0100Dd\u298e\u2993ash;\u62afash;\u62ae\u0280bcnpt\u29a3\u29a7\u29ac\u29b1\u29ccla\xbb\u02deute;\u4144g;\uc000\u2220\u20d2\u0280;Eiop\u0d84\u29bc\u29c0\u29c5\u29c8;\uc000\u2a70\u0338d;\uc000\u224b\u0338s;\u4149ro\xf8\u0d84ur\u0100;a\u29d3\u29d4\u666el\u0100;s\u29d3\u0b38\u01f3\u29df\0\u29e3p\u80bb\xa0\u0b37mp\u0100;e\u0bf9\u0c00\u0280aeouy\u29f4\u29fe\u2a03\u2a10\u2a13\u01f0\u29f9\0\u29fb;\u6a43on;\u4148dil;\u4146ng\u0100;d\u0d7e\u2a0aot;\uc000\u2a6d\u0338p;\u6a42;\u443dash;\u6013\u0380;Aadqsx\u0b92\u2a29\u2a2d\u2a3b\u2a41\u2a45\u2a50rr;\u61d7r\u0100hr\u2a33\u2a36k;\u6924\u0100;o\u13f2\u13f0ot;\uc000\u2250\u0338ui\xf6\u0b63\u0100ei\u2a4a\u2a4ear;\u6928\xed\u0b98ist\u0100;s\u0ba0\u0b9fr;\uc000\ud835\udd2b\u0200Eest\u0bc5\u2a66\u2a79\u2a7c\u0180;qs\u0bbc\u2a6d\u0be1\u0180;qs\u0bbc\u0bc5\u2a74lan\xf4\u0be2i\xed\u0bea\u0100;r\u0bb6\u2a81\xbb\u0bb7\u0180Aap\u2a8a\u2a8d\u2a91r\xf2\u2971rr;\u61aear;\u6af2\u0180;sv\u0f8d\u2a9c\u0f8c\u0100;d\u2aa1\u2aa2\u62fc;\u62facy;\u445a\u0380AEadest\u2ab7\u2aba\u2abe\u2ac2\u2ac5\u2af6\u2af9r\xf2\u2966;\uc000\u2266\u0338rr;\u619ar;\u6025\u0200;fqs\u0c3b\u2ace\u2ae3\u2aeft\u0100ar\u2ad4\u2ad9rro\xf7\u2ac1ightarro\xf7\u2a90\u0180;qs\u0c3b\u2aba\u2aealan\xf4\u0c55\u0100;s\u0c55\u2af4\xbb\u0c36i\xed\u0c5d\u0100;r\u0c35\u2afei\u0100;e\u0c1a\u0c25i\xe4\u0d90\u0100pt\u2b0c\u2b11f;\uc000\ud835\udd5f\u8180\xac;in\u2b19\u2b1a\u2b36\u40acn\u0200;Edv\u0b89\u2b24\u2b28\u2b2e;\uc000\u22f9\u0338ot;\uc000\u22f5\u0338\u01e1\u0b89\u2b33\u2b35;\u62f7;\u62f6i\u0100;v\u0cb8\u2b3c\u01e1\u0cb8\u2b41\u2b43;\u62fe;\u62fd\u0180aor\u2b4b\u2b63\u2b69r\u0200;ast\u0b7b\u2b55\u2b5a\u2b5flle\xec\u0b7bl;\uc000\u2afd\u20e5;\uc000\u2202\u0338lint;\u6a14\u0180;ce\u0c92\u2b70\u2b73u\xe5\u0ca5\u0100;c\u0c98\u2b78\u0100;e\u0c92\u2b7d\xf1\u0c98\u0200Aait\u2b88\u2b8b\u2b9d\u2ba7r\xf2\u2988rr\u0180;cw\u2b94\u2b95\u2b99\u619b;\uc000\u2933\u0338;\uc000\u219d\u0338ghtarrow\xbb\u2b95ri\u0100;e\u0ccb\u0cd6\u0380chimpqu\u2bbd\u2bcd\u2bd9\u2b04\u0b78\u2be4\u2bef\u0200;cer\u0d32\u2bc6\u0d37\u2bc9u\xe5\u0d45;\uc000\ud835\udcc3ort\u026d\u2b05\0\0\u2bd6ar\xe1\u2b56m\u0100;e\u0d6e\u2bdf\u0100;q\u0d74\u0d73su\u0100bp\u2beb\u2bed\xe5\u0cf8\xe5\u0d0b\u0180bcp\u2bf6\u2c11\u2c19\u0200;Ees\u2bff\u2c00\u0d22\u2c04\u6284;\uc000\u2ac5\u0338et\u0100;e\u0d1b\u2c0bq\u0100;q\u0d23\u2c00c\u0100;e\u0d32\u2c17\xf1\u0d38\u0200;Ees\u2c22\u2c23\u0d5f\u2c27\u6285;\uc000\u2ac6\u0338et\u0100;e\u0d58\u2c2eq\u0100;q\u0d60\u2c23\u0200gilr\u2c3d\u2c3f\u2c45\u2c47\xec\u0bd7lde\u803b\xf1\u40f1\xe7\u0c43iangle\u0100lr\u2c52\u2c5ceft\u0100;e\u0c1a\u2c5a\xf1\u0c26ight\u0100;e\u0ccb\u2c65\xf1\u0cd7\u0100;m\u2c6c\u2c6d\u43bd\u0180;es\u2c74\u2c75\u2c79\u4023ro;\u6116p;\u6007\u0480DHadgilrs\u2c8f\u2c94\u2c99\u2c9e\u2ca3\u2cb0\u2cb6\u2cd3\u2ce3ash;\u62adarr;\u6904p;\uc000\u224d\u20d2ash;\u62ac\u0100et\u2ca8\u2cac;\uc000\u2265\u20d2;\uc000>\u20d2nfin;\u69de\u0180Aet\u2cbd\u2cc1\u2cc5rr;\u6902;\uc000\u2264\u20d2\u0100;r\u2cca\u2ccd\uc000<\u20d2ie;\uc000\u22b4\u20d2\u0100At\u2cd8\u2cdcrr;\u6903rie;\uc000\u22b5\u20d2im;\uc000\u223c\u20d2\u0180Aan\u2cf0\u2cf4\u2d02rr;\u61d6r\u0100hr\u2cfa\u2cfdk;\u6923\u0100;o\u13e7\u13e5ear;\u6927\u1253\u1a95\0\0\0\0\0\0\0\0\0\0\0\0\0\u2d2d\0\u2d38\u2d48\u2d60\u2d65\u2d72\u2d84\u1b07\0\0\u2d8d\u2dab\0\u2dc8\u2dce\0\u2ddc\u2e19\u2e2b\u2e3e\u2e43\u0100cs\u2d31\u1a97ute\u803b\xf3\u40f3\u0100iy\u2d3c\u2d45r\u0100;c\u1a9e\u2d42\u803b\xf4\u40f4;\u443e\u0280abios\u1aa0\u2d52\u2d57\u01c8\u2d5alac;\u4151v;\u6a38old;\u69bclig;\u4153\u0100cr\u2d69\u2d6dir;\u69bf;\uc000\ud835\udd2c\u036f\u2d79\0\0\u2d7c\0\u2d82n;\u42dbave\u803b\xf2\u40f2;\u69c1\u0100bm\u2d88\u0df4ar;\u69b5\u0200acit\u2d95\u2d98\u2da5\u2da8r\xf2\u1a80\u0100ir\u2d9d\u2da0r;\u69beoss;\u69bbn\xe5\u0e52;\u69c0\u0180aei\u2db1\u2db5\u2db9cr;\u414dga;\u43c9\u0180cdn\u2dc0\u2dc5\u01cdron;\u43bf;\u69b6pf;\uc000\ud835\udd60\u0180ael\u2dd4\u2dd7\u01d2r;\u69b7rp;\u69b9\u0380;adiosv\u2dea\u2deb\u2dee\u2e08\u2e0d\u2e10\u2e16\u6228r\xf2\u1a86\u0200;efm\u2df7\u2df8\u2e02\u2e05\u6a5dr\u0100;o\u2dfe\u2dff\u6134f\xbb\u2dff\u803b\xaa\u40aa\u803b\xba\u40bagof;\u62b6r;\u6a56lope;\u6a57;\u6a5b\u0180clo\u2e1f\u2e21\u2e27\xf2\u2e01ash\u803b\xf8\u40f8l;\u6298i\u016c\u2e2f\u2e34de\u803b\xf5\u40f5es\u0100;a\u01db\u2e3as;\u6a36ml\u803b\xf6\u40f6bar;\u633d\u0ae1\u2e5e\0\u2e7d\0\u2e80\u2e9d\0\u2ea2\u2eb9\0\0\u2ecb\u0e9c\0\u2f13\0\0\u2f2b\u2fbc\0\u2fc8r\u0200;ast\u0403\u2e67\u2e72\u0e85\u8100\xb6;l\u2e6d\u2e6e\u40b6le\xec\u0403\u0269\u2e78\0\0\u2e7bm;\u6af3;\u6afdy;\u443fr\u0280cimpt\u2e8b\u2e8f\u2e93\u1865\u2e97nt;\u4025od;\u402eil;\u6030enk;\u6031r;\uc000\ud835\udd2d\u0180imo\u2ea8\u2eb0\u2eb4\u0100;v\u2ead\u2eae\u43c6;\u43d5ma\xf4\u0a76ne;\u660e\u0180;tv\u2ebf\u2ec0\u2ec8\u43c0chfork\xbb\u1ffd;\u43d6\u0100au\u2ecf\u2edfn\u0100ck\u2ed5\u2eddk\u0100;h\u21f4\u2edb;\u610e\xf6\u21f4s\u0480;abcdemst\u2ef3\u2ef4\u1908\u2ef9\u2efd\u2f04\u2f06\u2f0a\u2f0e\u402bcir;\u6a23ir;\u6a22\u0100ou\u1d40\u2f02;\u6a25;\u6a72n\u80bb\xb1\u0e9dim;\u6a26wo;\u6a27\u0180ipu\u2f19\u2f20\u2f25ntint;\u6a15f;\uc000\ud835\udd61nd\u803b\xa3\u40a3\u0500;Eaceinosu\u0ec8\u2f3f\u2f41\u2f44\u2f47\u2f81\u2f89\u2f92\u2f7e\u2fb6;\u6ab3p;\u6ab7u\xe5\u0ed9\u0100;c\u0ece\u2f4c\u0300;acens\u0ec8\u2f59\u2f5f\u2f66\u2f68\u2f7eppro\xf8\u2f43urlye\xf1\u0ed9\xf1\u0ece\u0180aes\u2f6f\u2f76\u2f7approx;\u6ab9qq;\u6ab5im;\u62e8i\xed\u0edfme\u0100;s\u2f88\u0eae\u6032\u0180Eas\u2f78\u2f90\u2f7a\xf0\u2f75\u0180dfp\u0eec\u2f99\u2faf\u0180als\u2fa0\u2fa5\u2faalar;\u632eine;\u6312urf;\u6313\u0100;t\u0efb\u2fb4\xef\u0efbrel;\u62b0\u0100ci\u2fc0\u2fc5r;\uc000\ud835\udcc5;\u43c8ncsp;\u6008\u0300fiopsu\u2fda\u22e2\u2fdf\u2fe5\u2feb\u2ff1r;\uc000\ud835\udd2epf;\uc000\ud835\udd62rime;\u6057cr;\uc000\ud835\udcc6\u0180aeo\u2ff8\u3009\u3013t\u0100ei\u2ffe\u3005rnion\xf3\u06b0nt;\u6a16st\u0100;e\u3010\u3011\u403f\xf1\u1f19\xf4\u0f14\u0a80ABHabcdefhilmnoprstux\u3040\u3051\u3055\u3059\u30e0\u310e\u312b\u3147\u3162\u3172\u318e\u3206\u3215\u3224\u3229\u3258\u326e\u3272\u3290\u32b0\u32b7\u0180art\u3047\u304a\u304cr\xf2\u10b3\xf2\u03ddail;\u691car\xf2\u1c65ar;\u6964\u0380cdenqrt\u3068\u3075\u3078\u307f\u308f\u3094\u30cc\u0100eu\u306d\u3071;\uc000\u223d\u0331te;\u4155i\xe3\u116emptyv;\u69b3g\u0200;del\u0fd1\u3089\u308b\u308d;\u6992;\u69a5\xe5\u0fd1uo\u803b\xbb\u40bbr\u0580;abcfhlpstw\u0fdc\u30ac\u30af\u30b7\u30b9\u30bc\u30be\u30c0\u30c3\u30c7\u30cap;\u6975\u0100;f\u0fe0\u30b4s;\u6920;\u6933s;\u691e\xeb\u225d\xf0\u272el;\u6945im;\u6974l;\u61a3;\u619d\u0100ai\u30d1\u30d5il;\u691ao\u0100;n\u30db\u30dc\u6236al\xf3\u0f1e\u0180abr\u30e7\u30ea\u30eer\xf2\u17e5rk;\u6773\u0100ak\u30f3\u30fdc\u0100ek\u30f9\u30fb;\u407d;\u405d\u0100es\u3102\u3104;\u698cl\u0100du\u310a\u310c;\u698e;\u6990\u0200aeuy\u3117\u311c\u3127\u3129ron;\u4159\u0100di\u3121\u3125il;\u4157\xec\u0ff2\xe2\u30fa;\u4440\u0200clqs\u3134\u3137\u313d\u3144a;\u6937dhar;\u6969uo\u0100;r\u020e\u020dh;\u61b3\u0180acg\u314e\u315f\u0f44l\u0200;ips\u0f78\u3158\u315b\u109cn\xe5\u10bbar\xf4\u0fa9t;\u65ad\u0180ilr\u3169\u1023\u316esht;\u697d;\uc000\ud835\udd2f\u0100ao\u3177\u3186r\u0100du\u317d\u317f\xbb\u047b\u0100;l\u1091\u3184;\u696c\u0100;v\u318b\u318c\u43c1;\u43f1\u0180gns\u3195\u31f9\u31fcht\u0300ahlrst\u31a4\u31b0\u31c2\u31d8\u31e4\u31eerrow\u0100;t\u0fdc\u31ada\xe9\u30c8arpoon\u0100du\u31bb\u31bfow\xee\u317ep\xbb\u1092eft\u0100ah\u31ca\u31d0rrow\xf3\u0feaarpoon\xf3\u0551ightarrows;\u61c9quigarro\xf7\u30cbhreetimes;\u62ccg;\u42daingdotse\xf1\u1f32\u0180ahm\u320d\u3210\u3213r\xf2\u0feaa\xf2\u0551;\u600foust\u0100;a\u321e\u321f\u63b1che\xbb\u321fmid;\u6aee\u0200abpt\u3232\u323d\u3240\u3252\u0100nr\u3237\u323ag;\u67edr;\u61fer\xeb\u1003\u0180afl\u3247\u324a\u324er;\u6986;\uc000\ud835\udd63us;\u6a2eimes;\u6a35\u0100ap\u325d\u3267r\u0100;g\u3263\u3264\u4029t;\u6994olint;\u6a12ar\xf2\u31e3\u0200achq\u327b\u3280\u10bc\u3285quo;\u603ar;\uc000\ud835\udcc7\u0100bu\u30fb\u328ao\u0100;r\u0214\u0213\u0180hir\u3297\u329b\u32a0re\xe5\u31f8mes;\u62cai\u0200;efl\u32aa\u1059\u1821\u32ab\u65b9tri;\u69celuhar;\u6968;\u611e\u0d61\u32d5\u32db\u32df\u332c\u3338\u3371\0\u337a\u33a4\0\0\u33ec\u33f0\0\u3428\u3448\u345a\u34ad\u34b1\u34ca\u34f1\0\u3616\0\0\u3633cute;\u415bqu\xef\u27ba\u0500;Eaceinpsy\u11ed\u32f3\u32f5\u32ff\u3302\u330b\u330f\u331f\u3326\u3329;\u6ab4\u01f0\u32fa\0\u32fc;\u6ab8on;\u4161u\xe5\u11fe\u0100;d\u11f3\u3307il;\u415frc;\u415d\u0180Eas\u3316\u3318\u331b;\u6ab6p;\u6abaim;\u62e9olint;\u6a13i\xed\u1204;\u4441ot\u0180;be\u3334\u1d47\u3335\u62c5;\u6a66\u0380Aacmstx\u3346\u334a\u3357\u335b\u335e\u3363\u336drr;\u61d8r\u0100hr\u3350\u3352\xeb\u2228\u0100;o\u0a36\u0a34t\u803b\xa7\u40a7i;\u403bwar;\u6929m\u0100in\u3369\xf0nu\xf3\xf1t;\u6736r\u0100;o\u3376\u2055\uc000\ud835\udd30\u0200acoy\u3382\u3386\u3391\u33a0rp;\u666f\u0100hy\u338b\u338fcy;\u4449;\u4448rt\u026d\u3399\0\0\u339ci\xe4\u1464ara\xec\u2e6f\u803b\xad\u40ad\u0100gm\u33a8\u33b4ma\u0180;fv\u33b1\u33b2\u33b2\u43c3;\u43c2\u0400;deglnpr\u12ab\u33c5\u33c9\u33ce\u33d6\u33de\u33e1\u33e6ot;\u6a6a\u0100;q\u12b1\u12b0\u0100;E\u33d3\u33d4\u6a9e;\u6aa0\u0100;E\u33db\u33dc\u6a9d;\u6a9fe;\u6246lus;\u6a24arr;\u6972ar\xf2\u113d\u0200aeit\u33f8\u3408\u340f\u3417\u0100ls\u33fd\u3404lsetm\xe9\u336ahp;\u6a33parsl;\u69e4\u0100dl\u1463\u3414e;\u6323\u0100;e\u341c\u341d\u6aaa\u0100;s\u3422\u3423\u6aac;\uc000\u2aac\ufe00\u0180flp\u342e\u3433\u3442tcy;\u444c\u0100;b\u3438\u3439\u402f\u0100;a\u343e\u343f\u69c4r;\u633ff;\uc000\ud835\udd64a\u0100dr\u344d\u0402es\u0100;u\u3454\u3455\u6660it\xbb\u3455\u0180csu\u3460\u3479\u349f\u0100au\u3465\u346fp\u0100;s\u1188\u346b;\uc000\u2293\ufe00p\u0100;s\u11b4\u3475;\uc000\u2294\ufe00u\u0100bp\u347f\u348f\u0180;es\u1197\u119c\u3486et\u0100;e\u1197\u348d\xf1\u119d\u0180;es\u11a8\u11ad\u3496et\u0100;e\u11a8\u349d\xf1\u11ae\u0180;af\u117b\u34a6\u05b0r\u0165\u34ab\u05b1\xbb\u117car\xf2\u1148\u0200cemt\u34b9\u34be\u34c2\u34c5r;\uc000\ud835\udcc8tm\xee\xf1i\xec\u3415ar\xe6\u11be\u0100ar\u34ce\u34d5r\u0100;f\u34d4\u17bf\u6606\u0100an\u34da\u34edight\u0100ep\u34e3\u34eapsilo\xee\u1ee0h\xe9\u2eafs\xbb\u2852\u0280bcmnp\u34fb\u355e\u1209\u358b\u358e\u0480;Edemnprs\u350e\u350f\u3511\u3515\u351e\u3523\u352c\u3531\u3536\u6282;\u6ac5ot;\u6abd\u0100;d\u11da\u351aot;\u6ac3ult;\u6ac1\u0100Ee\u3528\u352a;\u6acb;\u628alus;\u6abfarr;\u6979\u0180eiu\u353d\u3552\u3555t\u0180;en\u350e\u3545\u354bq\u0100;q\u11da\u350feq\u0100;q\u352b\u3528m;\u6ac7\u0100bp\u355a\u355c;\u6ad5;\u6ad3c\u0300;acens\u11ed\u356c\u3572\u3579\u357b\u3326ppro\xf8\u32faurlye\xf1\u11fe\xf1\u11f3\u0180aes\u3582\u3588\u331bppro\xf8\u331aq\xf1\u3317g;\u666a\u0680123;Edehlmnps\u35a9\u35ac\u35af\u121c\u35b2\u35b4\u35c0\u35c9\u35d5\u35da\u35df\u35e8\u35ed\u803b\xb9\u40b9\u803b\xb2\u40b2\u803b\xb3\u40b3;\u6ac6\u0100os\u35b9\u35bct;\u6abeub;\u6ad8\u0100;d\u1222\u35c5ot;\u6ac4s\u0100ou\u35cf\u35d2l;\u67c9b;\u6ad7arr;\u697bult;\u6ac2\u0100Ee\u35e4\u35e6;\u6acc;\u628blus;\u6ac0\u0180eiu\u35f4\u3609\u360ct\u0180;en\u121c\u35fc\u3602q\u0100;q\u1222\u35b2eq\u0100;q\u35e7\u35e4m;\u6ac8\u0100bp\u3611\u3613;\u6ad4;\u6ad6\u0180Aan\u361c\u3620\u362drr;\u61d9r\u0100hr\u3626\u3628\xeb\u222e\u0100;o\u0a2b\u0a29war;\u692alig\u803b\xdf\u40df\u0be1\u3651\u365d\u3660\u12ce\u3673\u3679\0\u367e\u36c2\0\0\0\0\0\u36db\u3703\0\u3709\u376c\0\0\0\u3787\u0272\u3656\0\0\u365bget;\u6316;\u43c4r\xeb\u0e5f\u0180aey\u3666\u366b\u3670ron;\u4165dil;\u4163;\u4442lrec;\u6315r;\uc000\ud835\udd31\u0200eiko\u3686\u369d\u36b5\u36bc\u01f2\u368b\0\u3691e\u01004f\u1284\u1281a\u0180;sv\u3698\u3699\u369b\u43b8ym;\u43d1\u0100cn\u36a2\u36b2k\u0100as\u36a8\u36aeppro\xf8\u12c1im\xbb\u12acs\xf0\u129e\u0100as\u36ba\u36ae\xf0\u12c1rn\u803b\xfe\u40fe\u01ec\u031f\u36c6\u22e7es\u8180\xd7;bd\u36cf\u36d0\u36d8\u40d7\u0100;a\u190f\u36d5r;\u6a31;\u6a30\u0180eps\u36e1\u36e3\u3700\xe1\u2a4d\u0200;bcf\u0486\u36ec\u36f0\u36f4ot;\u6336ir;\u6af1\u0100;o\u36f9\u36fc\uc000\ud835\udd65rk;\u6ada\xe1\u3362rime;\u6034\u0180aip\u370f\u3712\u3764d\xe5\u1248\u0380adempst\u3721\u374d\u3740\u3751\u3757\u375c\u375fngle\u0280;dlqr\u3730\u3731\u3736\u3740\u3742\u65b5own\xbb\u1dbbeft\u0100;e\u2800\u373e\xf1\u092e;\u625cight\u0100;e\u32aa\u374b\xf1\u105aot;\u65ecinus;\u6a3alus;\u6a39b;\u69cdime;\u6a3bezium;\u63e2\u0180cht\u3772\u377d\u3781\u0100ry\u3777\u377b;\uc000\ud835\udcc9;\u4446cy;\u445brok;\u4167\u0100io\u378b\u378ex\xf4\u1777head\u0100lr\u3797\u37a0eftarro\xf7\u084fightarrow\xbb\u0f5d\u0900AHabcdfghlmoprstuw\u37d0\u37d3\u37d7\u37e4\u37f0\u37fc\u380e\u381c\u3823\u3834\u3851\u385d\u386b\u38a9\u38cc\u38d2\u38ea\u38f6r\xf2\u03edar;\u6963\u0100cr\u37dc\u37e2ute\u803b\xfa\u40fa\xf2\u1150r\u01e3\u37ea\0\u37edy;\u445eve;\u416d\u0100iy\u37f5\u37farc\u803b\xfb\u40fb;\u4443\u0180abh\u3803\u3806\u380br\xf2\u13adlac;\u4171a\xf2\u13c3\u0100ir\u3813\u3818sht;\u697e;\uc000\ud835\udd32rave\u803b\xf9\u40f9\u0161\u3827\u3831r\u0100lr\u382c\u382e\xbb\u0957\xbb\u1083lk;\u6580\u0100ct\u3839\u384d\u026f\u383f\0\0\u384arn\u0100;e\u3845\u3846\u631cr\xbb\u3846op;\u630fri;\u65f8\u0100al\u3856\u385acr;\u416b\u80bb\xa8\u0349\u0100gp\u3862\u3866on;\u4173f;\uc000\ud835\udd66\u0300adhlsu\u114b\u3878\u387d\u1372\u3891\u38a0own\xe1\u13b3arpoon\u0100lr\u3888\u388cef\xf4\u382digh\xf4\u382fi\u0180;hl\u3899\u389a\u389c\u43c5\xbb\u13faon\xbb\u389aparrows;\u61c8\u0180cit\u38b0\u38c4\u38c8\u026f\u38b6\0\0\u38c1rn\u0100;e\u38bc\u38bd\u631dr\xbb\u38bdop;\u630eng;\u416fri;\u65f9cr;\uc000\ud835\udcca\u0180dir\u38d9\u38dd\u38e2ot;\u62f0lde;\u4169i\u0100;f\u3730\u38e8\xbb\u1813\u0100am\u38ef\u38f2r\xf2\u38a8l\u803b\xfc\u40fcangle;\u69a7\u0780ABDacdeflnoprsz\u391c\u391f\u3929\u392d\u39b5\u39b8\u39bd\u39df\u39e4\u39e8\u39f3\u39f9\u39fd\u3a01\u3a20r\xf2\u03f7ar\u0100;v\u3926\u3927\u6ae8;\u6ae9as\xe8\u03e1\u0100nr\u3932\u3937grt;\u699c\u0380eknprst\u34e3\u3946\u394b\u3952\u395d\u3964\u3996app\xe1\u2415othin\xe7\u1e96\u0180hir\u34eb\u2ec8\u3959op\xf4\u2fb5\u0100;h\u13b7\u3962\xef\u318d\u0100iu\u3969\u396dgm\xe1\u33b3\u0100bp\u3972\u3984setneq\u0100;q\u397d\u3980\uc000\u228a\ufe00;\uc000\u2acb\ufe00setneq\u0100;q\u398f\u3992\uc000\u228b\ufe00;\uc000\u2acc\ufe00\u0100hr\u399b\u399fet\xe1\u369ciangle\u0100lr\u39aa\u39afeft\xbb\u0925ight\xbb\u1051y;\u4432ash\xbb\u1036\u0180elr\u39c4\u39d2\u39d7\u0180;be\u2dea\u39cb\u39cfar;\u62bbq;\u625alip;\u62ee\u0100bt\u39dc\u1468a\xf2\u1469r;\uc000\ud835\udd33tr\xe9\u39aesu\u0100bp\u39ef\u39f1\xbb\u0d1c\xbb\u0d59pf;\uc000\ud835\udd67ro\xf0\u0efbtr\xe9\u39b4\u0100cu\u3a06\u3a0br;\uc000\ud835\udccb\u0100bp\u3a10\u3a18n\u0100Ee\u3980\u3a16\xbb\u397en\u0100Ee\u3992\u3a1e\xbb\u3990igzag;\u699a\u0380cefoprs\u3a36\u3a3b\u3a56\u3a5b\u3a54\u3a61\u3a6airc;\u4175\u0100di\u3a40\u3a51\u0100bg\u3a45\u3a49ar;\u6a5fe\u0100;q\u15fa\u3a4f;\u6259erp;\u6118r;\uc000\ud835\udd34pf;\uc000\ud835\udd68\u0100;e\u1479\u3a66at\xe8\u1479cr;\uc000\ud835\udccc\u0ae3\u178e\u3a87\0\u3a8b\0\u3a90\u3a9b\0\0\u3a9d\u3aa8\u3aab\u3aaf\0\0\u3ac3\u3ace\0\u3ad8\u17dc\u17dftr\xe9\u17d1r;\uc000\ud835\udd35\u0100Aa\u3a94\u3a97r\xf2\u03c3r\xf2\u09f6;\u43be\u0100Aa\u3aa1\u3aa4r\xf2\u03b8r\xf2\u09eba\xf0\u2713is;\u62fb\u0180dpt\u17a4\u3ab5\u3abe\u0100fl\u3aba\u17a9;\uc000\ud835\udd69im\xe5\u17b2\u0100Aa\u3ac7\u3acar\xf2\u03cer\xf2\u0a01\u0100cq\u3ad2\u17b8r;\uc000\ud835\udccd\u0100pt\u17d6\u3adcr\xe9\u17d4\u0400acefiosu\u3af0\u3afd\u3b08\u3b0c\u3b11\u3b15\u3b1b\u3b21c\u0100uy\u3af6\u3afbte\u803b\xfd\u40fd;\u444f\u0100iy\u3b02\u3b06rc;\u4177;\u444bn\u803b\xa5\u40a5r;\uc000\ud835\udd36cy;\u4457pf;\uc000\ud835\udd6acr;\uc000\ud835\udcce\u0100cm\u3b26\u3b29y;\u444el\u803b\xff\u40ff\u0500acdefhiosw\u3b42\u3b48\u3b54\u3b58\u3b64\u3b69\u3b6d\u3b74\u3b7a\u3b80cute;\u417a\u0100ay\u3b4d\u3b52ron;\u417e;\u4437ot;\u417c\u0100et\u3b5d\u3b61tr\xe6\u155fa;\u43b6r;\uc000\ud835\udd37cy;\u4436grarr;\u61ddpf;\uc000\ud835\udd6bcr;\uc000\ud835\udccf\u0100jn\u3b85\u3b87;\u600dj;\u600c"
-      .split("")
-      .map((c) => c.charCodeAt(0)));
-
-  // Generated using scripts/write-decode-map.ts
-  var xmlDecodeTree = new Uint16Array(
-  // prettier-ignore
-  "\u0200aglq\t\x15\x18\x1b\u026d\x0f\0\0\x12p;\u4026os;\u4027t;\u403et;\u403cuot;\u4022"
-      .split("")
-      .map((c) => c.charCodeAt(0)));
-
-  // Adapted from https://github.com/mathiasbynens/he/blob/36afe179392226cf1b6ccdb16ebbb7a5a844d93a/src/he.js#L106-L134
-  var _a;
-  const decodeMap = new Map([
-      [0, 65533],
-      // C1 Unicode control character reference replacements
-      [128, 8364],
-      [130, 8218],
-      [131, 402],
-      [132, 8222],
-      [133, 8230],
-      [134, 8224],
-      [135, 8225],
-      [136, 710],
-      [137, 8240],
-      [138, 352],
-      [139, 8249],
-      [140, 338],
-      [142, 381],
-      [145, 8216],
-      [146, 8217],
-      [147, 8220],
-      [148, 8221],
-      [149, 8226],
-      [150, 8211],
-      [151, 8212],
-      [152, 732],
-      [153, 8482],
-      [154, 353],
-      [155, 8250],
-      [156, 339],
-      [158, 382],
-      [159, 376],
-  ]);
-  /**
-   * Polyfill for `String.fromCodePoint`. It is used to create a string from a Unicode code point.
-   */
-  const fromCodePoint$1 = 
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition, node/no-unsupported-features/es-builtins
-  (_a = String.fromCodePoint) !== null && _a !== void 0 ? _a : function (codePoint) {
-      let output = "";
-      if (codePoint > 0xffff) {
-          codePoint -= 0x10000;
-          output += String.fromCharCode(((codePoint >>> 10) & 0x3ff) | 0xd800);
-          codePoint = 0xdc00 | (codePoint & 0x3ff);
-      }
-      output += String.fromCharCode(codePoint);
-      return output;
-  };
-  /**
-   * Replace the given code point with a replacement character if it is a
-   * surrogate or is outside the valid range. Otherwise return the code
-   * point unchanged.
-   */
-  function replaceCodePoint(codePoint) {
-      var _a;
-      if ((codePoint >= 0xd800 && codePoint <= 0xdfff) || codePoint > 0x10ffff) {
-          return 0xfffd;
-      }
-      return (_a = decodeMap.get(codePoint)) !== null && _a !== void 0 ? _a : codePoint;
+  function requireRegex$3 () {
+  	if (hasRequiredRegex$3) return regex$3;
+  	hasRequiredRegex$3 = 1;
+  	regex$3=/[\0-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]/;
+  	return regex$3;
   }
 
-  var CharCodes;
-  (function (CharCodes) {
-      CharCodes[CharCodes["NUM"] = 35] = "NUM";
-      CharCodes[CharCodes["SEMI"] = 59] = "SEMI";
-      CharCodes[CharCodes["EQUALS"] = 61] = "EQUALS";
-      CharCodes[CharCodes["ZERO"] = 48] = "ZERO";
-      CharCodes[CharCodes["NINE"] = 57] = "NINE";
-      CharCodes[CharCodes["LOWER_A"] = 97] = "LOWER_A";
-      CharCodes[CharCodes["LOWER_F"] = 102] = "LOWER_F";
-      CharCodes[CharCodes["LOWER_X"] = 120] = "LOWER_X";
-      CharCodes[CharCodes["LOWER_Z"] = 122] = "LOWER_Z";
-      CharCodes[CharCodes["UPPER_A"] = 65] = "UPPER_A";
-      CharCodes[CharCodes["UPPER_F"] = 70] = "UPPER_F";
-      CharCodes[CharCodes["UPPER_Z"] = 90] = "UPPER_Z";
-  })(CharCodes || (CharCodes = {}));
-  /** Bit that needs to be set to convert an upper case ASCII character to lower case */
-  const TO_LOWER_BIT = 0b100000;
-  var BinTrieFlags;
-  (function (BinTrieFlags) {
-      BinTrieFlags[BinTrieFlags["VALUE_LENGTH"] = 49152] = "VALUE_LENGTH";
-      BinTrieFlags[BinTrieFlags["BRANCH_LENGTH"] = 16256] = "BRANCH_LENGTH";
-      BinTrieFlags[BinTrieFlags["JUMP_TABLE"] = 127] = "JUMP_TABLE";
-  })(BinTrieFlags || (BinTrieFlags = {}));
-  function isNumber(code) {
-      return code >= CharCodes.ZERO && code <= CharCodes.NINE;
-  }
-  function isHexadecimalCharacter(code) {
-      return ((code >= CharCodes.UPPER_A && code <= CharCodes.UPPER_F) ||
-          (code >= CharCodes.LOWER_A && code <= CharCodes.LOWER_F));
-  }
-  function isAsciiAlphaNumeric(code) {
-      return ((code >= CharCodes.UPPER_A && code <= CharCodes.UPPER_Z) ||
-          (code >= CharCodes.LOWER_A && code <= CharCodes.LOWER_Z) ||
-          isNumber(code));
-  }
-  /**
-   * Checks if the given character is a valid end character for an entity in an attribute.
-   *
-   * Attribute values that aren't terminated properly aren't parsed, and shouldn't lead to a parser error.
-   * See the example in https://html.spec.whatwg.org/multipage/parsing.html#named-character-reference-state
-   */
-  function isEntityInAttributeInvalidEnd(code) {
-      return code === CharCodes.EQUALS || isAsciiAlphaNumeric(code);
-  }
-  var EntityDecoderState;
-  (function (EntityDecoderState) {
-      EntityDecoderState[EntityDecoderState["EntityStart"] = 0] = "EntityStart";
-      EntityDecoderState[EntityDecoderState["NumericStart"] = 1] = "NumericStart";
-      EntityDecoderState[EntityDecoderState["NumericDecimal"] = 2] = "NumericDecimal";
-      EntityDecoderState[EntityDecoderState["NumericHex"] = 3] = "NumericHex";
-      EntityDecoderState[EntityDecoderState["NamedEntity"] = 4] = "NamedEntity";
-  })(EntityDecoderState || (EntityDecoderState = {}));
-  var DecodingMode;
-  (function (DecodingMode) {
-      /** Entities in text nodes that can end with any character. */
-      DecodingMode[DecodingMode["Legacy"] = 0] = "Legacy";
-      /** Only allow entities terminated with a semicolon. */
-      DecodingMode[DecodingMode["Strict"] = 1] = "Strict";
-      /** Entities in attributes have limitations on ending characters. */
-      DecodingMode[DecodingMode["Attribute"] = 2] = "Attribute";
-  })(DecodingMode || (DecodingMode = {}));
-  /**
-   * Token decoder with support of writing partial entities.
-   */
-  class EntityDecoder {
-      constructor(
-      /** The tree used to decode entities. */
-      decodeTree, 
-      /**
-       * The function that is called when a codepoint is decoded.
-       *
-       * For multi-byte named entities, this will be called multiple times,
-       * with the second codepoint, and the same `consumed` value.
-       *
-       * @param codepoint The decoded codepoint.
-       * @param consumed The number of bytes consumed by the decoder.
-       */
-      emitCodePoint, 
-      /** An object that is used to produce errors. */
-      errors) {
-          this.decodeTree = decodeTree;
-          this.emitCodePoint = emitCodePoint;
-          this.errors = errors;
-          /** The current state of the decoder. */
-          this.state = EntityDecoderState.EntityStart;
-          /** Characters that were consumed while parsing an entity. */
-          this.consumed = 1;
-          /**
-           * The result of the entity.
-           *
-           * Either the result index of a numeric entity, or the codepoint of a
-           * numeric entity.
-           */
-          this.result = 0;
-          /** The current index in the decode tree. */
-          this.treeIndex = 0;
-          /** The number of characters that were consumed in excess. */
-          this.excess = 1;
-          /** The mode in which the decoder is operating. */
-          this.decodeMode = DecodingMode.Strict;
-      }
-      /** Resets the instance to make it reusable. */
-      startEntity(decodeMode) {
-          this.decodeMode = decodeMode;
-          this.state = EntityDecoderState.EntityStart;
-          this.result = 0;
-          this.treeIndex = 0;
-          this.excess = 1;
-          this.consumed = 1;
-      }
-      /**
-       * Write an entity to the decoder. This can be called multiple times with partial entities.
-       * If the entity is incomplete, the decoder will return -1.
-       *
-       * Mirrors the implementation of `getDecoder`, but with the ability to stop decoding if the
-       * entity is incomplete, and resume when the next string is written.
-       *
-       * @param string The string containing the entity (or a continuation of the entity).
-       * @param offset The offset at which the entity begins. Should be 0 if this is not the first call.
-       * @returns The number of characters that were consumed, or -1 if the entity is incomplete.
-       */
-      write(str, offset) {
-          switch (this.state) {
-              case EntityDecoderState.EntityStart: {
-                  if (str.charCodeAt(offset) === CharCodes.NUM) {
-                      this.state = EntityDecoderState.NumericStart;
-                      this.consumed += 1;
-                      return this.stateNumericStart(str, offset + 1);
-                  }
-                  this.state = EntityDecoderState.NamedEntity;
-                  return this.stateNamedEntity(str, offset);
-              }
-              case EntityDecoderState.NumericStart: {
-                  return this.stateNumericStart(str, offset);
-              }
-              case EntityDecoderState.NumericDecimal: {
-                  return this.stateNumericDecimal(str, offset);
-              }
-              case EntityDecoderState.NumericHex: {
-                  return this.stateNumericHex(str, offset);
-              }
-              case EntityDecoderState.NamedEntity: {
-                  return this.stateNamedEntity(str, offset);
-              }
-          }
-      }
-      /**
-       * Switches between the numeric decimal and hexadecimal states.
-       *
-       * Equivalent to the `Numeric character reference state` in the HTML spec.
-       *
-       * @param str The string containing the entity (or a continuation of the entity).
-       * @param offset The current offset.
-       * @returns The number of characters that were consumed, or -1 if the entity is incomplete.
-       */
-      stateNumericStart(str, offset) {
-          if (offset >= str.length) {
-              return -1;
-          }
-          if ((str.charCodeAt(offset) | TO_LOWER_BIT) === CharCodes.LOWER_X) {
-              this.state = EntityDecoderState.NumericHex;
-              this.consumed += 1;
-              return this.stateNumericHex(str, offset + 1);
-          }
-          this.state = EntityDecoderState.NumericDecimal;
-          return this.stateNumericDecimal(str, offset);
-      }
-      addToNumericResult(str, start, end, base) {
-          if (start !== end) {
-              const digitCount = end - start;
-              this.result =
-                  this.result * Math.pow(base, digitCount) +
-                      parseInt(str.substr(start, digitCount), base);
-              this.consumed += digitCount;
-          }
-      }
-      /**
-       * Parses a hexadecimal numeric entity.
-       *
-       * Equivalent to the `Hexademical character reference state` in the HTML spec.
-       *
-       * @param str The string containing the entity (or a continuation of the entity).
-       * @param offset The current offset.
-       * @returns The number of characters that were consumed, or -1 if the entity is incomplete.
-       */
-      stateNumericHex(str, offset) {
-          const startIdx = offset;
-          while (offset < str.length) {
-              const char = str.charCodeAt(offset);
-              if (isNumber(char) || isHexadecimalCharacter(char)) {
-                  offset += 1;
-              }
-              else {
-                  this.addToNumericResult(str, startIdx, offset, 16);
-                  return this.emitNumericEntity(char, 3);
-              }
-          }
-          this.addToNumericResult(str, startIdx, offset, 16);
-          return -1;
-      }
-      /**
-       * Parses a decimal numeric entity.
-       *
-       * Equivalent to the `Decimal character reference state` in the HTML spec.
-       *
-       * @param str The string containing the entity (or a continuation of the entity).
-       * @param offset The current offset.
-       * @returns The number of characters that were consumed, or -1 if the entity is incomplete.
-       */
-      stateNumericDecimal(str, offset) {
-          const startIdx = offset;
-          while (offset < str.length) {
-              const char = str.charCodeAt(offset);
-              if (isNumber(char)) {
-                  offset += 1;
-              }
-              else {
-                  this.addToNumericResult(str, startIdx, offset, 10);
-                  return this.emitNumericEntity(char, 2);
-              }
-          }
-          this.addToNumericResult(str, startIdx, offset, 10);
-          return -1;
-      }
-      /**
-       * Validate and emit a numeric entity.
-       *
-       * Implements the logic from the `Hexademical character reference start
-       * state` and `Numeric character reference end state` in the HTML spec.
-       *
-       * @param lastCp The last code point of the entity. Used to see if the
-       *               entity was terminated with a semicolon.
-       * @param expectedLength The minimum number of characters that should be
-       *                       consumed. Used to validate that at least one digit
-       *                       was consumed.
-       * @returns The number of characters that were consumed.
-       */
-      emitNumericEntity(lastCp, expectedLength) {
-          var _a;
-          // Ensure we consumed at least one digit.
-          if (this.consumed <= expectedLength) {
-              (_a = this.errors) === null || _a === void 0 ? void 0 : _a.absenceOfDigitsInNumericCharacterReference(this.consumed);
-              return 0;
-          }
-          // Figure out if this is a legit end of the entity
-          if (lastCp === CharCodes.SEMI) {
-              this.consumed += 1;
-          }
-          else if (this.decodeMode === DecodingMode.Strict) {
-              return 0;
-          }
-          this.emitCodePoint(replaceCodePoint(this.result), this.consumed);
-          if (this.errors) {
-              if (lastCp !== CharCodes.SEMI) {
-                  this.errors.missingSemicolonAfterCharacterReference();
-              }
-              this.errors.validateNumericCharacterReference(this.result);
-          }
-          return this.consumed;
-      }
-      /**
-       * Parses a named entity.
-       *
-       * Equivalent to the `Named character reference state` in the HTML spec.
-       *
-       * @param str The string containing the entity (or a continuation of the entity).
-       * @param offset The current offset.
-       * @returns The number of characters that were consumed, or -1 if the entity is incomplete.
-       */
-      stateNamedEntity(str, offset) {
-          const { decodeTree } = this;
-          let current = decodeTree[this.treeIndex];
-          // The mask is the number of bytes of the value, including the current byte.
-          let valueLength = (current & BinTrieFlags.VALUE_LENGTH) >> 14;
-          for (; offset < str.length; offset++, this.excess++) {
-              const char = str.charCodeAt(offset);
-              this.treeIndex = determineBranch(decodeTree, current, this.treeIndex + Math.max(1, valueLength), char);
-              if (this.treeIndex < 0) {
-                  return this.result === 0 ||
-                      // If we are parsing an attribute
-                      (this.decodeMode === DecodingMode.Attribute &&
-                          // We shouldn't have consumed any characters after the entity,
-                          (valueLength === 0 ||
-                              // And there should be no invalid characters.
-                              isEntityInAttributeInvalidEnd(char)))
-                      ? 0
-                      : this.emitNotTerminatedNamedEntity();
-              }
-              current = decodeTree[this.treeIndex];
-              valueLength = (current & BinTrieFlags.VALUE_LENGTH) >> 14;
-              // If the branch is a value, store it and continue
-              if (valueLength !== 0) {
-                  // If the entity is terminated by a semicolon, we are done.
-                  if (char === CharCodes.SEMI) {
-                      return this.emitNamedEntityData(this.treeIndex, valueLength, this.consumed + this.excess);
-                  }
-                  // If we encounter a non-terminated (legacy) entity while parsing strictly, then ignore it.
-                  if (this.decodeMode !== DecodingMode.Strict) {
-                      this.result = this.treeIndex;
-                      this.consumed += this.excess;
-                      this.excess = 0;
-                  }
-              }
-          }
-          return -1;
-      }
-      /**
-       * Emit a named entity that was not terminated with a semicolon.
-       *
-       * @returns The number of characters consumed.
-       */
-      emitNotTerminatedNamedEntity() {
-          var _a;
-          const { result, decodeTree } = this;
-          const valueLength = (decodeTree[result] & BinTrieFlags.VALUE_LENGTH) >> 14;
-          this.emitNamedEntityData(result, valueLength, this.consumed);
-          (_a = this.errors) === null || _a === void 0 ? void 0 : _a.missingSemicolonAfterCharacterReference();
-          return this.consumed;
-      }
-      /**
-       * Emit a named entity.
-       *
-       * @param result The index of the entity in the decode tree.
-       * @param valueLength The number of bytes in the entity.
-       * @param consumed The number of characters consumed.
-       *
-       * @returns The number of characters consumed.
-       */
-      emitNamedEntityData(result, valueLength, consumed) {
-          const { decodeTree } = this;
-          this.emitCodePoint(valueLength === 1
-              ? decodeTree[result] & ~BinTrieFlags.VALUE_LENGTH
-              : decodeTree[result + 1], consumed);
-          if (valueLength === 3) {
-              // For multi-byte values, we need to emit the second byte.
-              this.emitCodePoint(decodeTree[result + 2], consumed);
-          }
-          return consumed;
-      }
-      /**
-       * Signal to the parser that the end of the input was reached.
-       *
-       * Remaining data will be emitted and relevant errors will be produced.
-       *
-       * @returns The number of characters consumed.
-       */
-      end() {
-          var _a;
-          switch (this.state) {
-              case EntityDecoderState.NamedEntity: {
-                  // Emit a named entity if we have one.
-                  return this.result !== 0 &&
-                      (this.decodeMode !== DecodingMode.Attribute ||
-                          this.result === this.treeIndex)
-                      ? this.emitNotTerminatedNamedEntity()
-                      : 0;
-              }
-              // Otherwise, emit a numeric entity if we have one.
-              case EntityDecoderState.NumericDecimal: {
-                  return this.emitNumericEntity(0, 2);
-              }
-              case EntityDecoderState.NumericHex: {
-                  return this.emitNumericEntity(0, 3);
-              }
-              case EntityDecoderState.NumericStart: {
-                  (_a = this.errors) === null || _a === void 0 ? void 0 : _a.absenceOfDigitsInNumericCharacterReference(this.consumed);
-                  return 0;
-              }
-              case EntityDecoderState.EntityStart: {
-                  // Return 0 if we have no entity.
-                  return 0;
-              }
-          }
-      }
-  }
-  /**
-   * Creates a function that decodes entities in a string.
-   *
-   * @param decodeTree The decode tree.
-   * @returns A function that decodes entities in a string.
-   */
-  function getDecoder(decodeTree) {
-      let ret = "";
-      const decoder = new EntityDecoder(decodeTree, (str) => (ret += fromCodePoint$1(str)));
-      return function decodeWithTrie(str, decodeMode) {
-          let lastIndex = 0;
-          let offset = 0;
-          while ((offset = str.indexOf("&", offset)) >= 0) {
-              ret += str.slice(lastIndex, offset);
-              decoder.startEntity(decodeMode);
-              const len = decoder.write(str, 
-              // Skip the "&"
-              offset + 1);
-              if (len < 0) {
-                  lastIndex = offset + decoder.end();
-                  break;
-              }
-              lastIndex = offset + len;
-              // If `len` is 0, skip the current `&` and continue.
-              offset = len === 0 ? lastIndex + 1 : lastIndex;
-          }
-          const result = ret + str.slice(lastIndex);
-          // Make sure we don't keep a reference to the final string.
-          ret = "";
-          return result;
-      };
-  }
-  /**
-   * Determines the branch of the current node that is taken given the current
-   * character. This function is used to traverse the trie.
-   *
-   * @param decodeTree The trie.
-   * @param current The current node.
-   * @param nodeIdx The index right after the current node and its value.
-   * @param char The current character.
-   * @returns The index of the next node, or -1 if no branch is taken.
-   */
-  function determineBranch(decodeTree, current, nodeIdx, char) {
-      const branchCount = (current & BinTrieFlags.BRANCH_LENGTH) >> 7;
-      const jumpOffset = current & BinTrieFlags.JUMP_TABLE;
-      // Case 1: Single branch encoded in jump offset
-      if (branchCount === 0) {
-          return jumpOffset !== 0 && char === jumpOffset ? nodeIdx : -1;
-      }
-      // Case 2: Multiple branches encoded in jump table
-      if (jumpOffset) {
-          const value = char - jumpOffset;
-          return value < 0 || value >= branchCount
-              ? -1
-              : decodeTree[nodeIdx + value] - 1;
-      }
-      // Case 3: Multiple branches encoded in dictionary
-      // Binary search for the character.
-      let lo = nodeIdx;
-      let hi = lo + branchCount - 1;
-      while (lo <= hi) {
-          const mid = (lo + hi) >>> 1;
-          const midVal = decodeTree[mid];
-          if (midVal < char) {
-              lo = mid + 1;
-          }
-          else if (midVal > char) {
-              hi = mid - 1;
-          }
-          else {
-              return decodeTree[mid + branchCount];
-          }
-      }
-      return -1;
-  }
-  const htmlDecoder = getDecoder(htmlDecodeTree);
-  getDecoder(xmlDecodeTree);
-  /**
-   * Decodes an HTML string.
-   *
-   * @param str The string to decode.
-   * @param mode The decoding mode.
-   * @returns The decoded string.
-   */
-  function decodeHTML(str, mode = DecodingMode.Legacy) {
-      return htmlDecoder(str, mode);
+  var regex$2;
+  var hasRequiredRegex$2;
+
+  function requireRegex$2 () {
+  	if (hasRequiredRegex$2) return regex$2;
+  	hasRequiredRegex$2 = 1;
+  	regex$2=/[\0-\x1F\x7F-\x9F]/;
+  	return regex$2;
   }
 
-  // Utilities
-  //
+  var regex$1;
+  var hasRequiredRegex$1;
 
-
-  function _class$1 (obj) { return Object.prototype.toString.call(obj) }
-
-  function isString$1 (obj) { return _class$1(obj) === '[object String]' }
-
-  const _hasOwnProperty = Object.prototype.hasOwnProperty;
-
-  function has (object, key) {
-    return _hasOwnProperty.call(object, key)
+  function requireRegex$1 () {
+  	if (hasRequiredRegex$1) return regex$1;
+  	hasRequiredRegex$1 = 1;
+  	regex$1=/[\xAD\u0600-\u0605\u061C\u06DD\u070F\u08E2\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\uFEFF\uFFF9-\uFFFB]|\uD804[\uDCBD\uDCCD]|\uD82F[\uDCA0-\uDCA3]|\uD834[\uDD73-\uDD7A]|\uDB40[\uDC01\uDC20-\uDC7F]/;
+  	return regex$1;
   }
 
-  // Merge objects
-  //
-  function assign$2 (obj /* from1, from2, from3, ... */) {
-    const sources = Array.prototype.slice.call(arguments, 1);
+  var regex;
+  var hasRequiredRegex;
 
-    sources.forEach(function (source) {
-      if (!source) { return }
-
-      if (typeof source !== 'object') {
-        throw new TypeError(source + 'must be object')
-      }
-
-      Object.keys(source).forEach(function (key) {
-        obj[key] = source[key];
-      });
-    });
-
-    return obj
+  function requireRegex () {
+  	if (hasRequiredRegex) return regex;
+  	hasRequiredRegex = 1;
+  	regex=/[ \xA0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]/;
+  	return regex;
   }
 
-  // Remove element from array and put another array at those position.
-  // Useful for some operations with tokens
-  function arrayReplaceAt (src, pos, newElements) {
-    return [].concat(src.slice(0, pos), newElements, src.slice(pos + 1))
+  var hasRequiredUc_micro;
+
+  function requireUc_micro () {
+  	if (hasRequiredUc_micro) return uc_micro;
+  	hasRequiredUc_micro = 1;
+
+  	uc_micro.Any = requireRegex$3();
+  	uc_micro.Cc  = requireRegex$2();
+  	uc_micro.Cf  = requireRegex$1();
+  	uc_micro.P   = regex$4;
+  	uc_micro.Z   = requireRegex();
+  	return uc_micro;
   }
 
-  function isValidEntityCode (c) {
-    /* eslint no-bitwise:0 */
-    // broken sequence
-    if (c >= 0xD800 && c <= 0xDFFF) { return false }
-    // never used
-    if (c >= 0xFDD0 && c <= 0xFDEF) { return false }
-    if ((c & 0xFFFF) === 0xFFFF || (c & 0xFFFF) === 0xFFFE) { return false }
-    // control codes
-    if (c >= 0x00 && c <= 0x08) { return false }
-    if (c === 0x0B) { return false }
-    if (c >= 0x0E && c <= 0x1F) { return false }
-    if (c >= 0x7F && c <= 0x9F) { return false }
-    // out of range
-    if (c > 0x10FFFF) { return false }
-    return true
-  }
+  (function (exports) {
 
-  function fromCodePoint (c) {
-    /* eslint no-bitwise:0 */
-    if (c > 0xffff) {
-      c -= 0x10000;
-      const surrogate1 = 0xd800 + (c >> 10);
-      const surrogate2 = 0xdc00 + (c & 0x3ff);
 
-      return String.fromCharCode(surrogate1, surrogate2)
-    }
-    return String.fromCharCode(c)
-  }
+  	function _class(obj) { return Object.prototype.toString.call(obj); }
 
-  const UNESCAPE_MD_RE  = /\\([!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~])/g;
-  const ENTITY_RE       = /&([a-z#][a-z0-9]{1,31});/gi;
-  const UNESCAPE_ALL_RE = new RegExp(UNESCAPE_MD_RE.source + '|' + ENTITY_RE.source, 'gi');
+  	function isString(obj) { return _class(obj) === '[object String]'; }
 
-  const DIGITAL_ENTITY_TEST_RE = /^#((?:x[a-f0-9]{1,8}|[0-9]{1,8}))$/i;
+  	var _hasOwnProperty = Object.prototype.hasOwnProperty;
 
-  function replaceEntityPattern (match, name) {
-    if (name.charCodeAt(0) === 0x23/* # */ && DIGITAL_ENTITY_TEST_RE.test(name)) {
-      const code = name[1].toLowerCase() === 'x'
-        ? parseInt(name.slice(2), 16)
-        : parseInt(name.slice(1), 10);
+  	function has(object, key) {
+  	  return _hasOwnProperty.call(object, key);
+  	}
 
-      if (isValidEntityCode(code)) {
-        return fromCodePoint(code)
-      }
+  	// Merge objects
+  	//
+  	function assign(obj /*from1, from2, from3, ...*/) {
+  	  var sources = Array.prototype.slice.call(arguments, 1);
 
-      return match
-    }
+  	  sources.forEach(function (source) {
+  	    if (!source) { return; }
 
-    const decoded = decodeHTML(match);
-    if (decoded !== match) {
-      return decoded
-    }
+  	    if (typeof source !== 'object') {
+  	      throw new TypeError(source + 'must be object');
+  	    }
 
-    return match
-  }
+  	    Object.keys(source).forEach(function (key) {
+  	      obj[key] = source[key];
+  	    });
+  	  });
 
-  /* function replaceEntities(str) {
-    if (str.indexOf('&') < 0) { return str; }
+  	  return obj;
+  	}
 
-    return str.replace(ENTITY_RE, replaceEntityPattern);
-  } */
+  	// Remove element from array and put another array at those position.
+  	// Useful for some operations with tokens
+  	function arrayReplaceAt(src, pos, newElements) {
+  	  return [].concat(src.slice(0, pos), newElements, src.slice(pos + 1));
+  	}
 
-  function unescapeMd (str) {
-    if (str.indexOf('\\') < 0) { return str }
-    return str.replace(UNESCAPE_MD_RE, '$1')
-  }
+  	////////////////////////////////////////////////////////////////////////////////
 
-  function unescapeAll (str) {
-    if (str.indexOf('\\') < 0 && str.indexOf('&') < 0) { return str }
+  	function isValidEntityCode(c) {
+  	  /*eslint no-bitwise:0*/
+  	  // broken sequence
+  	  if (c >= 0xD800 && c <= 0xDFFF) { return false; }
+  	  // never used
+  	  if (c >= 0xFDD0 && c <= 0xFDEF) { return false; }
+  	  if ((c & 0xFFFF) === 0xFFFF || (c & 0xFFFF) === 0xFFFE) { return false; }
+  	  // control codes
+  	  if (c >= 0x00 && c <= 0x08) { return false; }
+  	  if (c === 0x0B) { return false; }
+  	  if (c >= 0x0E && c <= 0x1F) { return false; }
+  	  if (c >= 0x7F && c <= 0x9F) { return false; }
+  	  // out of range
+  	  if (c > 0x10FFFF) { return false; }
+  	  return true;
+  	}
 
-    return str.replace(UNESCAPE_ALL_RE, function (match, escaped, entity) {
-      if (escaped) { return escaped }
-      return replaceEntityPattern(match, entity)
-    })
-  }
+  	function fromCodePoint(c) {
+  	  /*eslint no-bitwise:0*/
+  	  if (c > 0xffff) {
+  	    c -= 0x10000;
+  	    var surrogate1 = 0xd800 + (c >> 10),
+  	        surrogate2 = 0xdc00 + (c & 0x3ff);
 
-  const HTML_ESCAPE_TEST_RE = /[&<>"]/;
-  const HTML_ESCAPE_REPLACE_RE = /[&<>"]/g;
-  const HTML_REPLACEMENTS = {
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;'
-  };
+  	    return String.fromCharCode(surrogate1, surrogate2);
+  	  }
+  	  return String.fromCharCode(c);
+  	}
 
-  function replaceUnsafeChar (ch) {
-    return HTML_REPLACEMENTS[ch]
-  }
 
-  function escapeHtml (str) {
-    if (HTML_ESCAPE_TEST_RE.test(str)) {
-      return str.replace(HTML_ESCAPE_REPLACE_RE, replaceUnsafeChar)
-    }
-    return str
-  }
+  	var UNESCAPE_MD_RE  = /\\([!"#$%&'()*+,\-.\/:;<=>?@[\\\]^_`{|}~])/g;
+  	var ENTITY_RE       = /&([a-z#][a-z0-9]{1,31});/gi;
+  	var UNESCAPE_ALL_RE = new RegExp(UNESCAPE_MD_RE.source + '|' + ENTITY_RE.source, 'gi');
 
-  const REGEXP_ESCAPE_RE = /[.?*+^$[\]\\(){}|-]/g;
+  	var DIGITAL_ENTITY_TEST_RE = /^#((?:x[a-f0-9]{1,8}|[0-9]{1,8}))$/i;
 
-  function escapeRE$1 (str) {
-    return str.replace(REGEXP_ESCAPE_RE, '\\$&')
-  }
+  	var entities = entities$1;
 
-  function isSpace (code) {
-    switch (code) {
-      case 0x09:
-      case 0x20:
-        return true
-    }
-    return false
-  }
+  	function replaceEntityPattern(match, name) {
+  	  var code;
 
-  // Zs (unicode class) || [\t\f\v\r\n]
-  function isWhiteSpace (code) {
-    if (code >= 0x2000 && code <= 0x200A) { return true }
-    switch (code) {
-      case 0x09: // \t
-      case 0x0A: // \n
-      case 0x0B: // \v
-      case 0x0C: // \f
-      case 0x0D: // \r
-      case 0x20:
-      case 0xA0:
-      case 0x1680:
-      case 0x202F:
-      case 0x205F:
-      case 0x3000:
-        return true
-    }
-    return false
-  }
+  	  if (has(entities, name)) {
+  	    return entities[name];
+  	  }
 
-  /* eslint-disable max-len */
+  	  if (name.charCodeAt(0) === 0x23/* # */ && DIGITAL_ENTITY_TEST_RE.test(name)) {
+  	    code = name[1].toLowerCase() === 'x' ?
+  	      parseInt(name.slice(2), 16) : parseInt(name.slice(1), 10);
 
-  // Currently without astral characters support.
-  function isPunctChar (ch) {
-    return P.test(ch) || regex.test(ch)
-  }
+  	    if (isValidEntityCode(code)) {
+  	      return fromCodePoint(code);
+  	    }
+  	  }
 
-  // Markdown ASCII punctuation characters.
-  //
-  // !, ", #, $, %, &, ', (, ), *, +, ,, -, ., /, :, ;, <, =, >, ?, @, [, \, ], ^, _, `, {, |, }, or ~
-  // http://spec.commonmark.org/0.15/#ascii-punctuation-character
-  //
-  // Don't confuse with unicode punctuation !!! It lacks some chars in ascii range.
-  //
-  function isMdAsciiPunct (ch) {
-    switch (ch) {
-      case 0x21/* ! */:
-      case 0x22/* " */:
-      case 0x23/* # */:
-      case 0x24/* $ */:
-      case 0x25/* % */:
-      case 0x26/* & */:
-      case 0x27/* ' */:
-      case 0x28/* ( */:
-      case 0x29/* ) */:
-      case 0x2A/* * */:
-      case 0x2B/* + */:
-      case 0x2C/* , */:
-      case 0x2D/* - */:
-      case 0x2E/* . */:
-      case 0x2F/* / */:
-      case 0x3A/* : */:
-      case 0x3B/* ; */:
-      case 0x3C/* < */:
-      case 0x3D/* = */:
-      case 0x3E/* > */:
-      case 0x3F/* ? */:
-      case 0x40/* @ */:
-      case 0x5B/* [ */:
-      case 0x5C/* \ */:
-      case 0x5D/* ] */:
-      case 0x5E/* ^ */:
-      case 0x5F/* _ */:
-      case 0x60/* ` */:
-      case 0x7B/* { */:
-      case 0x7C/* | */:
-      case 0x7D/* } */:
-      case 0x7E/* ~ */:
-        return true
-      default:
-        return false
-    }
-  }
+  	  return match;
+  	}
 
-  // Hepler to unify [reference labels].
-  //
-  function normalizeReference (str) {
-    // Trim and collapse whitespace
-    //
-    str = str.trim().replace(/\s+/g, ' ');
+  	/*function replaceEntities(str) {
+  	  if (str.indexOf('&') < 0) { return str; }
 
-    // In node v10 'ẞ'.toLowerCase() === 'Ṿ', which is presumed to be a bug
-    // fixed in v12 (couldn't find any details).
-    //
-    // So treat this one as a special case
-    // (remove this when node v10 is no longer supported).
-    //
-    if ('ẞ'.toLowerCase() === 'Ṿ') {
-      str = str.replace(/ẞ/g, 'ß');
-    }
+  	  return str.replace(ENTITY_RE, replaceEntityPattern);
+  	}*/
 
-    // .toLowerCase().toUpperCase() should get rid of all differences
-    // between letter variants.
-    //
-    // Simple .toLowerCase() doesn't normalize 125 code points correctly,
-    // and .toUpperCase doesn't normalize 6 of them (list of exceptions:
-    // İ, ϴ, ẞ, Ω, K, Å - those are already uppercased, but have differently
-    // uppercased versions).
-    //
-    // Here's an example showing how it happens. Lets take greek letter omega:
-    // uppercase U+0398 (Θ), U+03f4 (ϴ) and lowercase U+03b8 (θ), U+03d1 (ϑ)
-    //
-    // Unicode entries:
-    // 0398;GREEK CAPITAL LETTER THETA;Lu;0;L;;;;;N;;;;03B8;
-    // 03B8;GREEK SMALL LETTER THETA;Ll;0;L;;;;;N;;;0398;;0398
-    // 03D1;GREEK THETA SYMBOL;Ll;0;L;<compat> 03B8;;;;N;GREEK SMALL LETTER SCRIPT THETA;;0398;;0398
-    // 03F4;GREEK CAPITAL THETA SYMBOL;Lu;0;L;<compat> 0398;;;;N;;;;03B8;
-    //
-    // Case-insensitive comparison should treat all of them as equivalent.
-    //
-    // But .toLowerCase() doesn't change ϑ (it's already lowercase),
-    // and .toUpperCase() doesn't change ϴ (already uppercase).
-    //
-    // Applying first lower then upper case normalizes any character:
-    // '\u0398\u03f4\u03b8\u03d1'.toLowerCase().toUpperCase() === '\u0398\u0398\u0398\u0398'
-    //
-    // Note: this is equivalent to unicode case folding; unicode normalization
-    // is a different step that is not required here.
-    //
-    // Final result should be uppercased, because it's later stored in an object
-    // (this avoid a conflict with Object.prototype members,
-    // most notably, `__proto__`)
-    //
-    return str.toLowerCase().toUpperCase()
-  }
+  	function unescapeMd(str) {
+  	  if (str.indexOf('\\') < 0) { return str; }
+  	  return str.replace(UNESCAPE_MD_RE, '$1');
+  	}
 
-  // Re-export libraries commonly used in both markdown-it and its plugins,
-  // so plugins won't have to depend on them explicitly, which reduces their
-  // bundled size (e.g. a browser build).
-  //
-  const lib = { mdurl, ucmicro };
+  	function unescapeAll(str) {
+  	  if (str.indexOf('\\') < 0 && str.indexOf('&') < 0) { return str; }
 
-  var utils = /*#__PURE__*/Object.freeze({
-    __proto__: null,
-    arrayReplaceAt: arrayReplaceAt,
-    assign: assign$2,
-    escapeHtml: escapeHtml,
-    escapeRE: escapeRE$1,
-    fromCodePoint: fromCodePoint,
-    has: has,
-    isMdAsciiPunct: isMdAsciiPunct,
-    isPunctChar: isPunctChar,
-    isSpace: isSpace,
-    isString: isString$1,
-    isValidEntityCode: isValidEntityCode,
-    isWhiteSpace: isWhiteSpace,
-    lib: lib,
-    normalizeReference: normalizeReference,
-    unescapeAll: unescapeAll,
-    unescapeMd: unescapeMd
-  });
+  	  return str.replace(UNESCAPE_ALL_RE, function (match, escaped, entity) {
+  	    if (escaped) { return escaped; }
+  	    return replaceEntityPattern(match, entity);
+  	  });
+  	}
 
-  // Parse link label
-  //
-  // this function assumes that first character ("[") already matches;
-  // returns the end of the label
-  //
+  	////////////////////////////////////////////////////////////////////////////////
 
-  function parseLinkLabel (state, start, disableNested) {
-    let level, found, marker, prevPos;
+  	var HTML_ESCAPE_TEST_RE = /[&<>"]/;
+  	var HTML_ESCAPE_REPLACE_RE = /[&<>"]/g;
+  	var HTML_REPLACEMENTS = {
+  	  '&': '&amp;',
+  	  '<': '&lt;',
+  	  '>': '&gt;',
+  	  '"': '&quot;'
+  	};
 
-    const max = state.posMax;
-    const oldPos = state.pos;
+  	function replaceUnsafeChar(ch) {
+  	  return HTML_REPLACEMENTS[ch];
+  	}
+
+  	function escapeHtml(str) {
+  	  if (HTML_ESCAPE_TEST_RE.test(str)) {
+  	    return str.replace(HTML_ESCAPE_REPLACE_RE, replaceUnsafeChar);
+  	  }
+  	  return str;
+  	}
+
+  	////////////////////////////////////////////////////////////////////////////////
+
+  	var REGEXP_ESCAPE_RE = /[.?*+^$[\]\\(){}|-]/g;
+
+  	function escapeRE(str) {
+  	  return str.replace(REGEXP_ESCAPE_RE, '\\$&');
+  	}
+
+  	////////////////////////////////////////////////////////////////////////////////
+
+  	function isSpace(code) {
+  	  switch (code) {
+  	    case 0x09:
+  	    case 0x20:
+  	      return true;
+  	  }
+  	  return false;
+  	}
+
+  	// Zs (unicode class) || [\t\f\v\r\n]
+  	function isWhiteSpace(code) {
+  	  if (code >= 0x2000 && code <= 0x200A) { return true; }
+  	  switch (code) {
+  	    case 0x09: // \t
+  	    case 0x0A: // \n
+  	    case 0x0B: // \v
+  	    case 0x0C: // \f
+  	    case 0x0D: // \r
+  	    case 0x20:
+  	    case 0xA0:
+  	    case 0x1680:
+  	    case 0x202F:
+  	    case 0x205F:
+  	    case 0x3000:
+  	      return true;
+  	  }
+  	  return false;
+  	}
+
+  	////////////////////////////////////////////////////////////////////////////////
+
+  	/*eslint-disable max-len*/
+  	var UNICODE_PUNCT_RE = regex$4;
+
+  	// Currently without astral characters support.
+  	function isPunctChar(ch) {
+  	  return UNICODE_PUNCT_RE.test(ch);
+  	}
+
+
+  	// Markdown ASCII punctuation characters.
+  	//
+  	// !, ", #, $, %, &, ', (, ), *, +, ,, -, ., /, :, ;, <, =, >, ?, @, [, \, ], ^, _, `, {, |, }, or ~
+  	// http://spec.commonmark.org/0.15/#ascii-punctuation-character
+  	//
+  	// Don't confuse with unicode punctuation !!! It lacks some chars in ascii range.
+  	//
+  	function isMdAsciiPunct(ch) {
+  	  switch (ch) {
+  	    case 0x21/* ! */:
+  	    case 0x22/* " */:
+  	    case 0x23/* # */:
+  	    case 0x24/* $ */:
+  	    case 0x25/* % */:
+  	    case 0x26/* & */:
+  	    case 0x27/* ' */:
+  	    case 0x28/* ( */:
+  	    case 0x29/* ) */:
+  	    case 0x2A/* * */:
+  	    case 0x2B/* + */:
+  	    case 0x2C/* , */:
+  	    case 0x2D/* - */:
+  	    case 0x2E/* . */:
+  	    case 0x2F/* / */:
+  	    case 0x3A/* : */:
+  	    case 0x3B/* ; */:
+  	    case 0x3C/* < */:
+  	    case 0x3D/* = */:
+  	    case 0x3E/* > */:
+  	    case 0x3F/* ? */:
+  	    case 0x40/* @ */:
+  	    case 0x5B/* [ */:
+  	    case 0x5C/* \ */:
+  	    case 0x5D/* ] */:
+  	    case 0x5E/* ^ */:
+  	    case 0x5F/* _ */:
+  	    case 0x60/* ` */:
+  	    case 0x7B/* { */:
+  	    case 0x7C/* | */:
+  	    case 0x7D/* } */:
+  	    case 0x7E/* ~ */:
+  	      return true;
+  	    default:
+  	      return false;
+  	  }
+  	}
+
+  	// Hepler to unify [reference labels].
+  	//
+  	function normalizeReference(str) {
+  	  // Trim and collapse whitespace
+  	  //
+  	  str = str.trim().replace(/\s+/g, ' ');
+
+  	  // In node v10 'ẞ'.toLowerCase() === 'Ṿ', which is presumed to be a bug
+  	  // fixed in v12 (couldn't find any details).
+  	  //
+  	  // So treat this one as a special case
+  	  // (remove this when node v10 is no longer supported).
+  	  //
+  	  if ('ẞ'.toLowerCase() === 'Ṿ') {
+  	    str = str.replace(/ẞ/g, 'ß');
+  	  }
+
+  	  // .toLowerCase().toUpperCase() should get rid of all differences
+  	  // between letter variants.
+  	  //
+  	  // Simple .toLowerCase() doesn't normalize 125 code points correctly,
+  	  // and .toUpperCase doesn't normalize 6 of them (list of exceptions:
+  	  // İ, ϴ, ẞ, Ω, K, Å - those are already uppercased, but have differently
+  	  // uppercased versions).
+  	  //
+  	  // Here's an example showing how it happens. Lets take greek letter omega:
+  	  // uppercase U+0398 (Θ), U+03f4 (ϴ) and lowercase U+03b8 (θ), U+03d1 (ϑ)
+  	  //
+  	  // Unicode entries:
+  	  // 0398;GREEK CAPITAL LETTER THETA;Lu;0;L;;;;;N;;;;03B8;
+  	  // 03B8;GREEK SMALL LETTER THETA;Ll;0;L;;;;;N;;;0398;;0398
+  	  // 03D1;GREEK THETA SYMBOL;Ll;0;L;<compat> 03B8;;;;N;GREEK SMALL LETTER SCRIPT THETA;;0398;;0398
+  	  // 03F4;GREEK CAPITAL THETA SYMBOL;Lu;0;L;<compat> 0398;;;;N;;;;03B8;
+  	  //
+  	  // Case-insensitive comparison should treat all of them as equivalent.
+  	  //
+  	  // But .toLowerCase() doesn't change ϑ (it's already lowercase),
+  	  // and .toUpperCase() doesn't change ϴ (already uppercase).
+  	  //
+  	  // Applying first lower then upper case normalizes any character:
+  	  // '\u0398\u03f4\u03b8\u03d1'.toLowerCase().toUpperCase() === '\u0398\u0398\u0398\u0398'
+  	  //
+  	  // Note: this is equivalent to unicode case folding; unicode normalization
+  	  // is a different step that is not required here.
+  	  //
+  	  // Final result should be uppercased, because it's later stored in an object
+  	  // (this avoid a conflict with Object.prototype members,
+  	  // most notably, `__proto__`)
+  	  //
+  	  return str.toLowerCase().toUpperCase();
+  	}
+
+  	////////////////////////////////////////////////////////////////////////////////
+
+  	// Re-export libraries commonly used in both markdown-it and its plugins,
+  	// so plugins won't have to depend on them explicitly, which reduces their
+  	// bundled size (e.g. a browser build).
+  	//
+  	exports.lib                 = {};
+  	exports.lib.mdurl           = mdurl$1;
+  	exports.lib.ucmicro         = requireUc_micro();
+
+  	exports.assign              = assign;
+  	exports.isString            = isString;
+  	exports.has                 = has;
+  	exports.unescapeMd          = unescapeMd;
+  	exports.unescapeAll         = unescapeAll;
+  	exports.isValidEntityCode   = isValidEntityCode;
+  	exports.fromCodePoint       = fromCodePoint;
+  	// exports.replaceEntities     = replaceEntities;
+  	exports.escapeHtml          = escapeHtml;
+  	exports.arrayReplaceAt      = arrayReplaceAt;
+  	exports.isSpace             = isSpace;
+  	exports.isWhiteSpace        = isWhiteSpace;
+  	exports.isMdAsciiPunct      = isMdAsciiPunct;
+  	exports.isPunctChar         = isPunctChar;
+  	exports.escapeRE            = escapeRE;
+  	exports.normalizeReference  = normalizeReference; 
+  } (utils$1));
+
+  var helpers$1 = {};
+
+  var parse_link_label = function parseLinkLabel(state, start, disableNested) {
+    var level, found, marker, prevPos,
+        labelEnd = -1,
+        max = state.posMax,
+        oldPos = state.pos;
 
     state.pos = start + 1;
     level = 1;
@@ -15736,7 +19163,7 @@
         level--;
         if (level === 0) {
           found = true;
-          break
+          break;
         }
       }
 
@@ -15748,12 +19175,10 @@
           level++;
         } else if (disableNested) {
           state.pos = oldPos;
-          return -1
+          return -1;
         }
       }
     }
-
-    let labelEnd = -1;
 
     if (found) {
       labelEnd = state.pos;
@@ -15762,160 +19187,139 @@
     // restore old state
     state.pos = oldPos;
 
-    return labelEnd
-  }
+    return labelEnd;
+  };
 
-  // Parse link destination
-  //
+  var unescapeAll$2 = utils$1.unescapeAll;
 
 
-  function parseLinkDestination (str, start, max) {
-    let code;
-    let pos = start;
-
-    const result = {
-      ok: false,
-      pos: 0,
-      str: ''
-    };
+  var parse_link_destination = function parseLinkDestination(str, start, max) {
+    var code, level,
+        pos = start,
+        result = {
+          ok: false,
+          pos: 0,
+          lines: 0,
+          str: ''
+        };
 
     if (str.charCodeAt(pos) === 0x3C /* < */) {
       pos++;
       while (pos < max) {
         code = str.charCodeAt(pos);
-        if (code === 0x0A /* \n */) { return result }
-        if (code === 0x3C /* < */) { return result }
+        if (code === 0x0A /* \n */) { return result; }
+        if (code === 0x3C /* < */) { return result; }
         if (code === 0x3E /* > */) {
           result.pos = pos + 1;
-          result.str = unescapeAll(str.slice(start + 1, pos));
+          result.str = unescapeAll$2(str.slice(start + 1, pos));
           result.ok = true;
-          return result
+          return result;
         }
         if (code === 0x5C /* \ */ && pos + 1 < max) {
           pos += 2;
-          continue
+          continue;
         }
 
         pos++;
       }
 
       // no closing '>'
-      return result
+      return result;
     }
 
     // this should be ... } else { ... branch
 
-    let level = 0;
+    level = 0;
     while (pos < max) {
       code = str.charCodeAt(pos);
 
-      if (code === 0x20) { break }
+      if (code === 0x20) { break; }
 
       // ascii control characters
-      if (code < 0x20 || code === 0x7F) { break }
+      if (code < 0x20 || code === 0x7F) { break; }
 
       if (code === 0x5C /* \ */ && pos + 1 < max) {
-        if (str.charCodeAt(pos + 1) === 0x20) { break }
+        if (str.charCodeAt(pos + 1) === 0x20) { break; }
         pos += 2;
-        continue
+        continue;
       }
 
       if (code === 0x28 /* ( */) {
         level++;
-        if (level > 32) { return result }
+        if (level > 32) { return result; }
       }
 
       if (code === 0x29 /* ) */) {
-        if (level === 0) { break }
+        if (level === 0) { break; }
         level--;
       }
 
       pos++;
     }
 
-    if (start === pos) { return result }
-    if (level !== 0) { return result }
+    if (start === pos) { return result; }
+    if (level !== 0) { return result; }
 
-    result.str = unescapeAll(str.slice(start, pos));
+    result.str = unescapeAll$2(str.slice(start, pos));
     result.pos = pos;
     result.ok = true;
-    return result
-  }
+    return result;
+  };
 
-  // Parse link title
-  //
+  var unescapeAll$1 = utils$1.unescapeAll;
 
 
-  // Parse link title within `str` in [start, max] range,
-  // or continue previous parsing if `prev_state` is defined (equal to result of last execution).
-  //
-  function parseLinkTitle (str, start, max, prev_state) {
-    let code;
-    let pos = start;
+  var parse_link_title = function parseLinkTitle(str, start, max) {
+    var code,
+        marker,
+        lines = 0,
+        pos = start,
+        result = {
+          ok: false,
+          pos: 0,
+          lines: 0,
+          str: ''
+        };
 
-    const state = {
-      // if `true`, this is a valid link title
-      ok: false,
-      // if `true`, this link can be continued on the next line
-      can_continue: false,
-      // if `ok`, it's the position of the first character after the closing marker
-      pos: 0,
-      // if `ok`, it's the unescaped title
-      str: '',
-      // expected closing marker character code
-      marker: 0
-    };
+    if (pos >= max) { return result; }
 
-    if (prev_state) {
-      // this is a continuation of a previous parseLinkTitle call on the next line,
-      // used in reference links only
-      state.str = prev_state.str;
-      state.marker = prev_state.marker;
-    } else {
-      if (pos >= max) { return state }
+    marker = str.charCodeAt(pos);
 
-      let marker = str.charCodeAt(pos);
-      if (marker !== 0x22 /* " */ && marker !== 0x27 /* ' */ && marker !== 0x28 /* ( */) { return state }
+    if (marker !== 0x22 /* " */ && marker !== 0x27 /* ' */ && marker !== 0x28 /* ( */) { return result; }
 
-      start++;
-      pos++;
+    pos++;
 
-      // if opening marker is "(", switch it to closing marker ")"
-      if (marker === 0x28) { marker = 0x29; }
-
-      state.marker = marker;
-    }
+    // if opening marker is "(", switch it to closing marker ")"
+    if (marker === 0x28) { marker = 0x29; }
 
     while (pos < max) {
       code = str.charCodeAt(pos);
-      if (code === state.marker) {
-        state.pos = pos + 1;
-        state.str += unescapeAll(str.slice(start, pos));
-        state.ok = true;
-        return state
-      } else if (code === 0x28 /* ( */ && state.marker === 0x29 /* ) */) {
-        return state
+      if (code === marker) {
+        result.pos = pos + 1;
+        result.lines = lines;
+        result.str = unescapeAll$1(str.slice(start + 1, pos));
+        result.ok = true;
+        return result;
+      } else if (code === 0x28 /* ( */ && marker === 0x29 /* ) */) {
+        return result;
+      } else if (code === 0x0A) {
+        lines++;
       } else if (code === 0x5C /* \ */ && pos + 1 < max) {
         pos++;
+        if (str.charCodeAt(pos) === 0x0A) {
+          lines++;
+        }
       }
 
       pos++;
     }
 
-    // no closing marker found, but this link title may continue on the next line (for references)
-    state.can_continue = true;
-    state.str += unescapeAll(str.slice(start, pos));
-    return state
-  }
+    return result;
+  };
 
-  // Just a shortcut for bulk export
-
-  var helpers = /*#__PURE__*/Object.freeze({
-    __proto__: null,
-    parseLinkDestination: parseLinkDestination,
-    parseLinkLabel: parseLinkLabel,
-    parseLinkTitle: parseLinkTitle
-  });
+  helpers$1.parseLinkLabel       = parse_link_label;
+  helpers$1.parseLinkDestination = parse_link_destination;
+  helpers$1.parseLinkTitle       = parse_link_title;
 
   /**
    * class Renderer
@@ -15926,37 +19330,47 @@
    **/
 
 
-  const default_rules = {};
+  var assign$2          = utils$1.assign;
+  var unescapeAll     = utils$1.unescapeAll;
+  var escapeHtml      = utils$1.escapeHtml;
+
+
+  ////////////////////////////////////////////////////////////////////////////////
+
+  var default_rules = {};
+
 
   default_rules.code_inline = function (tokens, idx, options, env, slf) {
-    const token = tokens[idx];
+    var token = tokens[idx];
 
     return  '<code' + slf.renderAttrs(token) + '>' +
             escapeHtml(token.content) +
-            '</code>'
+            '</code>';
   };
 
+
   default_rules.code_block = function (tokens, idx, options, env, slf) {
-    const token = tokens[idx];
+    var token = tokens[idx];
 
     return  '<pre' + slf.renderAttrs(token) + '><code>' +
             escapeHtml(tokens[idx].content) +
-            '</code></pre>\n'
+            '</code></pre>\n';
   };
 
+
   default_rules.fence = function (tokens, idx, options, env, slf) {
-    const token = tokens[idx];
-    const info = token.info ? unescapeAll(token.info).trim() : '';
-    let langName = '';
-    let langAttrs = '';
+    var token = tokens[idx],
+        info = token.info ? unescapeAll(token.info).trim() : '',
+        langName = '',
+        langAttrs = '',
+        highlighted, i, arr, tmpAttrs, tmpToken;
 
     if (info) {
-      const arr = info.split(/(\s+)/g);
+      arr = info.split(/(\s+)/g);
       langName = arr[0];
       langAttrs = arr.slice(2).join('');
     }
 
-    let highlighted;
     if (options.highlight) {
       highlighted = options.highlight(token.content, langName, langAttrs) || escapeHtml(token.content);
     } else {
@@ -15964,36 +19378,42 @@
     }
 
     if (highlighted.indexOf('<pre') === 0) {
-      return highlighted + '\n'
+      return highlighted + '\n';
     }
 
     // If language exists, inject class gently, without modifying original token.
     // May be, one day we will add .deepClone() for token and simplify this part, but
     // now we prefer to keep things local.
     if (info) {
-      const i = token.attrIndex('class');
-      const tmpAttrs = token.attrs ? token.attrs.slice() : [];
+      i        = token.attrIndex('class');
+      tmpAttrs = token.attrs ? token.attrs.slice() : [];
 
       if (i < 0) {
-        tmpAttrs.push(['class', options.langPrefix + langName]);
+        tmpAttrs.push([ 'class', options.langPrefix + langName ]);
       } else {
         tmpAttrs[i] = tmpAttrs[i].slice();
         tmpAttrs[i][1] += ' ' + options.langPrefix + langName;
       }
 
       // Fake token just to render attributes
-      const tmpToken = {
+      tmpToken = {
         attrs: tmpAttrs
       };
 
-      return `<pre><code${slf.renderAttrs(tmpToken)}>${highlighted}</code></pre>\n`
+      return  '<pre><code' + slf.renderAttrs(tmpToken) + '>'
+            + highlighted
+            + '</code></pre>\n';
     }
 
-    return `<pre><code${slf.renderAttrs(token)}>${highlighted}</code></pre>\n`
+
+    return  '<pre><code' + slf.renderAttrs(token) + '>'
+          + highlighted
+          + '</code></pre>\n';
   };
 
+
   default_rules.image = function (tokens, idx, options, env, slf) {
-    const token = tokens[idx];
+    var token = tokens[idx];
 
     // "alt" attr MUST be set, even if empty. Because it's mandatory and
     // should be placed on proper position for tests.
@@ -16003,33 +19423,38 @@
     token.attrs[token.attrIndex('alt')][1] =
       slf.renderInlineAsText(token.children, options, env);
 
-    return slf.renderToken(tokens, idx, options)
+    return slf.renderToken(tokens, idx, options);
   };
+
 
   default_rules.hardbreak = function (tokens, idx, options /*, env */) {
-    return options.xhtmlOut ? '<br />\n' : '<br>\n'
+    return options.xhtmlOut ? '<br />\n' : '<br>\n';
   };
   default_rules.softbreak = function (tokens, idx, options /*, env */) {
-    return options.breaks ? (options.xhtmlOut ? '<br />\n' : '<br>\n') : '\n'
+    return options.breaks ? (options.xhtmlOut ? '<br />\n' : '<br>\n') : '\n';
   };
+
 
   default_rules.text = function (tokens, idx /*, options, env */) {
-    return escapeHtml(tokens[idx].content)
+    return escapeHtml(tokens[idx].content);
   };
 
+
   default_rules.html_block = function (tokens, idx /*, options, env */) {
-    return tokens[idx].content
+    return tokens[idx].content;
   };
   default_rules.html_inline = function (tokens, idx /*, options, env */) {
-    return tokens[idx].content
+    return tokens[idx].content;
   };
+
 
   /**
    * new Renderer()
    *
    * Creates new [[Renderer]] instance and fill [[Renderer#rules]] with defaults.
    **/
-  function Renderer () {
+  function Renderer$1() {
+
     /**
      * Renderer#rules -> Object
      *
@@ -16055,21 +19480,22 @@
      * }
      * ```
      *
-     * See [source code](https://github.com/markdown-it/markdown-it/blob/master/lib/renderer.mjs)
+     * See [source code](https://github.com/markdown-it/markdown-it/blob/master/lib/renderer.js)
      * for more details and examples.
      **/
     this.rules = assign$2({}, default_rules);
   }
+
 
   /**
    * Renderer.renderAttrs(token) -> String
    *
    * Render token attributes to string.
    **/
-  Renderer.prototype.renderAttrs = function renderAttrs (token) {
-    let i, l, result;
+  Renderer$1.prototype.renderAttrs = function renderAttrs(token) {
+    var i, l, result;
 
-    if (!token.attrs) { return '' }
+    if (!token.attrs) { return ''; }
 
     result = '';
 
@@ -16077,8 +19503,9 @@
       result += ' ' + escapeHtml(token.attrs[i][0]) + '="' + escapeHtml(token.attrs[i][1]) + '"';
     }
 
-    return result
+    return result;
   };
+
 
   /**
    * Renderer.renderToken(tokens, idx, options) -> String
@@ -16089,13 +19516,15 @@
    * Default token renderer. Can be overriden by custom function
    * in [[Renderer#rules]].
    **/
-  Renderer.prototype.renderToken = function renderToken (tokens, idx, options) {
-    const token = tokens[idx];
-    let result = '';
+  Renderer$1.prototype.renderToken = function renderToken(tokens, idx, options) {
+    var nextToken,
+        result = '',
+        needLf = false,
+        token = tokens[idx];
 
     // Tight list paragraphs
     if (token.hidden) {
-      return ''
+      return '';
     }
 
     // Insert a newline between hidden paragraph and subsequent opening
@@ -16121,18 +19550,18 @@
     }
 
     // Check if we need to add a newline after this tag
-    let needLf = false;
     if (token.block) {
       needLf = true;
 
       if (token.nesting === 1) {
         if (idx + 1 < tokens.length) {
-          const nextToken = tokens[idx + 1];
+          nextToken = tokens[idx + 1];
 
           if (nextToken.type === 'inline' || nextToken.hidden) {
             // Block-level tag containing an inline tag.
             //
             needLf = false;
+
           } else if (nextToken.nesting === -1 && nextToken.tag === token.tag) {
             // Opening tag + closing tag of the same type. E.g. `<li></li>`.
             //
@@ -16144,8 +19573,9 @@
 
     result += needLf ? '>\n' : '>';
 
-    return result
+    return result;
   };
+
 
   /**
    * Renderer.renderInline(tokens, options, env) -> String
@@ -16155,12 +19585,13 @@
    *
    * The same as [[Renderer.render]], but for single token of `inline` type.
    **/
-  Renderer.prototype.renderInline = function (tokens, options, env) {
-    let result = '';
-    const rules = this.rules;
+  Renderer$1.prototype.renderInline = function (tokens, options, env) {
+    var type,
+        result = '',
+        rules = this.rules;
 
-    for (let i = 0, len = tokens.length; i < len; i++) {
-      const type = tokens[i].type;
+    for (var i = 0, len = tokens.length; i < len; i++) {
+      type = tokens[i].type;
 
       if (typeof rules[type] !== 'undefined') {
         result += rules[type](tokens, i, options, env, this);
@@ -16169,8 +19600,9 @@
       }
     }
 
-    return result
+    return result;
   };
+
 
   /** internal
    * Renderer.renderInlineAsText(tokens, options, env) -> String
@@ -16182,31 +19614,22 @@
    * Don't try to use it! Spec requires to show `alt` content with stripped markup,
    * instead of simple escaping.
    **/
-  Renderer.prototype.renderInlineAsText = function (tokens, options, env) {
-    let result = '';
+  Renderer$1.prototype.renderInlineAsText = function (tokens, options, env) {
+    var result = '';
 
-    for (let i = 0, len = tokens.length; i < len; i++) {
-      switch (tokens[i].type) {
-        case 'text':
-          result += tokens[i].content;
-          break
-        case 'image':
-          result += this.renderInlineAsText(tokens[i].children, options, env);
-          break
-        case 'html_inline':
-        case 'html_block':
-          result += tokens[i].content;
-          break
-        case 'softbreak':
-        case 'hardbreak':
-          result += '\n';
-          break
-          // all other tokens are skipped
+    for (var i = 0, len = tokens.length; i < len; i++) {
+      if (tokens[i].type === 'text') {
+        result += tokens[i].content;
+      } else if (tokens[i].type === 'image') {
+        result += this.renderInlineAsText(tokens[i].children, options, env);
+      } else if (tokens[i].type === 'softbreak') {
+        result += '\n';
       }
     }
 
-    return result
+    return result;
   };
+
 
   /**
    * Renderer.render(tokens, options, env) -> String
@@ -16217,12 +19640,13 @@
    * Takes token stream and generates HTML. Probably, you will never need to call
    * this method directly.
    **/
-  Renderer.prototype.render = function (tokens, options, env) {
-    let result = '';
-    const rules = this.rules;
+  Renderer$1.prototype.render = function (tokens, options, env) {
+    var i, len, type,
+        result = '',
+        rules = this.rules;
 
-    for (let i = 0, len = tokens.length; i < len; i++) {
-      const type = tokens[i].type;
+    for (i = 0, len = tokens.length; i < len; i++) {
+      type = tokens[i].type;
 
       if (type === 'inline') {
         result += this.renderInline(tokens[i].children, options, env);
@@ -16233,8 +19657,10 @@
       }
     }
 
-    return result
+    return result;
   };
+
+  var renderer = Renderer$1;
 
   /**
    * class Ruler
@@ -16254,10 +19680,11 @@
    * [[MarkdownIt.use]].
    **/
 
+
   /**
    * new Ruler()
    **/
-  function Ruler () {
+  function Ruler$3() {
     // List of added rules. Each element is:
     //
     // {
@@ -16277,28 +19704,31 @@
     this.__cache__ = null;
   }
 
+  ////////////////////////////////////////////////////////////////////////////////
   // Helper methods, should not be used directly
+
 
   // Find rule index by name
   //
-  Ruler.prototype.__find__ = function (name) {
-    for (let i = 0; i < this.__rules__.length; i++) {
+  Ruler$3.prototype.__find__ = function (name) {
+    for (var i = 0; i < this.__rules__.length; i++) {
       if (this.__rules__[i].name === name) {
-        return i
+        return i;
       }
     }
-    return -1
+    return -1;
   };
+
 
   // Build rules lookup cache
   //
-  Ruler.prototype.__compile__ = function () {
-    const self = this;
-    const chains = [''];
+  Ruler$3.prototype.__compile__ = function () {
+    var self = this;
+    var chains = [ '' ];
 
     // collect unique names
     self.__rules__.forEach(function (rule) {
-      if (!rule.enabled) { return }
+      if (!rule.enabled) { return; }
 
       rule.alt.forEach(function (altName) {
         if (chains.indexOf(altName) < 0) {
@@ -16312,14 +19742,15 @@
     chains.forEach(function (chain) {
       self.__cache__[chain] = [];
       self.__rules__.forEach(function (rule) {
-        if (!rule.enabled) { return }
+        if (!rule.enabled) { return; }
 
-        if (chain && rule.alt.indexOf(chain) < 0) { return }
+        if (chain && rule.alt.indexOf(chain) < 0) { return; }
 
         self.__cache__[chain].push(rule.fn);
       });
     });
   };
+
 
   /**
    * Ruler.at(name, fn [, options])
@@ -16346,16 +19777,17 @@
    * });
    * ```
    **/
-  Ruler.prototype.at = function (name, fn, options) {
-    const index = this.__find__(name);
-    const opt = options || {};
+  Ruler$3.prototype.at = function (name, fn, options) {
+    var index = this.__find__(name);
+    var opt = options || {};
 
-    if (index === -1) { throw new Error('Parser rule not found: ' + name) }
+    if (index === -1) { throw new Error('Parser rule not found: ' + name); }
 
     this.__rules__[index].fn = fn;
     this.__rules__[index].alt = opt.alt || [];
     this.__cache__ = null;
   };
+
 
   /**
    * Ruler.before(beforeName, ruleName, fn [, options])
@@ -16381,21 +19813,22 @@
    * });
    * ```
    **/
-  Ruler.prototype.before = function (beforeName, ruleName, fn, options) {
-    const index = this.__find__(beforeName);
-    const opt = options || {};
+  Ruler$3.prototype.before = function (beforeName, ruleName, fn, options) {
+    var index = this.__find__(beforeName);
+    var opt = options || {};
 
-    if (index === -1) { throw new Error('Parser rule not found: ' + beforeName) }
+    if (index === -1) { throw new Error('Parser rule not found: ' + beforeName); }
 
     this.__rules__.splice(index, 0, {
       name: ruleName,
       enabled: true,
-      fn,
+      fn: fn,
       alt: opt.alt || []
     });
 
     this.__cache__ = null;
   };
+
 
   /**
    * Ruler.after(afterName, ruleName, fn [, options])
@@ -16421,16 +19854,16 @@
    * });
    * ```
    **/
-  Ruler.prototype.after = function (afterName, ruleName, fn, options) {
-    const index = this.__find__(afterName);
-    const opt = options || {};
+  Ruler$3.prototype.after = function (afterName, ruleName, fn, options) {
+    var index = this.__find__(afterName);
+    var opt = options || {};
 
-    if (index === -1) { throw new Error('Parser rule not found: ' + afterName) }
+    if (index === -1) { throw new Error('Parser rule not found: ' + afterName); }
 
     this.__rules__.splice(index + 1, 0, {
       name: ruleName,
       enabled: true,
-      fn,
+      fn: fn,
       alt: opt.alt || []
     });
 
@@ -16460,18 +19893,19 @@
    * });
    * ```
    **/
-  Ruler.prototype.push = function (ruleName, fn, options) {
-    const opt = options || {};
+  Ruler$3.prototype.push = function (ruleName, fn, options) {
+    var opt = options || {};
 
     this.__rules__.push({
       name: ruleName,
       enabled: true,
-      fn,
+      fn: fn,
       alt: opt.alt || []
     });
 
     this.__cache__ = null;
   };
+
 
   /**
    * Ruler.enable(list [, ignoreInvalid]) -> Array
@@ -16485,26 +19919,27 @@
    *
    * See also [[Ruler.disable]], [[Ruler.enableOnly]].
    **/
-  Ruler.prototype.enable = function (list, ignoreInvalid) {
-    if (!Array.isArray(list)) { list = [list]; }
+  Ruler$3.prototype.enable = function (list, ignoreInvalid) {
+    if (!Array.isArray(list)) { list = [ list ]; }
 
-    const result = [];
+    var result = [];
 
     // Search by name and enable
     list.forEach(function (name) {
-      const idx = this.__find__(name);
+      var idx = this.__find__(name);
 
       if (idx < 0) {
-        if (ignoreInvalid) { return }
-        throw new Error('Rules manager: invalid rule name ' + name)
+        if (ignoreInvalid) { return; }
+        throw new Error('Rules manager: invalid rule name ' + name);
       }
       this.__rules__[idx].enabled = true;
       result.push(name);
     }, this);
 
     this.__cache__ = null;
-    return result
+    return result;
   };
+
 
   /**
    * Ruler.enableOnly(list [, ignoreInvalid])
@@ -16516,13 +19951,14 @@
    *
    * See also [[Ruler.disable]], [[Ruler.enable]].
    **/
-  Ruler.prototype.enableOnly = function (list, ignoreInvalid) {
-    if (!Array.isArray(list)) { list = [list]; }
+  Ruler$3.prototype.enableOnly = function (list, ignoreInvalid) {
+    if (!Array.isArray(list)) { list = [ list ]; }
 
     this.__rules__.forEach(function (rule) { rule.enabled = false; });
 
     this.enable(list, ignoreInvalid);
   };
+
 
   /**
    * Ruler.disable(list [, ignoreInvalid]) -> Array
@@ -16536,26 +19972,27 @@
    *
    * See also [[Ruler.enable]], [[Ruler.enableOnly]].
    **/
-  Ruler.prototype.disable = function (list, ignoreInvalid) {
-    if (!Array.isArray(list)) { list = [list]; }
+  Ruler$3.prototype.disable = function (list, ignoreInvalid) {
+    if (!Array.isArray(list)) { list = [ list ]; }
 
-    const result = [];
+    var result = [];
 
     // Search by name and disable
     list.forEach(function (name) {
-      const idx = this.__find__(name);
+      var idx = this.__find__(name);
 
       if (idx < 0) {
-        if (ignoreInvalid) { return }
-        throw new Error('Rules manager: invalid rule name ' + name)
+        if (ignoreInvalid) { return; }
+        throw new Error('Rules manager: invalid rule name ' + name);
       }
       this.__rules__[idx].enabled = false;
       result.push(name);
     }, this);
 
     this.__cache__ = null;
-    return result
+    return result;
   };
+
 
   /**
    * Ruler.getRules(chainName) -> Array
@@ -16566,16 +20003,522 @@
    * Default chain name is `''` (empty string). It can't be skipped. That's
    * done intentionally, to keep signature monomorphic for high speed.
    **/
-  Ruler.prototype.getRules = function (chainName) {
+  Ruler$3.prototype.getRules = function (chainName) {
     if (this.__cache__ === null) {
       this.__compile__();
     }
 
     // Chain can be empty, if rules disabled. But we still have to return Array.
-    return this.__cache__[chainName] || []
+    return this.__cache__[chainName] || [];
   };
 
-  // Token class
+  var ruler = Ruler$3;
+
+  // https://spec.commonmark.org/0.29/#line-ending
+  var NEWLINES_RE  = /\r\n?|\n/g;
+  var NULL_RE      = /\0/g;
+
+
+  var normalize = function normalize(state) {
+    var str;
+
+    // Normalize newlines
+    str = state.src.replace(NEWLINES_RE, '\n');
+
+    // Replace NULL characters
+    str = str.replace(NULL_RE, '\uFFFD');
+
+    state.src = str;
+  };
+
+  var block = function block(state) {
+    var token;
+
+    if (state.inlineMode) {
+      token          = new state.Token('inline', '', 0);
+      token.content  = state.src;
+      token.map      = [ 0, 1 ];
+      token.children = [];
+      state.tokens.push(token);
+    } else {
+      state.md.block.parse(state.src, state.md, state.env, state.tokens);
+    }
+  };
+
+  var inline = function inline(state) {
+    var tokens = state.tokens, tok, i, l;
+
+    // Parse inlines
+    for (i = 0, l = tokens.length; i < l; i++) {
+      tok = tokens[i];
+      if (tok.type === 'inline') {
+        state.md.inline.parse(tok.content, state.md, state.env, tok.children);
+      }
+    }
+  };
+
+  var arrayReplaceAt = utils$1.arrayReplaceAt;
+
+
+  function isLinkOpen$1(str) {
+    return /^<a[>\s]/i.test(str);
+  }
+  function isLinkClose$1(str) {
+    return /^<\/a\s*>/i.test(str);
+  }
+
+
+  var linkify$1 = function linkify(state) {
+    var i, j, l, tokens, token, currentToken, nodes, ln, text, pos, lastPos,
+        level, htmlLinkLevel, url, fullUrl, urlText,
+        blockTokens = state.tokens,
+        links;
+
+    if (!state.md.options.linkify) { return; }
+
+    for (j = 0, l = blockTokens.length; j < l; j++) {
+      if (blockTokens[j].type !== 'inline' ||
+          !state.md.linkify.pretest(blockTokens[j].content)) {
+        continue;
+      }
+
+      tokens = blockTokens[j].children;
+
+      htmlLinkLevel = 0;
+
+      // We scan from the end, to keep position when new tags added.
+      // Use reversed logic in links start/end match
+      for (i = tokens.length - 1; i >= 0; i--) {
+        currentToken = tokens[i];
+
+        // Skip content of markdown links
+        if (currentToken.type === 'link_close') {
+          i--;
+          while (tokens[i].level !== currentToken.level && tokens[i].type !== 'link_open') {
+            i--;
+          }
+          continue;
+        }
+
+        // Skip content of html tag links
+        if (currentToken.type === 'html_inline') {
+          if (isLinkOpen$1(currentToken.content) && htmlLinkLevel > 0) {
+            htmlLinkLevel--;
+          }
+          if (isLinkClose$1(currentToken.content)) {
+            htmlLinkLevel++;
+          }
+        }
+        if (htmlLinkLevel > 0) { continue; }
+
+        if (currentToken.type === 'text' && state.md.linkify.test(currentToken.content)) {
+
+          text = currentToken.content;
+          links = state.md.linkify.match(text);
+
+          // Now split string to nodes
+          nodes = [];
+          level = currentToken.level;
+          lastPos = 0;
+
+          // forbid escape sequence at the start of the string,
+          // this avoids http\://example.com/ from being linkified as
+          // http:<a href="//example.com/">//example.com/</a>
+          if (links.length > 0 &&
+              links[0].index === 0 &&
+              i > 0 &&
+              tokens[i - 1].type === 'text_special') {
+            links = links.slice(1);
+          }
+
+          for (ln = 0; ln < links.length; ln++) {
+            url = links[ln].url;
+            fullUrl = state.md.normalizeLink(url);
+            if (!state.md.validateLink(fullUrl)) { continue; }
+
+            urlText = links[ln].text;
+
+            // Linkifier might send raw hostnames like "example.com", where url
+            // starts with domain name. So we prepend http:// in those cases,
+            // and remove it afterwards.
+            //
+            if (!links[ln].schema) {
+              urlText = state.md.normalizeLinkText('http://' + urlText).replace(/^http:\/\//, '');
+            } else if (links[ln].schema === 'mailto:' && !/^mailto:/i.test(urlText)) {
+              urlText = state.md.normalizeLinkText('mailto:' + urlText).replace(/^mailto:/, '');
+            } else {
+              urlText = state.md.normalizeLinkText(urlText);
+            }
+
+            pos = links[ln].index;
+
+            if (pos > lastPos) {
+              token         = new state.Token('text', '', 0);
+              token.content = text.slice(lastPos, pos);
+              token.level   = level;
+              nodes.push(token);
+            }
+
+            token         = new state.Token('link_open', 'a', 1);
+            token.attrs   = [ [ 'href', fullUrl ] ];
+            token.level   = level++;
+            token.markup  = 'linkify';
+            token.info    = 'auto';
+            nodes.push(token);
+
+            token         = new state.Token('text', '', 0);
+            token.content = urlText;
+            token.level   = level;
+            nodes.push(token);
+
+            token         = new state.Token('link_close', 'a', -1);
+            token.level   = --level;
+            token.markup  = 'linkify';
+            token.info    = 'auto';
+            nodes.push(token);
+
+            lastPos = links[ln].lastIndex;
+          }
+          if (lastPos < text.length) {
+            token         = new state.Token('text', '', 0);
+            token.content = text.slice(lastPos);
+            token.level   = level;
+            nodes.push(token);
+          }
+
+          // replace current node
+          blockTokens[j].children = tokens = arrayReplaceAt(tokens, i, nodes);
+        }
+      }
+    }
+  };
+
+  // TODO:
+  // - fractionals 1/2, 1/4, 3/4 -> ½, ¼, ¾
+  // - multiplications 2 x 4 -> 2 × 4
+
+  var RARE_RE = /\+-|\.\.|\?\?\?\?|!!!!|,,|--/;
+
+  // Workaround for phantomjs - need regex without /g flag,
+  // or root check will fail every second time
+  var SCOPED_ABBR_TEST_RE = /\((c|tm|r)\)/i;
+
+  var SCOPED_ABBR_RE = /\((c|tm|r)\)/ig;
+  var SCOPED_ABBR = {
+    c: '©',
+    r: '®',
+    tm: '™'
+  };
+
+  function replaceFn(match, name) {
+    return SCOPED_ABBR[name.toLowerCase()];
+  }
+
+  function replace_scoped(inlineTokens) {
+    var i, token, inside_autolink = 0;
+
+    for (i = inlineTokens.length - 1; i >= 0; i--) {
+      token = inlineTokens[i];
+
+      if (token.type === 'text' && !inside_autolink) {
+        token.content = token.content.replace(SCOPED_ABBR_RE, replaceFn);
+      }
+
+      if (token.type === 'link_open' && token.info === 'auto') {
+        inside_autolink--;
+      }
+
+      if (token.type === 'link_close' && token.info === 'auto') {
+        inside_autolink++;
+      }
+    }
+  }
+
+  function replace_rare(inlineTokens) {
+    var i, token, inside_autolink = 0;
+
+    for (i = inlineTokens.length - 1; i >= 0; i--) {
+      token = inlineTokens[i];
+
+      if (token.type === 'text' && !inside_autolink) {
+        if (RARE_RE.test(token.content)) {
+          token.content = token.content
+            .replace(/\+-/g, '±')
+            // .., ..., ....... -> …
+            // but ?..... & !..... -> ?.. & !..
+            .replace(/\.{2,}/g, '…').replace(/([?!])…/g, '$1..')
+            .replace(/([?!]){4,}/g, '$1$1$1').replace(/,{2,}/g, ',')
+            // em-dash
+            .replace(/(^|[^-])---(?=[^-]|$)/mg, '$1\u2014')
+            // en-dash
+            .replace(/(^|\s)--(?=\s|$)/mg, '$1\u2013')
+            .replace(/(^|[^-\s])--(?=[^-\s]|$)/mg, '$1\u2013');
+        }
+      }
+
+      if (token.type === 'link_open' && token.info === 'auto') {
+        inside_autolink--;
+      }
+
+      if (token.type === 'link_close' && token.info === 'auto') {
+        inside_autolink++;
+      }
+    }
+  }
+
+
+  var replacements = function replace(state) {
+    var blkIdx;
+
+    if (!state.md.options.typographer) { return; }
+
+    for (blkIdx = state.tokens.length - 1; blkIdx >= 0; blkIdx--) {
+
+      if (state.tokens[blkIdx].type !== 'inline') { continue; }
+
+      if (SCOPED_ABBR_TEST_RE.test(state.tokens[blkIdx].content)) {
+        replace_scoped(state.tokens[blkIdx].children);
+      }
+
+      if (RARE_RE.test(state.tokens[blkIdx].content)) {
+        replace_rare(state.tokens[blkIdx].children);
+      }
+
+    }
+  };
+
+  var isWhiteSpace$1   = utils$1.isWhiteSpace;
+  var isPunctChar$1    = utils$1.isPunctChar;
+  var isMdAsciiPunct$1 = utils$1.isMdAsciiPunct;
+
+  var QUOTE_TEST_RE = /['"]/;
+  var QUOTE_RE = /['"]/g;
+  var APOSTROPHE = '\u2019'; /* ’ */
+
+
+  function replaceAt(str, index, ch) {
+    return str.slice(0, index) + ch + str.slice(index + 1);
+  }
+
+  function process_inlines(tokens, state) {
+    var i, token, text, t, pos, max, thisLevel, item, lastChar, nextChar,
+        isLastPunctChar, isNextPunctChar, isLastWhiteSpace, isNextWhiteSpace,
+        canOpen, canClose, j, isSingle, stack, openQuote, closeQuote;
+
+    stack = [];
+
+    for (i = 0; i < tokens.length; i++) {
+      token = tokens[i];
+
+      thisLevel = tokens[i].level;
+
+      for (j = stack.length - 1; j >= 0; j--) {
+        if (stack[j].level <= thisLevel) { break; }
+      }
+      stack.length = j + 1;
+
+      if (token.type !== 'text') { continue; }
+
+      text = token.content;
+      pos = 0;
+      max = text.length;
+
+      /*eslint no-labels:0,block-scoped-var:0*/
+      OUTER:
+      while (pos < max) {
+        QUOTE_RE.lastIndex = pos;
+        t = QUOTE_RE.exec(text);
+        if (!t) { break; }
+
+        canOpen = canClose = true;
+        pos = t.index + 1;
+        isSingle = (t[0] === "'");
+
+        // Find previous character,
+        // default to space if it's the beginning of the line
+        //
+        lastChar = 0x20;
+
+        if (t.index - 1 >= 0) {
+          lastChar = text.charCodeAt(t.index - 1);
+        } else {
+          for (j = i - 1; j >= 0; j--) {
+            if (tokens[j].type === 'softbreak' || tokens[j].type === 'hardbreak') break; // lastChar defaults to 0x20
+            if (!tokens[j].content) continue; // should skip all tokens except 'text', 'html_inline' or 'code_inline'
+
+            lastChar = tokens[j].content.charCodeAt(tokens[j].content.length - 1);
+            break;
+          }
+        }
+
+        // Find next character,
+        // default to space if it's the end of the line
+        //
+        nextChar = 0x20;
+
+        if (pos < max) {
+          nextChar = text.charCodeAt(pos);
+        } else {
+          for (j = i + 1; j < tokens.length; j++) {
+            if (tokens[j].type === 'softbreak' || tokens[j].type === 'hardbreak') break; // nextChar defaults to 0x20
+            if (!tokens[j].content) continue; // should skip all tokens except 'text', 'html_inline' or 'code_inline'
+
+            nextChar = tokens[j].content.charCodeAt(0);
+            break;
+          }
+        }
+
+        isLastPunctChar = isMdAsciiPunct$1(lastChar) || isPunctChar$1(String.fromCharCode(lastChar));
+        isNextPunctChar = isMdAsciiPunct$1(nextChar) || isPunctChar$1(String.fromCharCode(nextChar));
+
+        isLastWhiteSpace = isWhiteSpace$1(lastChar);
+        isNextWhiteSpace = isWhiteSpace$1(nextChar);
+
+        if (isNextWhiteSpace) {
+          canOpen = false;
+        } else if (isNextPunctChar) {
+          if (!(isLastWhiteSpace || isLastPunctChar)) {
+            canOpen = false;
+          }
+        }
+
+        if (isLastWhiteSpace) {
+          canClose = false;
+        } else if (isLastPunctChar) {
+          if (!(isNextWhiteSpace || isNextPunctChar)) {
+            canClose = false;
+          }
+        }
+
+        if (nextChar === 0x22 /* " */ && t[0] === '"') {
+          if (lastChar >= 0x30 /* 0 */ && lastChar <= 0x39 /* 9 */) {
+            // special case: 1"" - count first quote as an inch
+            canClose = canOpen = false;
+          }
+        }
+
+        if (canOpen && canClose) {
+          // Replace quotes in the middle of punctuation sequence, but not
+          // in the middle of the words, i.e.:
+          //
+          // 1. foo " bar " baz - not replaced
+          // 2. foo-"-bar-"-baz - replaced
+          // 3. foo"bar"baz     - not replaced
+          //
+          canOpen = isLastPunctChar;
+          canClose = isNextPunctChar;
+        }
+
+        if (!canOpen && !canClose) {
+          // middle of word
+          if (isSingle) {
+            token.content = replaceAt(token.content, t.index, APOSTROPHE);
+          }
+          continue;
+        }
+
+        if (canClose) {
+          // this could be a closing quote, rewind the stack to get a match
+          for (j = stack.length - 1; j >= 0; j--) {
+            item = stack[j];
+            if (stack[j].level < thisLevel) { break; }
+            if (item.single === isSingle && stack[j].level === thisLevel) {
+              item = stack[j];
+
+              if (isSingle) {
+                openQuote = state.md.options.quotes[2];
+                closeQuote = state.md.options.quotes[3];
+              } else {
+                openQuote = state.md.options.quotes[0];
+                closeQuote = state.md.options.quotes[1];
+              }
+
+              // replace token.content *before* tokens[item.token].content,
+              // because, if they are pointing at the same token, replaceAt
+              // could mess up indices when quote length != 1
+              token.content = replaceAt(token.content, t.index, closeQuote);
+              tokens[item.token].content = replaceAt(
+                tokens[item.token].content, item.pos, openQuote);
+
+              pos += closeQuote.length - 1;
+              if (item.token === i) { pos += openQuote.length - 1; }
+
+              text = token.content;
+              max = text.length;
+
+              stack.length = j;
+              continue OUTER;
+            }
+          }
+        }
+
+        if (canOpen) {
+          stack.push({
+            token: i,
+            pos: t.index,
+            single: isSingle,
+            level: thisLevel
+          });
+        } else if (canClose && isSingle) {
+          token.content = replaceAt(token.content, t.index, APOSTROPHE);
+        }
+      }
+    }
+  }
+
+
+  var smartquotes = function smartquotes(state) {
+    /*eslint max-depth:0*/
+    var blkIdx;
+
+    if (!state.md.options.typographer) { return; }
+
+    for (blkIdx = state.tokens.length - 1; blkIdx >= 0; blkIdx--) {
+
+      if (state.tokens[blkIdx].type !== 'inline' ||
+          !QUOTE_TEST_RE.test(state.tokens[blkIdx].content)) {
+        continue;
+      }
+
+      process_inlines(state.tokens[blkIdx].children, state);
+    }
+  };
+
+  var text_join = function text_join(state) {
+    var j, l, tokens, curr, max, last,
+        blockTokens = state.tokens;
+
+    for (j = 0, l = blockTokens.length; j < l; j++) {
+      if (blockTokens[j].type !== 'inline') continue;
+
+      tokens = blockTokens[j].children;
+      max = tokens.length;
+
+      for (curr = 0; curr < max; curr++) {
+        if (tokens[curr].type === 'text_special') {
+          tokens[curr].type = 'text';
+        }
+      }
+
+      for (curr = last = 0; curr < max; curr++) {
+        if (tokens[curr].type === 'text' &&
+            curr + 1 < max &&
+            tokens[curr + 1].type === 'text') {
+
+          // collapse two adjacent text nodes
+          tokens[curr + 1].content = tokens[curr].content + tokens[curr + 1].content;
+        } else {
+          if (curr !== last) { tokens[last] = tokens[curr]; }
+
+          last++;
+        }
+      }
+
+      if (curr !== last) {
+        tokens.length = last;
+      }
+    }
+  };
 
   /**
    * class Token
@@ -16586,7 +20529,7 @@
    *
    * Create new token and fill passed properties.
    **/
-  function Token (type, tag, nesting) {
+  function Token$3(type, tag, nesting) {
     /**
      * Token#type -> String
      *
@@ -16690,43 +20633,48 @@
     this.hidden   = false;
   }
 
+
   /**
    * Token.attrIndex(name) -> Number
    *
    * Search attribute index by name.
    **/
-  Token.prototype.attrIndex = function attrIndex (name) {
-    if (!this.attrs) { return -1 }
+  Token$3.prototype.attrIndex = function attrIndex(name) {
+    var attrs, i, len;
 
-    const attrs = this.attrs;
+    if (!this.attrs) { return -1; }
 
-    for (let i = 0, len = attrs.length; i < len; i++) {
-      if (attrs[i][0] === name) { return i }
+    attrs = this.attrs;
+
+    for (i = 0, len = attrs.length; i < len; i++) {
+      if (attrs[i][0] === name) { return i; }
     }
-    return -1
+    return -1;
   };
+
 
   /**
    * Token.attrPush(attrData)
    *
    * Add `[ name, value ]` attribute to list. Init attrs if necessary
    **/
-  Token.prototype.attrPush = function attrPush (attrData) {
+  Token$3.prototype.attrPush = function attrPush(attrData) {
     if (this.attrs) {
       this.attrs.push(attrData);
     } else {
-      this.attrs = [attrData];
+      this.attrs = [ attrData ];
     }
   };
+
 
   /**
    * Token.attrSet(name, value)
    *
    * Set `name` attribute to `value`. Override old value if exists.
    **/
-  Token.prototype.attrSet = function attrSet (name, value) {
-    const idx = this.attrIndex(name);
-    const attrData = [name, value];
+  Token$3.prototype.attrSet = function attrSet(name, value) {
+    var idx = this.attrIndex(name),
+        attrData = [ name, value ];
 
     if (idx < 0) {
       this.attrPush(attrData);
@@ -16735,19 +20683,20 @@
     }
   };
 
+
   /**
    * Token.attrGet(name)
    *
    * Get the value of attribute `name`, or null if it does not exist.
    **/
-  Token.prototype.attrGet = function attrGet (name) {
-    const idx = this.attrIndex(name);
-    let value = null;
+  Token$3.prototype.attrGet = function attrGet(name) {
+    var idx = this.attrIndex(name), value = null;
     if (idx >= 0) {
       value = this.attrs[idx][1];
     }
-    return value
+    return value;
   };
+
 
   /**
    * Token.attrJoin(name, value)
@@ -16755,21 +20704,23 @@
    * Join value to existing attribute via space. Or create new attribute if not
    * exists. Useful to operate with token classes.
    **/
-  Token.prototype.attrJoin = function attrJoin (name, value) {
-    const idx = this.attrIndex(name);
+  Token$3.prototype.attrJoin = function attrJoin(name, value) {
+    var idx = this.attrIndex(name);
 
     if (idx < 0) {
-      this.attrPush([name, value]);
+      this.attrPush([ name, value ]);
     } else {
       this.attrs[idx][1] = this.attrs[idx][1] + ' ' + value;
     }
   };
 
-  // Core state object
-  //
+
+  var token = Token$3;
+
+  var Token$2 = token;
 
 
-  function StateCore (src, md, env) {
+  function StateCore(src, md, env) {
     this.src = src;
     this.env = env;
     this.tokens = [];
@@ -16778,524 +20729,10 @@
   }
 
   // re-export Token class to use in core rules
-  StateCore.prototype.Token = Token;
+  StateCore.prototype.Token = Token$2;
 
-  // Normalize input string
 
-  // https://spec.commonmark.org/0.29/#line-ending
-  const NEWLINES_RE  = /\r\n?|\n/g;
-  const NULL_RE      = /\0/g;
-
-  function normalize (state) {
-    let str;
-
-    // Normalize newlines
-    str = state.src.replace(NEWLINES_RE, '\n');
-
-    // Replace NULL characters
-    str = str.replace(NULL_RE, '\uFFFD');
-
-    state.src = str;
-  }
-
-  function block (state) {
-    let token;
-
-    if (state.inlineMode) {
-      token          = new state.Token('inline', '', 0);
-      token.content  = state.src;
-      token.map      = [0, 1];
-      token.children = [];
-      state.tokens.push(token);
-    } else {
-      state.md.block.parse(state.src, state.md, state.env, state.tokens);
-    }
-  }
-
-  function inline (state) {
-    const tokens = state.tokens;
-
-    // Parse inlines
-    for (let i = 0, l = tokens.length; i < l; i++) {
-      const tok = tokens[i];
-      if (tok.type === 'inline') {
-        state.md.inline.parse(tok.content, state.md, state.env, tok.children);
-      }
-    }
-  }
-
-  // Replace link-like texts with link nodes.
-  //
-  // Currently restricted by `md.validateLink()` to http/https/ftp
-  //
-
-
-  function isLinkOpen$1 (str) {
-    return /^<a[>\s]/i.test(str)
-  }
-  function isLinkClose$1 (str) {
-    return /^<\/a\s*>/i.test(str)
-  }
-
-  function linkify$1 (state) {
-    const blockTokens = state.tokens;
-
-    if (!state.md.options.linkify) { return }
-
-    for (let j = 0, l = blockTokens.length; j < l; j++) {
-      if (blockTokens[j].type !== 'inline' ||
-          !state.md.linkify.pretest(blockTokens[j].content)) {
-        continue
-      }
-
-      let tokens = blockTokens[j].children;
-
-      let htmlLinkLevel = 0;
-
-      // We scan from the end, to keep position when new tags added.
-      // Use reversed logic in links start/end match
-      for (let i = tokens.length - 1; i >= 0; i--) {
-        const currentToken = tokens[i];
-
-        // Skip content of markdown links
-        if (currentToken.type === 'link_close') {
-          i--;
-          while (tokens[i].level !== currentToken.level && tokens[i].type !== 'link_open') {
-            i--;
-          }
-          continue
-        }
-
-        // Skip content of html tag links
-        if (currentToken.type === 'html_inline') {
-          if (isLinkOpen$1(currentToken.content) && htmlLinkLevel > 0) {
-            htmlLinkLevel--;
-          }
-          if (isLinkClose$1(currentToken.content)) {
-            htmlLinkLevel++;
-          }
-        }
-        if (htmlLinkLevel > 0) { continue }
-
-        if (currentToken.type === 'text' && state.md.linkify.test(currentToken.content)) {
-          const text = currentToken.content;
-          let links = state.md.linkify.match(text);
-
-          // Now split string to nodes
-          const nodes = [];
-          let level = currentToken.level;
-          let lastPos = 0;
-
-          // forbid escape sequence at the start of the string,
-          // this avoids http\://example.com/ from being linkified as
-          // http:<a href="//example.com/">//example.com/</a>
-          if (links.length > 0 &&
-              links[0].index === 0 &&
-              i > 0 &&
-              tokens[i - 1].type === 'text_special') {
-            links = links.slice(1);
-          }
-
-          for (let ln = 0; ln < links.length; ln++) {
-            const url = links[ln].url;
-            const fullUrl = state.md.normalizeLink(url);
-            if (!state.md.validateLink(fullUrl)) { continue }
-
-            let urlText = links[ln].text;
-
-            // Linkifier might send raw hostnames like "example.com", where url
-            // starts with domain name. So we prepend http:// in those cases,
-            // and remove it afterwards.
-            //
-            if (!links[ln].schema) {
-              urlText = state.md.normalizeLinkText('http://' + urlText).replace(/^http:\/\//, '');
-            } else if (links[ln].schema === 'mailto:' && !/^mailto:/i.test(urlText)) {
-              urlText = state.md.normalizeLinkText('mailto:' + urlText).replace(/^mailto:/, '');
-            } else {
-              urlText = state.md.normalizeLinkText(urlText);
-            }
-
-            const pos = links[ln].index;
-
-            if (pos > lastPos) {
-              const token   = new state.Token('text', '', 0);
-              token.content = text.slice(lastPos, pos);
-              token.level   = level;
-              nodes.push(token);
-            }
-
-            const token_o   = new state.Token('link_open', 'a', 1);
-            token_o.attrs   = [['href', fullUrl]];
-            token_o.level   = level++;
-            token_o.markup  = 'linkify';
-            token_o.info    = 'auto';
-            nodes.push(token_o);
-
-            const token_t   = new state.Token('text', '', 0);
-            token_t.content = urlText;
-            token_t.level   = level;
-            nodes.push(token_t);
-
-            const token_c   = new state.Token('link_close', 'a', -1);
-            token_c.level   = --level;
-            token_c.markup  = 'linkify';
-            token_c.info    = 'auto';
-            nodes.push(token_c);
-
-            lastPos = links[ln].lastIndex;
-          }
-          if (lastPos < text.length) {
-            const token   = new state.Token('text', '', 0);
-            token.content = text.slice(lastPos);
-            token.level   = level;
-            nodes.push(token);
-          }
-
-          // replace current node
-          blockTokens[j].children = tokens = arrayReplaceAt(tokens, i, nodes);
-        }
-      }
-    }
-  }
-
-  // Simple typographic replacements
-  //
-  // (c) (C) → ©
-  // (tm) (TM) → ™
-  // (r) (R) → ®
-  // +- → ±
-  // ... → … (also ?.... → ?.., !.... → !..)
-  // ???????? → ???, !!!!! → !!!, `,,` → `,`
-  // -- → &ndash;, --- → &mdash;
-  //
-
-  // TODO:
-  // - fractionals 1/2, 1/4, 3/4 -> ½, ¼, ¾
-  // - multiplications 2 x 4 -> 2 × 4
-
-  const RARE_RE = /\+-|\.\.|\?\?\?\?|!!!!|,,|--/;
-
-  // Workaround for phantomjs - need regex without /g flag,
-  // or root check will fail every second time
-  const SCOPED_ABBR_TEST_RE = /\((c|tm|r)\)/i;
-
-  const SCOPED_ABBR_RE = /\((c|tm|r)\)/ig;
-  const SCOPED_ABBR = {
-    c: '©',
-    r: '®',
-    tm: '™'
-  };
-
-  function replaceFn (match, name) {
-    return SCOPED_ABBR[name.toLowerCase()]
-  }
-
-  function replace_scoped (inlineTokens) {
-    let inside_autolink = 0;
-
-    for (let i = inlineTokens.length - 1; i >= 0; i--) {
-      const token = inlineTokens[i];
-
-      if (token.type === 'text' && !inside_autolink) {
-        token.content = token.content.replace(SCOPED_ABBR_RE, replaceFn);
-      }
-
-      if (token.type === 'link_open' && token.info === 'auto') {
-        inside_autolink--;
-      }
-
-      if (token.type === 'link_close' && token.info === 'auto') {
-        inside_autolink++;
-      }
-    }
-  }
-
-  function replace_rare (inlineTokens) {
-    let inside_autolink = 0;
-
-    for (let i = inlineTokens.length - 1; i >= 0; i--) {
-      const token = inlineTokens[i];
-
-      if (token.type === 'text' && !inside_autolink) {
-        if (RARE_RE.test(token.content)) {
-          token.content = token.content
-            .replace(/\+-/g, '±')
-            // .., ..., ....... -> …
-            // but ?..... & !..... -> ?.. & !..
-            .replace(/\.{2,}/g, '…').replace(/([?!])…/g, '$1..')
-            .replace(/([?!]){4,}/g, '$1$1$1').replace(/,{2,}/g, ',')
-            // em-dash
-            .replace(/(^|[^-])---(?=[^-]|$)/mg, '$1\u2014')
-            // en-dash
-            .replace(/(^|\s)--(?=\s|$)/mg, '$1\u2013')
-            .replace(/(^|[^-\s])--(?=[^-\s]|$)/mg, '$1\u2013');
-        }
-      }
-
-      if (token.type === 'link_open' && token.info === 'auto') {
-        inside_autolink--;
-      }
-
-      if (token.type === 'link_close' && token.info === 'auto') {
-        inside_autolink++;
-      }
-    }
-  }
-
-  function replace (state) {
-    let blkIdx;
-
-    if (!state.md.options.typographer) { return }
-
-    for (blkIdx = state.tokens.length - 1; blkIdx >= 0; blkIdx--) {
-      if (state.tokens[blkIdx].type !== 'inline') { continue }
-
-      if (SCOPED_ABBR_TEST_RE.test(state.tokens[blkIdx].content)) {
-        replace_scoped(state.tokens[blkIdx].children);
-      }
-
-      if (RARE_RE.test(state.tokens[blkIdx].content)) {
-        replace_rare(state.tokens[blkIdx].children);
-      }
-    }
-  }
-
-  // Convert straight quotation marks to typographic ones
-  //
-
-
-  const QUOTE_TEST_RE = /['"]/;
-  const QUOTE_RE = /['"]/g;
-  const APOSTROPHE = '\u2019'; /* ’ */
-
-  function replaceAt (str, index, ch) {
-    return str.slice(0, index) + ch + str.slice(index + 1)
-  }
-
-  function process_inlines (tokens, state) {
-    let j;
-
-    const stack = [];
-
-    for (let i = 0; i < tokens.length; i++) {
-      const token = tokens[i];
-
-      const thisLevel = tokens[i].level;
-
-      for (j = stack.length - 1; j >= 0; j--) {
-        if (stack[j].level <= thisLevel) { break }
-      }
-      stack.length = j + 1;
-
-      if (token.type !== 'text') { continue }
-
-      let text = token.content;
-      let pos = 0;
-      let max = text.length;
-
-      /* eslint no-labels:0,block-scoped-var:0 */
-      OUTER:
-      while (pos < max) {
-        QUOTE_RE.lastIndex = pos;
-        const t = QUOTE_RE.exec(text);
-        if (!t) { break }
-
-        let canOpen = true;
-        let canClose = true;
-        pos = t.index + 1;
-        const isSingle = (t[0] === "'");
-
-        // Find previous character,
-        // default to space if it's the beginning of the line
-        //
-        let lastChar = 0x20;
-
-        if (t.index - 1 >= 0) {
-          lastChar = text.charCodeAt(t.index - 1);
-        } else {
-          for (j = i - 1; j >= 0; j--) {
-            if (tokens[j].type === 'softbreak' || tokens[j].type === 'hardbreak') break // lastChar defaults to 0x20
-            if (!tokens[j].content) continue // should skip all tokens except 'text', 'html_inline' or 'code_inline'
-
-            lastChar = tokens[j].content.charCodeAt(tokens[j].content.length - 1);
-            break
-          }
-        }
-
-        // Find next character,
-        // default to space if it's the end of the line
-        //
-        let nextChar = 0x20;
-
-        if (pos < max) {
-          nextChar = text.charCodeAt(pos);
-        } else {
-          for (j = i + 1; j < tokens.length; j++) {
-            if (tokens[j].type === 'softbreak' || tokens[j].type === 'hardbreak') break // nextChar defaults to 0x20
-            if (!tokens[j].content) continue // should skip all tokens except 'text', 'html_inline' or 'code_inline'
-
-            nextChar = tokens[j].content.charCodeAt(0);
-            break
-          }
-        }
-
-        const isLastPunctChar = isMdAsciiPunct(lastChar) || isPunctChar(String.fromCharCode(lastChar));
-        const isNextPunctChar = isMdAsciiPunct(nextChar) || isPunctChar(String.fromCharCode(nextChar));
-
-        const isLastWhiteSpace = isWhiteSpace(lastChar);
-        const isNextWhiteSpace = isWhiteSpace(nextChar);
-
-        if (isNextWhiteSpace) {
-          canOpen = false;
-        } else if (isNextPunctChar) {
-          if (!(isLastWhiteSpace || isLastPunctChar)) {
-            canOpen = false;
-          }
-        }
-
-        if (isLastWhiteSpace) {
-          canClose = false;
-        } else if (isLastPunctChar) {
-          if (!(isNextWhiteSpace || isNextPunctChar)) {
-            canClose = false;
-          }
-        }
-
-        if (nextChar === 0x22 /* " */ && t[0] === '"') {
-          if (lastChar >= 0x30 /* 0 */ && lastChar <= 0x39 /* 9 */) {
-            // special case: 1"" - count first quote as an inch
-            canClose = canOpen = false;
-          }
-        }
-
-        if (canOpen && canClose) {
-          // Replace quotes in the middle of punctuation sequence, but not
-          // in the middle of the words, i.e.:
-          //
-          // 1. foo " bar " baz - not replaced
-          // 2. foo-"-bar-"-baz - replaced
-          // 3. foo"bar"baz     - not replaced
-          //
-          canOpen = isLastPunctChar;
-          canClose = isNextPunctChar;
-        }
-
-        if (!canOpen && !canClose) {
-          // middle of word
-          if (isSingle) {
-            token.content = replaceAt(token.content, t.index, APOSTROPHE);
-          }
-          continue
-        }
-
-        if (canClose) {
-          // this could be a closing quote, rewind the stack to get a match
-          for (j = stack.length - 1; j >= 0; j--) {
-            let item = stack[j];
-            if (stack[j].level < thisLevel) { break }
-            if (item.single === isSingle && stack[j].level === thisLevel) {
-              item = stack[j];
-
-              let openQuote;
-              let closeQuote;
-              if (isSingle) {
-                openQuote = state.md.options.quotes[2];
-                closeQuote = state.md.options.quotes[3];
-              } else {
-                openQuote = state.md.options.quotes[0];
-                closeQuote = state.md.options.quotes[1];
-              }
-
-              // replace token.content *before* tokens[item.token].content,
-              // because, if they are pointing at the same token, replaceAt
-              // could mess up indices when quote length != 1
-              token.content = replaceAt(token.content, t.index, closeQuote);
-              tokens[item.token].content = replaceAt(
-                tokens[item.token].content, item.pos, openQuote);
-
-              pos += closeQuote.length - 1;
-              if (item.token === i) { pos += openQuote.length - 1; }
-
-              text = token.content;
-              max = text.length;
-
-              stack.length = j;
-              continue OUTER
-            }
-          }
-        }
-
-        if (canOpen) {
-          stack.push({
-            token: i,
-            pos: t.index,
-            single: isSingle,
-            level: thisLevel
-          });
-        } else if (canClose && isSingle) {
-          token.content = replaceAt(token.content, t.index, APOSTROPHE);
-        }
-      }
-    }
-  }
-
-  function smartquotes (state) {
-    /* eslint max-depth:0 */
-    if (!state.md.options.typographer) { return }
-
-    for (let blkIdx = state.tokens.length - 1; blkIdx >= 0; blkIdx--) {
-      if (state.tokens[blkIdx].type !== 'inline' ||
-          !QUOTE_TEST_RE.test(state.tokens[blkIdx].content)) {
-        continue
-      }
-
-      process_inlines(state.tokens[blkIdx].children, state);
-    }
-  }
-
-  // Join raw text tokens with the rest of the text
-  //
-  // This is set as a separate rule to provide an opportunity for plugins
-  // to run text replacements after text join, but before escape join.
-  //
-  // For example, `\:)` shouldn't be replaced with an emoji.
-  //
-
-  function text_join (state) {
-    let curr, last;
-    const blockTokens = state.tokens;
-    const l = blockTokens.length;
-
-    for (let j = 0; j < l; j++) {
-      if (blockTokens[j].type !== 'inline') continue
-
-      const tokens = blockTokens[j].children;
-      const max = tokens.length;
-
-      for (curr = 0; curr < max; curr++) {
-        if (tokens[curr].type === 'text_special') {
-          tokens[curr].type = 'text';
-        }
-      }
-
-      for (curr = last = 0; curr < max; curr++) {
-        if (tokens[curr].type === 'text' &&
-            curr + 1 < max &&
-            tokens[curr + 1].type === 'text') {
-          // collapse two adjacent text nodes
-          tokens[curr + 1].content = tokens[curr].content + tokens[curr + 1].content;
-        } else {
-          if (curr !== last) { tokens[last] = tokens[curr]; }
-
-          last++;
-        }
-      }
-
-      if (curr !== last) {
-        tokens.length = last;
-      }
-    }
-  }
+  var state_core = StateCore;
 
   /** internal
    * class Core
@@ -17305,33 +20742,38 @@
    **/
 
 
-  const _rules$2 = [
-    ['normalize',      normalize],
-    ['block',          block],
-    ['inline',         inline],
-    ['linkify',        linkify$1],
-    ['replacements',   replace],
-    ['smartquotes',    smartquotes],
+  var Ruler$2  = ruler;
+
+
+  var _rules$2 = [
+    [ 'normalize',      normalize      ],
+    [ 'block',          block          ],
+    [ 'inline',         inline         ],
+    [ 'linkify',        linkify$1        ],
+    [ 'replacements',   replacements   ],
+    [ 'smartquotes',    smartquotes    ],
     // `text_join` finds `text_special` tokens (for escape sequences)
     // and joins them with the rest of the text
-    ['text_join',      text_join]
+    [ 'text_join',      text_join      ]
   ];
+
 
   /**
    * new Core()
    **/
-  function Core () {
+  function Core() {
     /**
      * Core#ruler -> Ruler
      *
      * [[Ruler]] instance. Keep configuration of core rules.
      **/
-    this.ruler = new Ruler();
+    this.ruler = new Ruler$2();
 
-    for (let i = 0; i < _rules$2.length; i++) {
+    for (var i = 0; i < _rules$2.length; i++) {
       this.ruler.push(_rules$2[i][0], _rules$2[i][1]);
     }
   }
+
 
   /**
    * Core.process(state)
@@ -17339,259 +20781,40 @@
    * Executes core chain rules.
    **/
   Core.prototype.process = function (state) {
-    const rules = this.ruler.getRules('');
+    var i, l, rules;
 
-    for (let i = 0, l = rules.length; i < l; i++) {
+    rules = this.ruler.getRules('');
+
+    for (i = 0, l = rules.length; i < l; i++) {
       rules[i](state);
     }
   };
 
-  Core.prototype.State = StateCore;
-
-  // Parser state class
+  Core.prototype.State = state_core;
 
 
-  function StateBlock (src, md, env, tokens) {
-    this.src = src;
+  var parser_core = Core;
 
-    // link to parser instance
-    this.md     = md;
+  var isSpace$a = utils$1.isSpace;
 
-    this.env = env;
 
-    //
-    // Internal state vartiables
-    //
+  function getLine(state, line) {
+    var pos = state.bMarks[line] + state.tShift[line],
+        max = state.eMarks[line];
 
-    this.tokens = tokens;
-
-    this.bMarks = [];  // line begin offsets for fast jumps
-    this.eMarks = [];  // line end offsets for fast jumps
-    this.tShift = [];  // offsets of the first non-space characters (tabs not expanded)
-    this.sCount = [];  // indents for each line (tabs expanded)
-
-    // An amount of virtual spaces (tabs expanded) between beginning
-    // of each line (bMarks) and real beginning of that line.
-    //
-    // It exists only as a hack because blockquotes override bMarks
-    // losing information in the process.
-    //
-    // It's used only when expanding tabs, you can think about it as
-    // an initial tab length, e.g. bsCount=21 applied to string `\t123`
-    // means first tab should be expanded to 4-21%4 === 3 spaces.
-    //
-    this.bsCount = [];
-
-    // block parser variables
-
-    // required block content indent (for example, if we are
-    // inside a list, it would be positioned after list marker)
-    this.blkIndent  = 0;
-    this.line       = 0; // line index in src
-    this.lineMax    = 0; // lines count
-    this.tight      = false;  // loose/tight mode for lists
-    this.ddIndent   = -1; // indent of the current dd block (-1 if there isn't any)
-    this.listIndent = -1; // indent of the current list block (-1 if there isn't any)
-
-    // can be 'blockquote', 'list', 'root', 'paragraph' or 'reference'
-    // used in lists to determine if they interrupt a paragraph
-    this.parentType = 'root';
-
-    this.level = 0;
-
-    // Create caches
-    // Generate markers.
-    const s = this.src;
-
-    for (let start = 0, pos = 0, indent = 0, offset = 0, len = s.length, indent_found = false; pos < len; pos++) {
-      const ch = s.charCodeAt(pos);
-
-      if (!indent_found) {
-        if (isSpace(ch)) {
-          indent++;
-
-          if (ch === 0x09) {
-            offset += 4 - offset % 4;
-          } else {
-            offset++;
-          }
-          continue
-        } else {
-          indent_found = true;
-        }
-      }
-
-      if (ch === 0x0A || pos === len - 1) {
-        if (ch !== 0x0A) { pos++; }
-        this.bMarks.push(start);
-        this.eMarks.push(pos);
-        this.tShift.push(indent);
-        this.sCount.push(offset);
-        this.bsCount.push(0);
-
-        indent_found = false;
-        indent = 0;
-        offset = 0;
-        start = pos + 1;
-      }
-    }
-
-    // Push fake entry to simplify cache bounds checks
-    this.bMarks.push(s.length);
-    this.eMarks.push(s.length);
-    this.tShift.push(0);
-    this.sCount.push(0);
-    this.bsCount.push(0);
-
-    this.lineMax = this.bMarks.length - 1; // don't count last fake line
+    return state.src.slice(pos, max);
   }
 
-  // Push new token to "stream".
-  //
-  StateBlock.prototype.push = function (type, tag, nesting) {
-    const token = new Token(type, tag, nesting);
-    token.block = true;
+  function escapedSplit(str) {
+    var result = [],
+        pos = 0,
+        max = str.length,
+        ch,
+        isEscaped = false,
+        lastPos = 0,
+        current = '';
 
-    if (nesting < 0) this.level--; // closing tag
-    token.level = this.level;
-    if (nesting > 0) this.level++; // opening tag
-
-    this.tokens.push(token);
-    return token
-  };
-
-  StateBlock.prototype.isEmpty = function isEmpty (line) {
-    return this.bMarks[line] + this.tShift[line] >= this.eMarks[line]
-  };
-
-  StateBlock.prototype.skipEmptyLines = function skipEmptyLines (from) {
-    for (let max = this.lineMax; from < max; from++) {
-      if (this.bMarks[from] + this.tShift[from] < this.eMarks[from]) {
-        break
-      }
-    }
-    return from
-  };
-
-  // Skip spaces from given position.
-  StateBlock.prototype.skipSpaces = function skipSpaces (pos) {
-    for (let max = this.src.length; pos < max; pos++) {
-      const ch = this.src.charCodeAt(pos);
-      if (!isSpace(ch)) { break }
-    }
-    return pos
-  };
-
-  // Skip spaces from given position in reverse.
-  StateBlock.prototype.skipSpacesBack = function skipSpacesBack (pos, min) {
-    if (pos <= min) { return pos }
-
-    while (pos > min) {
-      if (!isSpace(this.src.charCodeAt(--pos))) { return pos + 1 }
-    }
-    return pos
-  };
-
-  // Skip char codes from given position
-  StateBlock.prototype.skipChars = function skipChars (pos, code) {
-    for (let max = this.src.length; pos < max; pos++) {
-      if (this.src.charCodeAt(pos) !== code) { break }
-    }
-    return pos
-  };
-
-  // Skip char codes reverse from given position - 1
-  StateBlock.prototype.skipCharsBack = function skipCharsBack (pos, code, min) {
-    if (pos <= min) { return pos }
-
-    while (pos > min) {
-      if (code !== this.src.charCodeAt(--pos)) { return pos + 1 }
-    }
-    return pos
-  };
-
-  // cut lines range from source.
-  StateBlock.prototype.getLines = function getLines (begin, end, indent, keepLastLF) {
-    if (begin >= end) {
-      return ''
-    }
-
-    const queue = new Array(end - begin);
-
-    for (let i = 0, line = begin; line < end; line++, i++) {
-      let lineIndent = 0;
-      const lineStart = this.bMarks[line];
-      let first = lineStart;
-      let last;
-
-      if (line + 1 < end || keepLastLF) {
-        // No need for bounds check because we have fake entry on tail.
-        last = this.eMarks[line] + 1;
-      } else {
-        last = this.eMarks[line];
-      }
-
-      while (first < last && lineIndent < indent) {
-        const ch = this.src.charCodeAt(first);
-
-        if (isSpace(ch)) {
-          if (ch === 0x09) {
-            lineIndent += 4 - (lineIndent + this.bsCount[line]) % 4;
-          } else {
-            lineIndent++;
-          }
-        } else if (first - lineStart < this.tShift[line]) {
-          // patched tShift masked characters to look like spaces (blockquotes, list markers)
-          lineIndent++;
-        } else {
-          break
-        }
-
-        first++;
-      }
-
-      if (lineIndent > indent) {
-        // partially expanding tabs in code blocks, e.g '\t\tfoobar'
-        // with indent=2 becomes '  \tfoobar'
-        queue[i] = new Array(lineIndent - indent + 1).join(' ') + this.src.slice(first, last);
-      } else {
-        queue[i] = this.src.slice(first, last);
-      }
-    }
-
-    return queue.join('')
-  };
-
-  // re-export Token class to use in block rules
-  StateBlock.prototype.Token = Token;
-
-  // GFM table, https://github.github.com/gfm/#tables-extension-
-
-
-  // Limit the amount of empty autocompleted cells in a table,
-  // see https://github.com/markdown-it/markdown-it/issues/1000,
-  //
-  // Both pulldown-cmark and commonmark-hs limit the number of cells this way to ~200k.
-  // We set it to 65k, which can expand user input by a factor of x370
-  // (256x256 square is 1.8kB expanded into 650kB).
-  const MAX_AUTOCOMPLETED_CELLS = 0x10000;
-
-  function getLine (state, line) {
-    const pos = state.bMarks[line] + state.tShift[line];
-    const max = state.eMarks[line];
-
-    return state.src.slice(pos, max)
-  }
-
-  function escapedSplit (str) {
-    const result = [];
-    const max = str.length;
-
-    let pos = 0;
-    let ch = str.charCodeAt(pos);
-    let isEscaped = false;
-    let lastPos = 0;
-    let current = '';
+    ch  = str.charCodeAt(pos);
 
     while (pos < max) {
       if (ch === 0x7c/* | */) {
@@ -17615,65 +20838,71 @@
 
     result.push(current + str.substring(lastPos));
 
-    return result
+    return result;
   }
 
-  function table (state, startLine, endLine, silent) {
+
+  var table = function table(state, startLine, endLine, silent) {
+    var ch, lineText, pos, i, l, nextLine, columns, columnCount, token,
+        aligns, t, tableLines, tbodyLines, oldParentType, terminate,
+        terminatorRules, firstCh, secondCh;
+
     // should have at least two lines
-    if (startLine + 2 > endLine) { return false }
+    if (startLine + 2 > endLine) { return false; }
 
-    let nextLine = startLine + 1;
+    nextLine = startLine + 1;
 
-    if (state.sCount[nextLine] < state.blkIndent) { return false }
+    if (state.sCount[nextLine] < state.blkIndent) { return false; }
 
     // if it's indented more than 3 spaces, it should be a code block
-    if (state.sCount[nextLine] - state.blkIndent >= 4) { return false }
+    if (state.sCount[nextLine] - state.blkIndent >= 4) { return false; }
 
     // first character of the second line should be '|', '-', ':',
     // and no other characters are allowed but spaces;
     // basically, this is the equivalent of /^[-:|][-:|\s]*$/ regexp
 
-    let pos = state.bMarks[nextLine] + state.tShift[nextLine];
-    if (pos >= state.eMarks[nextLine]) { return false }
+    pos = state.bMarks[nextLine] + state.tShift[nextLine];
+    if (pos >= state.eMarks[nextLine]) { return false; }
 
-    const firstCh = state.src.charCodeAt(pos++);
-    if (firstCh !== 0x7C/* | */ && firstCh !== 0x2D/* - */ && firstCh !== 0x3A/* : */) { return false }
+    firstCh = state.src.charCodeAt(pos++);
+    if (firstCh !== 0x7C/* | */ && firstCh !== 0x2D/* - */ && firstCh !== 0x3A/* : */) { return false; }
 
-    if (pos >= state.eMarks[nextLine]) { return false }
+    if (pos >= state.eMarks[nextLine]) { return false; }
 
-    const secondCh = state.src.charCodeAt(pos++);
-    if (secondCh !== 0x7C/* | */ && secondCh !== 0x2D/* - */ && secondCh !== 0x3A/* : */ && !isSpace(secondCh)) {
-      return false
+    secondCh = state.src.charCodeAt(pos++);
+    if (secondCh !== 0x7C/* | */ && secondCh !== 0x2D/* - */ && secondCh !== 0x3A/* : */ && !isSpace$a(secondCh)) {
+      return false;
     }
 
     // if first character is '-', then second character must not be a space
     // (due to parsing ambiguity with list)
-    if (firstCh === 0x2D/* - */ && isSpace(secondCh)) { return false }
+    if (firstCh === 0x2D/* - */ && isSpace$a(secondCh)) { return false; }
 
     while (pos < state.eMarks[nextLine]) {
-      const ch = state.src.charCodeAt(pos);
+      ch = state.src.charCodeAt(pos);
 
-      if (ch !== 0x7C/* | */ && ch !== 0x2D/* - */ && ch !== 0x3A/* : */ && !isSpace(ch)) { return false }
+      if (ch !== 0x7C/* | */ && ch !== 0x2D/* - */ && ch !== 0x3A/* : */ && !isSpace$a(ch)) { return false; }
 
       pos++;
     }
 
-    let lineText = getLine(state, startLine + 1);
-    let columns = lineText.split('|');
-    const aligns = [];
-    for (let i = 0; i < columns.length; i++) {
-      const t = columns[i].trim();
+    lineText = getLine(state, startLine + 1);
+
+    columns = lineText.split('|');
+    aligns = [];
+    for (i = 0; i < columns.length; i++) {
+      t = columns[i].trim();
       if (!t) {
         // allow empty columns before and after table, but not in between columns;
         // e.g. allow ` |---| `, disallow ` ---||--- `
         if (i === 0 || i === columns.length - 1) {
-          continue
+          continue;
         } else {
-          return false
+          return false;
         }
       }
 
-      if (!/^:?-+:?$/.test(t)) { return false }
+      if (!/^:?-+:?$/.test(t)) { return false; }
       if (t.charCodeAt(t.length - 1) === 0x3A/* : */) {
         aligns.push(t.charCodeAt(0) === 0x3A/* : */ ? 'center' : 'right');
       } else if (t.charCodeAt(0) === 0x3A/* : */) {
@@ -17684,193 +20913,182 @@
     }
 
     lineText = getLine(state, startLine).trim();
-    if (lineText.indexOf('|') === -1) { return false }
-    if (state.sCount[startLine] - state.blkIndent >= 4) { return false }
+    if (lineText.indexOf('|') === -1) { return false; }
+    if (state.sCount[startLine] - state.blkIndent >= 4) { return false; }
     columns = escapedSplit(lineText);
     if (columns.length && columns[0] === '') columns.shift();
     if (columns.length && columns[columns.length - 1] === '') columns.pop();
 
     // header row will define an amount of columns in the entire table,
     // and align row should be exactly the same (the rest of the rows can differ)
-    const columnCount = columns.length;
-    if (columnCount === 0 || columnCount !== aligns.length) { return false }
+    columnCount = columns.length;
+    if (columnCount === 0 || columnCount !== aligns.length) { return false; }
 
-    if (silent) { return true }
+    if (silent) { return true; }
 
-    const oldParentType = state.parentType;
+    oldParentType = state.parentType;
     state.parentType = 'table';
 
     // use 'blockquote' lists for termination because it's
     // the most similar to tables
-    const terminatorRules = state.md.block.ruler.getRules('blockquote');
+    terminatorRules = state.md.block.ruler.getRules('blockquote');
 
-    const token_to = state.push('table_open', 'table', 1);
-    const tableLines = [startLine, 0];
-    token_to.map = tableLines;
+    token     = state.push('table_open', 'table', 1);
+    token.map = tableLines = [ startLine, 0 ];
 
-    const token_tho = state.push('thead_open', 'thead', 1);
-    token_tho.map = [startLine, startLine + 1];
+    token     = state.push('thead_open', 'thead', 1);
+    token.map = [ startLine, startLine + 1 ];
 
-    const token_htro = state.push('tr_open', 'tr', 1);
-    token_htro.map = [startLine, startLine + 1];
+    token     = state.push('tr_open', 'tr', 1);
+    token.map = [ startLine, startLine + 1 ];
 
-    for (let i = 0; i < columns.length; i++) {
-      const token_ho = state.push('th_open', 'th', 1);
+    for (i = 0; i < columns.length; i++) {
+      token          = state.push('th_open', 'th', 1);
       if (aligns[i]) {
-        token_ho.attrs  = [['style', 'text-align:' + aligns[i]]];
+        token.attrs  = [ [ 'style', 'text-align:' + aligns[i] ] ];
       }
 
-      const token_il = state.push('inline', '', 0);
-      token_il.content  = columns[i].trim();
-      token_il.children = [];
+      token          = state.push('inline', '', 0);
+      token.content  = columns[i].trim();
+      token.children = [];
 
-      state.push('th_close', 'th', -1);
+      token          = state.push('th_close', 'th', -1);
     }
 
-    state.push('tr_close', 'tr', -1);
-    state.push('thead_close', 'thead', -1);
-
-    let tbodyLines;
-    let autocompletedCells = 0;
+    token     = state.push('tr_close', 'tr', -1);
+    token     = state.push('thead_close', 'thead', -1);
 
     for (nextLine = startLine + 2; nextLine < endLine; nextLine++) {
-      if (state.sCount[nextLine] < state.blkIndent) { break }
+      if (state.sCount[nextLine] < state.blkIndent) { break; }
 
-      let terminate = false;
-      for (let i = 0, l = terminatorRules.length; i < l; i++) {
+      terminate = false;
+      for (i = 0, l = terminatorRules.length; i < l; i++) {
         if (terminatorRules[i](state, nextLine, endLine, true)) {
           terminate = true;
-          break
+          break;
         }
       }
 
-      if (terminate) { break }
+      if (terminate) { break; }
       lineText = getLine(state, nextLine).trim();
-      if (!lineText) { break }
-      if (state.sCount[nextLine] - state.blkIndent >= 4) { break }
+      if (!lineText) { break; }
+      if (state.sCount[nextLine] - state.blkIndent >= 4) { break; }
       columns = escapedSplit(lineText);
       if (columns.length && columns[0] === '') columns.shift();
       if (columns.length && columns[columns.length - 1] === '') columns.pop();
 
-      // note: autocomplete count can be negative if user specifies more columns than header,
-      // but that does not affect intended use (which is limiting expansion)
-      autocompletedCells += columnCount - columns.length;
-      if (autocompletedCells > MAX_AUTOCOMPLETED_CELLS) { break }
-
       if (nextLine === startLine + 2) {
-        const token_tbo = state.push('tbody_open', 'tbody', 1);
-        token_tbo.map = tbodyLines = [startLine + 2, 0];
+        token     = state.push('tbody_open', 'tbody', 1);
+        token.map = tbodyLines = [ startLine + 2, 0 ];
       }
 
-      const token_tro = state.push('tr_open', 'tr', 1);
-      token_tro.map = [nextLine, nextLine + 1];
+      token     = state.push('tr_open', 'tr', 1);
+      token.map = [ nextLine, nextLine + 1 ];
 
-      for (let i = 0; i < columnCount; i++) {
-        const token_tdo = state.push('td_open', 'td', 1);
+      for (i = 0; i < columnCount; i++) {
+        token          = state.push('td_open', 'td', 1);
         if (aligns[i]) {
-          token_tdo.attrs  = [['style', 'text-align:' + aligns[i]]];
+          token.attrs  = [ [ 'style', 'text-align:' + aligns[i] ] ];
         }
 
-        const token_il = state.push('inline', '', 0);
-        token_il.content  = columns[i] ? columns[i].trim() : '';
-        token_il.children = [];
+        token          = state.push('inline', '', 0);
+        token.content  = columns[i] ? columns[i].trim() : '';
+        token.children = [];
 
-        state.push('td_close', 'td', -1);
+        token          = state.push('td_close', 'td', -1);
       }
-      state.push('tr_close', 'tr', -1);
+      token = state.push('tr_close', 'tr', -1);
     }
 
     if (tbodyLines) {
-      state.push('tbody_close', 'tbody', -1);
+      token = state.push('tbody_close', 'tbody', -1);
       tbodyLines[1] = nextLine;
     }
 
-    state.push('table_close', 'table', -1);
+    token = state.push('table_close', 'table', -1);
     tableLines[1] = nextLine;
 
     state.parentType = oldParentType;
     state.line = nextLine;
-    return true
-  }
+    return true;
+  };
 
-  // Code block (4 spaces padded)
+  var code = function code(state, startLine, endLine/*, silent*/) {
+    var nextLine, last, token;
 
-  function code (state, startLine, endLine/*, silent */) {
-    if (state.sCount[startLine] - state.blkIndent < 4) { return false }
+    if (state.sCount[startLine] - state.blkIndent < 4) { return false; }
 
-    let nextLine = startLine + 1;
-    let last = nextLine;
+    last = nextLine = startLine + 1;
 
     while (nextLine < endLine) {
       if (state.isEmpty(nextLine)) {
         nextLine++;
-        continue
+        continue;
       }
 
       if (state.sCount[nextLine] - state.blkIndent >= 4) {
         nextLine++;
         last = nextLine;
-        continue
+        continue;
       }
-      break
+      break;
     }
 
     state.line = last;
 
-    const token   = state.push('code_block', 'code', 0);
+    token         = state.push('code_block', 'code', 0);
     token.content = state.getLines(startLine, last, 4 + state.blkIndent, false) + '\n';
-    token.map     = [startLine, state.line];
+    token.map     = [ startLine, state.line ];
 
-    return true
-  }
+    return true;
+  };
 
-  // fences (``` lang, ~~~ lang)
-
-  function fence (state, startLine, endLine, silent) {
-    let pos = state.bMarks[startLine] + state.tShift[startLine];
-    let max = state.eMarks[startLine];
+  var fence = function fence(state, startLine, endLine, silent) {
+    var marker, len, params, nextLine, mem, token, markup,
+        haveEndMarker = false,
+        pos = state.bMarks[startLine] + state.tShift[startLine],
+        max = state.eMarks[startLine];
 
     // if it's indented more than 3 spaces, it should be a code block
-    if (state.sCount[startLine] - state.blkIndent >= 4) { return false }
+    if (state.sCount[startLine] - state.blkIndent >= 4) { return false; }
 
-    if (pos + 3 > max) { return false }
+    if (pos + 3 > max) { return false; }
 
-    const marker = state.src.charCodeAt(pos);
+    marker = state.src.charCodeAt(pos);
 
     if (marker !== 0x7E/* ~ */ && marker !== 0x60 /* ` */) {
-      return false
+      return false;
     }
 
     // scan marker length
-    let mem = pos;
+    mem = pos;
     pos = state.skipChars(pos, marker);
 
-    let len = pos - mem;
+    len = pos - mem;
 
-    if (len < 3) { return false }
+    if (len < 3) { return false; }
 
-    const markup = state.src.slice(mem, pos);
-    const params = state.src.slice(pos, max);
+    markup = state.src.slice(mem, pos);
+    params = state.src.slice(pos, max);
 
     if (marker === 0x60 /* ` */) {
       if (params.indexOf(String.fromCharCode(marker)) >= 0) {
-        return false
+        return false;
       }
     }
 
     // Since start is found, we can report success here in validation mode
-    if (silent) { return true }
+    if (silent) { return true; }
 
     // search end of block
-    let nextLine = startLine;
-    let haveEndMarker = false;
+    nextLine = startLine;
 
     for (;;) {
       nextLine++;
       if (nextLine >= endLine) {
         // unclosed block should be autoclosed by end of document.
         // also block seems to be autoclosed by end of parent
-        break
+        break;
       }
 
       pos = mem = state.bMarks[nextLine] + state.tShift[nextLine];
@@ -17880,29 +21098,29 @@
         // non-empty line with negative indent should stop the list:
         // - ```
         //  test
-        break
+        break;
       }
 
-      if (state.src.charCodeAt(pos) !== marker) { continue }
+      if (state.src.charCodeAt(pos) !== marker) { continue; }
 
       if (state.sCount[nextLine] - state.blkIndent >= 4) {
         // closing fence should be indented less than 4 spaces
-        continue
+        continue;
       }
 
       pos = state.skipChars(pos, marker);
 
       // closing code fence must be at least as long as the opening one
-      if (pos - mem < len) { continue }
+      if (pos - mem < len) { continue; }
 
       // make sure tail has spaces only
       pos = state.skipSpaces(pos);
 
-      if (pos < max) { continue }
+      if (pos < max) { continue; }
 
       haveEndMarker = true;
       // found!
-      break
+      break;
     }
 
     // If a fence has heading spaces, they should be removed from its inner block
@@ -17910,45 +21128,62 @@
 
     state.line = nextLine + (haveEndMarker ? 1 : 0);
 
-    const token   = state.push('fence', 'code', 0);
+    token         = state.push('fence', 'code', 0);
     token.info    = params;
     token.content = state.getLines(startLine + 1, nextLine, len, true);
     token.markup  = markup;
-    token.map     = [startLine, state.line];
+    token.map     = [ startLine, state.line ];
 
-    return true
-  }
+    return true;
+  };
 
-  // Block quotes
+  var isSpace$9 = utils$1.isSpace;
 
 
-  function blockquote (state, startLine, endLine, silent) {
-    let pos = state.bMarks[startLine] + state.tShift[startLine];
-    let max = state.eMarks[startLine];
-
-    const oldLineMax = state.lineMax;
+  var blockquote = function blockquote(state, startLine, endLine, silent) {
+    var adjustTab,
+        ch,
+        i,
+        initial,
+        l,
+        lastLineEmpty,
+        lines,
+        nextLine,
+        offset,
+        oldBMarks,
+        oldBSCount,
+        oldIndent,
+        oldParentType,
+        oldSCount,
+        oldTShift,
+        spaceAfterMarker,
+        terminate,
+        terminatorRules,
+        token,
+        isOutdented,
+        oldLineMax = state.lineMax,
+        pos = state.bMarks[startLine] + state.tShift[startLine],
+        max = state.eMarks[startLine];
 
     // if it's indented more than 3 spaces, it should be a code block
-    if (state.sCount[startLine] - state.blkIndent >= 4) { return false }
+    if (state.sCount[startLine] - state.blkIndent >= 4) { return false; }
 
     // check the block quote marker
-    if (state.src.charCodeAt(pos) !== 0x3E/* > */) { return false }
+    if (state.src.charCodeAt(pos) !== 0x3E/* > */) { return false; }
 
     // we know that it's going to be a valid blockquote,
     // so no point trying to find the end of it in silent mode
-    if (silent) { return true }
+    if (silent) { return true; }
 
-    const oldBMarks  = [];
-    const oldBSCount = [];
-    const oldSCount  = [];
-    const oldTShift  = [];
+    oldBMarks  = [];
+    oldBSCount = [];
+    oldSCount  = [];
+    oldTShift  = [];
 
-    const terminatorRules = state.md.block.ruler.getRules('blockquote');
+    terminatorRules = state.md.block.ruler.getRules('blockquote');
 
-    const oldParentType = state.parentType;
+    oldParentType = state.parentType;
     state.parentType = 'blockquote';
-    let lastLineEmpty = false;
-    let nextLine;
 
     // Search the end of the block
     //
@@ -17977,23 +21212,21 @@
       //    > current blockquote
       // 2. checking this line
       // ```
-      const isOutdented = state.sCount[nextLine] < state.blkIndent;
+      isOutdented = state.sCount[nextLine] < state.blkIndent;
 
       pos = state.bMarks[nextLine] + state.tShift[nextLine];
       max = state.eMarks[nextLine];
 
       if (pos >= max) {
         // Case 1: line is not inside the blockquote, and this line is empty.
-        break
+        break;
       }
 
       if (state.src.charCodeAt(pos++) === 0x3E/* > */ && !isOutdented) {
         // This line is inside the blockquote.
 
         // set offset past spaces and ">"
-        let initial = state.sCount[nextLine] + 1;
-        let spaceAfterMarker;
-        let adjustTab;
+        initial = state.sCount[nextLine] + 1;
 
         // skip one optional space after '>'
         if (state.src.charCodeAt(pos) === 0x20 /* space */) {
@@ -18022,21 +21255,21 @@
           spaceAfterMarker = false;
         }
 
-        let offset = initial;
+        offset = initial;
         oldBMarks.push(state.bMarks[nextLine]);
         state.bMarks[nextLine] = pos;
 
         while (pos < max) {
-          const ch = state.src.charCodeAt(pos);
+          ch = state.src.charCodeAt(pos);
 
-          if (isSpace(ch)) {
+          if (isSpace$9(ch)) {
             if (ch === 0x09) {
               offset += 4 - (offset + state.bsCount[nextLine] + (adjustTab ? 1 : 0)) % 4;
             } else {
               offset++;
             }
           } else {
-            break
+            break;
           }
 
           pos++;
@@ -18052,18 +21285,18 @@
 
         oldTShift.push(state.tShift[nextLine]);
         state.tShift[nextLine] = pos - state.bMarks[nextLine];
-        continue
+        continue;
       }
 
       // Case 2: line is not inside the blockquote, and the last line was empty.
-      if (lastLineEmpty) { break }
+      if (lastLineEmpty) { break; }
 
       // Case 3: another tag found.
-      let terminate = false;
-      for (let i = 0, l = terminatorRules.length; i < l; i++) {
+      terminate = false;
+      for (i = 0, l = terminatorRules.length; i < l; i++) {
         if (terminatorRules[i](state, nextLine, endLine, true)) {
           terminate = true;
-          break
+          break;
         }
       }
 
@@ -18085,7 +21318,7 @@
           state.sCount[nextLine] -= state.blkIndent;
         }
 
-        break
+        break;
       }
 
       oldBMarks.push(state.bMarks[nextLine]);
@@ -18098,18 +21331,17 @@
       state.sCount[nextLine] = -1;
     }
 
-    const oldIndent = state.blkIndent;
+    oldIndent = state.blkIndent;
     state.blkIndent = 0;
 
-    const token_o  = state.push('blockquote_open', 'blockquote', 1);
-    token_o.markup = '>';
-    const lines = [startLine, 0];
-    token_o.map    = lines;
+    token        = state.push('blockquote_open', 'blockquote', 1);
+    token.markup = '>';
+    token.map    = lines = [ startLine, 0 ];
 
     state.md.block.tokenize(state, startLine, nextLine);
 
-    const token_c  = state.push('blockquote_close', 'blockquote', -1);
-    token_c.markup = '>';
+    token        = state.push('blockquote_close', 'blockquote', -1);
+    token.markup = '>';
 
     state.lineMax = oldLineMax;
     state.parentType = oldParentType;
@@ -18117,7 +21349,7 @@
 
     // Restore original tShift; this might not be necessary since the parser
     // has already been here, but just to make sure we can do that.
-    for (let i = 0; i < oldTShift.length; i++) {
+    for (i = 0; i < oldTShift.length; i++) {
       state.bMarks[i + startLine] = oldBMarks[i];
       state.tShift[i + startLine] = oldTShift[i];
       state.sCount[i + startLine] = oldSCount[i];
@@ -18125,129 +21357,137 @@
     }
     state.blkIndent = oldIndent;
 
-    return true
-  }
+    return true;
+  };
 
-  // Horizontal rule
+  var isSpace$8 = utils$1.isSpace;
 
 
-  function hr (state, startLine, endLine, silent) {
-    const max = state.eMarks[startLine];
+  var hr = function hr(state, startLine, endLine, silent) {
+    var marker, cnt, ch, token,
+        pos = state.bMarks[startLine] + state.tShift[startLine],
+        max = state.eMarks[startLine];
+
     // if it's indented more than 3 spaces, it should be a code block
-    if (state.sCount[startLine] - state.blkIndent >= 4) { return false }
+    if (state.sCount[startLine] - state.blkIndent >= 4) { return false; }
 
-    let pos = state.bMarks[startLine] + state.tShift[startLine];
-    const marker = state.src.charCodeAt(pos++);
+    marker = state.src.charCodeAt(pos++);
 
     // Check hr marker
     if (marker !== 0x2A/* * */ &&
         marker !== 0x2D/* - */ &&
         marker !== 0x5F/* _ */) {
-      return false
+      return false;
     }
 
     // markers can be mixed with spaces, but there should be at least 3 of them
 
-    let cnt = 1;
+    cnt = 1;
     while (pos < max) {
-      const ch = state.src.charCodeAt(pos++);
-      if (ch !== marker && !isSpace(ch)) { return false }
+      ch = state.src.charCodeAt(pos++);
+      if (ch !== marker && !isSpace$8(ch)) { return false; }
       if (ch === marker) { cnt++; }
     }
 
-    if (cnt < 3) { return false }
+    if (cnt < 3) { return false; }
 
-    if (silent) { return true }
+    if (silent) { return true; }
 
     state.line = startLine + 1;
 
-    const token  = state.push('hr', 'hr', 0);
-    token.map    = [startLine, state.line];
+    token        = state.push('hr', 'hr', 0);
+    token.map    = [ startLine, state.line ];
     token.markup = Array(cnt + 1).join(String.fromCharCode(marker));
 
-    return true
-  }
+    return true;
+  };
 
-  // Lists
+  var isSpace$7 = utils$1.isSpace;
 
 
   // Search `[-+*][\n ]`, returns next pos after marker on success
   // or -1 on fail.
-  function skipBulletListMarker (state, startLine) {
-    const max = state.eMarks[startLine];
-    let pos = state.bMarks[startLine] + state.tShift[startLine];
+  function skipBulletListMarker(state, startLine) {
+    var marker, pos, max, ch;
 
-    const marker = state.src.charCodeAt(pos++);
+    pos = state.bMarks[startLine] + state.tShift[startLine];
+    max = state.eMarks[startLine];
+
+    marker = state.src.charCodeAt(pos++);
     // Check bullet
     if (marker !== 0x2A/* * */ &&
         marker !== 0x2D/* - */ &&
         marker !== 0x2B/* + */) {
-      return -1
-    }
-
-    if (pos < max) {
-      const ch = state.src.charCodeAt(pos);
-
-      if (!isSpace(ch)) {
-        // " -test " - is not a list item
-        return -1
-      }
-    }
-
-    return pos
-  }
-
-  // Search `\d+[.)][\n ]`, returns next pos after marker on success
-  // or -1 on fail.
-  function skipOrderedListMarker (state, startLine) {
-    const start = state.bMarks[startLine] + state.tShift[startLine];
-    const max = state.eMarks[startLine];
-    let pos = start;
-
-    // List marker should have at least 2 chars (digit + dot)
-    if (pos + 1 >= max) { return -1 }
-
-    let ch = state.src.charCodeAt(pos++);
-
-    if (ch < 0x30/* 0 */ || ch > 0x39/* 9 */) { return -1 }
-
-    for (;;) {
-      // EOL -> fail
-      if (pos >= max) { return -1 }
-
-      ch = state.src.charCodeAt(pos++);
-
-      if (ch >= 0x30/* 0 */ && ch <= 0x39/* 9 */) {
-        // List marker should have no more than 9 digits
-        // (prevents integer overflow in browsers)
-        if (pos - start >= 10) { return -1 }
-
-        continue
-      }
-
-      // found valid marker
-      if (ch === 0x29/* ) */ || ch === 0x2e/* . */) {
-        break
-      }
-
-      return -1
+      return -1;
     }
 
     if (pos < max) {
       ch = state.src.charCodeAt(pos);
 
-      if (!isSpace(ch)) {
-        // " 1.test " - is not a list item
-        return -1
+      if (!isSpace$7(ch)) {
+        // " -test " - is not a list item
+        return -1;
       }
     }
-    return pos
+
+    return pos;
   }
 
-  function markTightParagraphs (state, idx) {
-    const level = state.level + 2;
+  // Search `\d+[.)][\n ]`, returns next pos after marker on success
+  // or -1 on fail.
+  function skipOrderedListMarker(state, startLine) {
+    var ch,
+        start = state.bMarks[startLine] + state.tShift[startLine],
+        pos = start,
+        max = state.eMarks[startLine];
 
-    for (let i = idx + 2, l = state.tokens.length - 2; i < l; i++) {
+    // List marker should have at least 2 chars (digit + dot)
+    if (pos + 1 >= max) { return -1; }
+
+    ch = state.src.charCodeAt(pos++);
+
+    if (ch < 0x30/* 0 */ || ch > 0x39/* 9 */) { return -1; }
+
+    for (;;) {
+      // EOL -> fail
+      if (pos >= max) { return -1; }
+
+      ch = state.src.charCodeAt(pos++);
+
+      if (ch >= 0x30/* 0 */ && ch <= 0x39/* 9 */) {
+
+        // List marker should have no more than 9 digits
+        // (prevents integer overflow in browsers)
+        if (pos - start >= 10) { return -1; }
+
+        continue;
+      }
+
+      // found valid marker
+      if (ch === 0x29/* ) */ || ch === 0x2e/* . */) {
+        break;
+      }
+
+      return -1;
+    }
+
+
+    if (pos < max) {
+      ch = state.src.charCodeAt(pos);
+
+      if (!isSpace$7(ch)) {
+        // " 1.test " - is not a list item
+        return -1;
+      }
+    }
+    return pos;
+  }
+
+  function markTightParagraphs(state, idx) {
+    var i, l,
+        level = state.level + 2;
+
+    for (i = idx + 2, l = state.tokens.length - 2; i < l; i++) {
       if (state.tokens[i].level === level && state.tokens[i].type === 'paragraph_open') {
         state.tokens[i + 2].hidden = true;
         state.tokens[i].hidden = true;
@@ -18256,13 +21496,41 @@
     }
   }
 
-  function list (state, startLine, endLine, silent) {
-    let max, pos, start, token;
-    let nextLine = startLine;
-    let tight = true;
+
+  var list = function list(state, startLine, endLine, silent) {
+    var ch,
+        contentStart,
+        i,
+        indent,
+        indentAfterMarker,
+        initial,
+        isOrdered,
+        itemLines,
+        l,
+        listLines,
+        listTokIdx,
+        markerCharCode,
+        markerValue,
+        max,
+        offset,
+        oldListIndent,
+        oldParentType,
+        oldSCount,
+        oldTShift,
+        oldTight,
+        pos,
+        posAfterMarker,
+        prevEmptyEnd,
+        start,
+        terminate,
+        terminatorRules,
+        token,
+        nextLine = startLine,
+        isTerminatingParagraph = false,
+        tight = true;
 
     // if it's indented more than 3 spaces, it should be a code block
-    if (state.sCount[nextLine] - state.blkIndent >= 4) { return false }
+    if (state.sCount[nextLine] - state.blkIndent >= 4) { return false; }
 
     // Special case:
     //  - item 1
@@ -18273,10 +21541,8 @@
     if (state.listIndent >= 0 &&
         state.sCount[nextLine] - state.listIndent >= 4 &&
         state.sCount[nextLine] < state.blkIndent) {
-      return false
+      return false;
     }
-
-    let isTerminatingParagraph = false;
 
     // limit conditions when list can interrupt
     // a paragraph (validation mode only)
@@ -18292,9 +21558,6 @@
     }
 
     // Detect list type and position after marker
-    let isOrdered;
-    let markerValue;
-    let posAfterMarker;
     if ((posAfterMarker = skipOrderedListMarker(state, nextLine)) >= 0) {
       isOrdered = true;
       start = state.bMarks[nextLine] + state.tShift[nextLine];
@@ -18302,74 +21565,74 @@
 
       // If we're starting a new ordered list right after
       // a paragraph, it should start with 1.
-      if (isTerminatingParagraph && markerValue !== 1) return false
+      if (isTerminatingParagraph && markerValue !== 1) return false;
+
     } else if ((posAfterMarker = skipBulletListMarker(state, nextLine)) >= 0) {
       isOrdered = false;
+
     } else {
-      return false
+      return false;
     }
 
     // If we're starting a new unordered list right after
     // a paragraph, first line should not be empty.
     if (isTerminatingParagraph) {
-      if (state.skipSpaces(posAfterMarker) >= state.eMarks[nextLine]) return false
+      if (state.skipSpaces(posAfterMarker) >= state.eMarks[nextLine]) return false;
     }
 
     // For validation mode we can terminate immediately
-    if (silent) { return true }
+    if (silent) { return true; }
 
     // We should terminate list on style change. Remember first one to compare.
-    const markerCharCode = state.src.charCodeAt(posAfterMarker - 1);
+    markerCharCode = state.src.charCodeAt(posAfterMarker - 1);
 
     // Start list
-    const listTokIdx = state.tokens.length;
+    listTokIdx = state.tokens.length;
 
     if (isOrdered) {
       token       = state.push('ordered_list_open', 'ol', 1);
       if (markerValue !== 1) {
-        token.attrs = [['start', markerValue]];
+        token.attrs = [ [ 'start', markerValue ] ];
       }
+
     } else {
       token       = state.push('bullet_list_open', 'ul', 1);
     }
 
-    const listLines = [nextLine, 0];
-    token.map    = listLines;
+    token.map    = listLines = [ nextLine, 0 ];
     token.markup = String.fromCharCode(markerCharCode);
 
     //
     // Iterate list items
     //
 
-    let prevEmptyEnd = false;
-    const terminatorRules = state.md.block.ruler.getRules('list');
+    prevEmptyEnd = false;
+    terminatorRules = state.md.block.ruler.getRules('list');
 
-    const oldParentType = state.parentType;
+    oldParentType = state.parentType;
     state.parentType = 'list';
 
     while (nextLine < endLine) {
       pos = posAfterMarker;
       max = state.eMarks[nextLine];
 
-      const initial = state.sCount[nextLine] + posAfterMarker - (state.bMarks[nextLine] + state.tShift[nextLine]);
-      let offset = initial;
+      initial = offset = state.sCount[nextLine] + posAfterMarker - (state.bMarks[nextLine] + state.tShift[nextLine]);
 
       while (pos < max) {
-        const ch = state.src.charCodeAt(pos);
+        ch = state.src.charCodeAt(pos);
 
         if (ch === 0x09) {
           offset += 4 - (offset + state.bsCount[nextLine]) % 4;
         } else if (ch === 0x20) {
           offset++;
         } else {
-          break
+          break;
         }
 
         pos++;
       }
 
-      const contentStart = pos;
-      let indentAfterMarker;
+      contentStart = pos;
 
       if (contentStart >= max) {
         // trimming space in "-    \n  3" case, indent is 1 here
@@ -18384,27 +21647,26 @@
 
       // "  -  test"
       //  ^^^^^ - calculating total length of this thing
-      const indent = initial + indentAfterMarker;
+      indent = initial + indentAfterMarker;
 
       // Run subparser & write tokens
       token        = state.push('list_item_open', 'li', 1);
       token.markup = String.fromCharCode(markerCharCode);
-      const itemLines = [nextLine, 0];
-      token.map    = itemLines;
+      token.map    = itemLines = [ nextLine, 0 ];
       if (isOrdered) {
         token.info = state.src.slice(start, posAfterMarker - 1);
       }
 
       // change current state, then restore it after parser subcall
-      const oldTight = state.tight;
-      const oldTShift = state.tShift[nextLine];
-      const oldSCount = state.sCount[nextLine];
+      oldTight = state.tight;
+      oldTShift = state.tShift[nextLine];
+      oldSCount = state.sCount[nextLine];
 
       //  - example list
       // ^ listIndent position will be here
       //   ^ blkIndent position will be here
       //
-      const oldListIndent = state.listIndent;
+      oldListIndent = state.listIndent;
       state.listIndent = state.blkIndent;
       state.blkIndent = indent;
 
@@ -18445,37 +21707,37 @@
       nextLine = state.line;
       itemLines[1] = nextLine;
 
-      if (nextLine >= endLine) { break }
+      if (nextLine >= endLine) { break; }
 
       //
       // Try to check if list is terminated or continued.
       //
-      if (state.sCount[nextLine] < state.blkIndent) { break }
+      if (state.sCount[nextLine] < state.blkIndent) { break; }
 
       // if it's indented more than 3 spaces, it should be a code block
-      if (state.sCount[nextLine] - state.blkIndent >= 4) { break }
+      if (state.sCount[nextLine] - state.blkIndent >= 4) { break; }
 
       // fail if terminating block found
-      let terminate = false;
-      for (let i = 0, l = terminatorRules.length; i < l; i++) {
+      terminate = false;
+      for (i = 0, l = terminatorRules.length; i < l; i++) {
         if (terminatorRules[i](state, nextLine, endLine, true)) {
           terminate = true;
-          break
+          break;
         }
       }
-      if (terminate) { break }
+      if (terminate) { break; }
 
       // fail if list has another type
       if (isOrdered) {
         posAfterMarker = skipOrderedListMarker(state, nextLine);
-        if (posAfterMarker < 0) { break }
+        if (posAfterMarker < 0) { break; }
         start = state.bMarks[nextLine] + state.tShift[nextLine];
       } else {
         posAfterMarker = skipBulletListMarker(state, nextLine);
-        if (posAfterMarker < 0) { break }
+        if (posAfterMarker < 0) { break; }
       }
 
-      if (markerCharCode !== state.src.charCodeAt(posAfterMarker - 1)) { break }
+      if (markerCharCode !== state.src.charCodeAt(posAfterMarker - 1)) { break; }
     }
 
     // Finalize list
@@ -18496,172 +21758,155 @@
       markTightParagraphs(state, listTokIdx);
     }
 
-    return true
-  }
+    return true;
+  };
 
-  function reference (state, startLine, _endLine, silent) {
-    let pos = state.bMarks[startLine] + state.tShift[startLine];
-    let max = state.eMarks[startLine];
-    let nextLine = startLine + 1;
+  var normalizeReference$2   = utils$1.normalizeReference;
+  var isSpace$6              = utils$1.isSpace;
+
+
+  var reference = function reference(state, startLine, _endLine, silent) {
+    var ch,
+        destEndPos,
+        destEndLineNo,
+        endLine,
+        href,
+        i,
+        l,
+        label,
+        labelEnd,
+        oldParentType,
+        res,
+        start,
+        str,
+        terminate,
+        terminatorRules,
+        title,
+        lines = 0,
+        pos = state.bMarks[startLine] + state.tShift[startLine],
+        max = state.eMarks[startLine],
+        nextLine = startLine + 1;
 
     // if it's indented more than 3 spaces, it should be a code block
-    if (state.sCount[startLine] - state.blkIndent >= 4) { return false }
+    if (state.sCount[startLine] - state.blkIndent >= 4) { return false; }
 
-    if (state.src.charCodeAt(pos) !== 0x5B/* [ */) { return false }
+    if (state.src.charCodeAt(pos) !== 0x5B/* [ */) { return false; }
 
-    function getNextLine (nextLine) {
-      const endLine = state.lineMax;
-
-      if (nextLine >= endLine || state.isEmpty(nextLine)) {
-        // empty line or end of input
-        return null
+    // Simple check to quickly interrupt scan on [link](url) at the start of line.
+    // Can be useful on practice: https://github.com/markdown-it/markdown-it/issues/54
+    while (++pos < max) {
+      if (state.src.charCodeAt(pos) === 0x5D /* ] */ &&
+          state.src.charCodeAt(pos - 1) !== 0x5C/* \ */) {
+        if (pos + 1 === max) { return false; }
+        if (state.src.charCodeAt(pos + 1) !== 0x3A/* : */) { return false; }
+        break;
       }
-
-      let isContinuation = false;
-
-      // this would be a code block normally, but after paragraph
-      // it's considered a lazy continuation regardless of what's there
-      if (state.sCount[nextLine] - state.blkIndent > 3) { isContinuation = true; }
-
-      // quirk for blockquotes, this line should already be checked by that rule
-      if (state.sCount[nextLine] < 0) { isContinuation = true; }
-
-      if (!isContinuation) {
-        const terminatorRules = state.md.block.ruler.getRules('reference');
-        const oldParentType = state.parentType;
-        state.parentType = 'reference';
-
-        // Some tags can terminate paragraph without empty line.
-        let terminate = false;
-        for (let i = 0, l = terminatorRules.length; i < l; i++) {
-          if (terminatorRules[i](state, nextLine, endLine, true)) {
-            terminate = true;
-            break
-          }
-        }
-
-        state.parentType = oldParentType;
-        if (terminate) {
-          // terminated by another block
-          return null
-        }
-      }
-
-      const pos = state.bMarks[nextLine] + state.tShift[nextLine];
-      const max = state.eMarks[nextLine];
-
-      // max + 1 explicitly includes the newline
-      return state.src.slice(pos, max + 1)
     }
 
-    let str = state.src.slice(pos, max + 1);
+    endLine = state.lineMax;
 
+    // jump line-by-line until empty one or EOF
+    terminatorRules = state.md.block.ruler.getRules('reference');
+
+    oldParentType = state.parentType;
+    state.parentType = 'reference';
+
+    for (; nextLine < endLine && !state.isEmpty(nextLine); nextLine++) {
+      // this would be a code block normally, but after paragraph
+      // it's considered a lazy continuation regardless of what's there
+      if (state.sCount[nextLine] - state.blkIndent > 3) { continue; }
+
+      // quirk for blockquotes, this line should already be checked by that rule
+      if (state.sCount[nextLine] < 0) { continue; }
+
+      // Some tags can terminate paragraph without empty line.
+      terminate = false;
+      for (i = 0, l = terminatorRules.length; i < l; i++) {
+        if (terminatorRules[i](state, nextLine, endLine, true)) {
+          terminate = true;
+          break;
+        }
+      }
+      if (terminate) { break; }
+    }
+
+    str = state.getLines(startLine, nextLine, state.blkIndent, false).trim();
     max = str.length;
-    let labelEnd = -1;
 
     for (pos = 1; pos < max; pos++) {
-      const ch = str.charCodeAt(pos);
+      ch = str.charCodeAt(pos);
       if (ch === 0x5B /* [ */) {
-        return false
+        return false;
       } else if (ch === 0x5D /* ] */) {
         labelEnd = pos;
-        break
+        break;
       } else if (ch === 0x0A /* \n */) {
-        const lineContent = getNextLine(nextLine);
-        if (lineContent !== null) {
-          str += lineContent;
-          max = str.length;
-          nextLine++;
-        }
+        lines++;
       } else if (ch === 0x5C /* \ */) {
         pos++;
         if (pos < max && str.charCodeAt(pos) === 0x0A) {
-          const lineContent = getNextLine(nextLine);
-          if (lineContent !== null) {
-            str += lineContent;
-            max = str.length;
-            nextLine++;
-          }
+          lines++;
         }
       }
     }
 
-    if (labelEnd < 0 || str.charCodeAt(labelEnd + 1) !== 0x3A/* : */) { return false }
+    if (labelEnd < 0 || str.charCodeAt(labelEnd + 1) !== 0x3A/* : */) { return false; }
 
     // [label]:   destination   'title'
     //         ^^^ skip optional whitespace here
     for (pos = labelEnd + 2; pos < max; pos++) {
-      const ch = str.charCodeAt(pos);
+      ch = str.charCodeAt(pos);
       if (ch === 0x0A) {
-        const lineContent = getNextLine(nextLine);
-        if (lineContent !== null) {
-          str += lineContent;
-          max = str.length;
-          nextLine++;
-        }
-      } else if (isSpace(ch)) ; else {
-        break
+        lines++;
+      } else if (isSpace$6(ch)) ; else {
+        break;
       }
     }
 
     // [label]:   destination   'title'
     //            ^^^^^^^^^^^ parse this
-    const destRes = state.md.helpers.parseLinkDestination(str, pos, max);
-    if (!destRes.ok) { return false }
+    res = state.md.helpers.parseLinkDestination(str, pos, max);
+    if (!res.ok) { return false; }
 
-    const href = state.md.normalizeLink(destRes.str);
-    if (!state.md.validateLink(href)) { return false }
+    href = state.md.normalizeLink(res.str);
+    if (!state.md.validateLink(href)) { return false; }
 
-    pos = destRes.pos;
+    pos = res.pos;
+    lines += res.lines;
 
     // save cursor state, we could require to rollback later
-    const destEndPos = pos;
-    const destEndLineNo = nextLine;
+    destEndPos = pos;
+    destEndLineNo = lines;
 
     // [label]:   destination   'title'
     //                       ^^^ skipping those spaces
-    const start = pos;
+    start = pos;
     for (; pos < max; pos++) {
-      const ch = str.charCodeAt(pos);
+      ch = str.charCodeAt(pos);
       if (ch === 0x0A) {
-        const lineContent = getNextLine(nextLine);
-        if (lineContent !== null) {
-          str += lineContent;
-          max = str.length;
-          nextLine++;
-        }
-      } else if (isSpace(ch)) ; else {
-        break
+        lines++;
+      } else if (isSpace$6(ch)) ; else {
+        break;
       }
     }
 
     // [label]:   destination   'title'
     //                          ^^^^^^^ parse this
-    let titleRes = state.md.helpers.parseLinkTitle(str, pos, max);
-    while (titleRes.can_continue) {
-      const lineContent = getNextLine(nextLine);
-      if (lineContent === null) break
-      str += lineContent;
-      pos = max;
-      max = str.length;
-      nextLine++;
-      titleRes = state.md.helpers.parseLinkTitle(str, pos, max, titleRes);
-    }
-    let title;
-
-    if (pos < max && start !== pos && titleRes.ok) {
-      title = titleRes.str;
-      pos = titleRes.pos;
+    res = state.md.helpers.parseLinkTitle(str, pos, max);
+    if (pos < max && start !== pos && res.ok) {
+      title = res.str;
+      pos = res.pos;
+      lines += res.lines;
     } else {
       title = '';
       pos = destEndPos;
-      nextLine = destEndLineNo;
+      lines = destEndLineNo;
     }
 
     // skip trailing spaces until the rest of the line
     while (pos < max) {
-      const ch = str.charCodeAt(pos);
-      if (!isSpace(ch)) { break }
+      ch = str.charCodeAt(pos);
+      if (!isSpace$6(ch)) { break; }
       pos++;
     }
 
@@ -18671,10 +21916,10 @@
         // but it could still be a valid reference if we roll back
         title = '';
         pos = destEndPos;
-        nextLine = destEndLineNo;
+        lines = destEndLineNo;
         while (pos < max) {
-          const ch = str.charCodeAt(pos);
-          if (!isSpace(ch)) { break }
+          ch = str.charCodeAt(pos);
+          if (!isSpace$6(ch)) { break; }
           pos++;
         }
       }
@@ -18682,34 +21927,33 @@
 
     if (pos < max && str.charCodeAt(pos) !== 0x0A) {
       // garbage at the end of the line
-      return false
+      return false;
     }
 
-    const label = normalizeReference(str.slice(1, labelEnd));
+    label = normalizeReference$2(str.slice(1, labelEnd));
     if (!label) {
       // CommonMark 0.20 disallows empty labels
-      return false
+      return false;
     }
 
     // Reference can not terminate anything. This check is for safety only.
-    /* istanbul ignore if */
-    if (silent) { return true }
+    /*istanbul ignore if*/
+    if (silent) { return true; }
 
     if (typeof state.env.references === 'undefined') {
       state.env.references = {};
     }
     if (typeof state.env.references[label] === 'undefined') {
-      state.env.references[label] = { title, href };
+      state.env.references[label] = { title: title, href: href };
     }
 
-    state.line = nextLine;
-    return true
-  }
+    state.parentType = oldParentType;
 
-  // List of valid html blocks names, according to commonmark spec
-  // https://spec.commonmark.org/0.30/#html-blocks
+    state.line = startLine + lines + 1;
+    return true;
+  };
 
-  var block_names = [
+  var html_blocks = [
     'address',
     'article',
     'aside',
@@ -18759,8 +22003,8 @@
     'option',
     'p',
     'param',
-    'search',
     'section',
+    'source',
     'summary',
     'table',
     'tbody',
@@ -18774,77 +22018,82 @@
     'ul'
   ];
 
-  // Regexps to match html elements
+  var html_re = {};
 
-  const attr_name     = '[a-zA-Z_:][a-zA-Z0-9:._-]*';
+  var attr_name$1     = '[a-zA-Z_:][a-zA-Z0-9:._-]*';
 
-  const unquoted      = '[^"\'=<>`\\x00-\\x20]+';
-  const single_quoted = "'[^']*'";
-  const double_quoted = '"[^"]*"';
+  var unquoted$1      = '[^"\'=<>`\\x00-\\x20]+';
+  var single_quoted$1 = "'[^']*'";
+  var double_quoted$1 = '"[^"]*"';
 
-  const attr_value  = '(?:' + unquoted + '|' + single_quoted + '|' + double_quoted + ')';
+  var attr_value$1  = '(?:' + unquoted$1 + '|' + single_quoted$1 + '|' + double_quoted$1 + ')';
 
-  const attribute   = '(?:\\s+' + attr_name + '(?:\\s*=\\s*' + attr_value + ')?)';
+  var attribute$1   = '(?:\\s+' + attr_name$1 + '(?:\\s*=\\s*' + attr_value$1 + ')?)';
 
-  const open_tag    = '<[A-Za-z][A-Za-z0-9\\-]*' + attribute + '*\\s*\\/?>';
+  var open_tag$1    = '<[A-Za-z][A-Za-z0-9\\-]*' + attribute$1 + '*\\s*\\/?>';
 
-  const close_tag   = '<\\/[A-Za-z][A-Za-z0-9\\-]*\\s*>';
-  const comment     = '<!---?>|<!--(?:[^-]|-[^-]|--[^>])*-->';
-  const processing  = '<[?][\\s\\S]*?[?]>';
-  const declaration = '<![A-Za-z][^>]*>';
-  const cdata       = '<!\\[CDATA\\[[\\s\\S]*?\\]\\]>';
+  var close_tag$1   = '<\\/[A-Za-z][A-Za-z0-9\\-]*\\s*>';
+  var comment$1     = '<!---->|<!--(?:-?[^>-])(?:-?[^-])*-->';
+  var processing$1  = '<[?][\\s\\S]*?[?]>';
+  var declaration$1 = '<![A-Z]+\\s+[^>]*>';
+  var cdata$1       = '<!\\[CDATA\\[[\\s\\S]*?\\]\\]>';
 
-  const HTML_TAG_RE = new RegExp('^(?:' + open_tag + '|' + close_tag + '|' + comment +
-                          '|' + processing + '|' + declaration + '|' + cdata + ')');
-  const HTML_OPEN_CLOSE_TAG_RE = new RegExp('^(?:' + open_tag + '|' + close_tag + ')');
+  var HTML_TAG_RE$1 = new RegExp('^(?:' + open_tag$1 + '|' + close_tag$1 + '|' + comment$1 +
+                          '|' + processing$1 + '|' + declaration$1 + '|' + cdata$1 + ')');
+  var HTML_OPEN_CLOSE_TAG_RE$1 = new RegExp('^(?:' + open_tag$1 + '|' + close_tag$1 + ')');
 
-  // HTML block
+  html_re.HTML_TAG_RE = HTML_TAG_RE$1;
+  html_re.HTML_OPEN_CLOSE_TAG_RE = HTML_OPEN_CLOSE_TAG_RE$1;
 
+  var block_names = html_blocks;
+  var HTML_OPEN_CLOSE_TAG_RE = html_re.HTML_OPEN_CLOSE_TAG_RE;
 
   // An array of opening and corresponding closing sequences for html tags,
   // last argument defines whether it can terminate a paragraph or not
   //
-  const HTML_SEQUENCES = [
-    [/^<(script|pre|style|textarea)(?=(\s|>|$))/i, /<\/(script|pre|style|textarea)>/i, true],
-    [/^<!--/,        /-->/,   true],
-    [/^<\?/,         /\?>/,   true],
-    [/^<![A-Z]/,     />/,     true],
-    [/^<!\[CDATA\[/, /\]\]>/, true],
-    [new RegExp('^</?(' + block_names.join('|') + ')(?=(\\s|/?>|$))', 'i'), /^$/, true],
-    [new RegExp(HTML_OPEN_CLOSE_TAG_RE.source + '\\s*$'),  /^$/, false]
+  var HTML_SEQUENCES = [
+    [ /^<(script|pre|style|textarea)(?=(\s|>|$))/i, /<\/(script|pre|style|textarea)>/i, true ],
+    [ /^<!--/,        /-->/,   true ],
+    [ /^<\?/,         /\?>/,   true ],
+    [ /^<![A-Z]/,     />/,     true ],
+    [ /^<!\[CDATA\[/, /\]\]>/, true ],
+    [ new RegExp('^</?(' + block_names.join('|') + ')(?=(\\s|/?>|$))', 'i'), /^$/, true ],
+    [ new RegExp(HTML_OPEN_CLOSE_TAG_RE.source + '\\s*$'),  /^$/, false ]
   ];
 
-  function html_block (state, startLine, endLine, silent) {
-    let pos = state.bMarks[startLine] + state.tShift[startLine];
-    let max = state.eMarks[startLine];
+
+  var html_block = function html_block(state, startLine, endLine, silent) {
+    var i, nextLine, token, lineText,
+        pos = state.bMarks[startLine] + state.tShift[startLine],
+        max = state.eMarks[startLine];
 
     // if it's indented more than 3 spaces, it should be a code block
-    if (state.sCount[startLine] - state.blkIndent >= 4) { return false }
+    if (state.sCount[startLine] - state.blkIndent >= 4) { return false; }
 
-    if (!state.md.options.html) { return false }
+    if (!state.md.options.html) { return false; }
 
-    if (state.src.charCodeAt(pos) !== 0x3C/* < */) { return false }
+    if (state.src.charCodeAt(pos) !== 0x3C/* < */) { return false; }
 
-    let lineText = state.src.slice(pos, max);
+    lineText = state.src.slice(pos, max);
 
-    let i = 0;
-    for (; i < HTML_SEQUENCES.length; i++) {
-      if (HTML_SEQUENCES[i][0].test(lineText)) { break }
+    for (i = 0; i < HTML_SEQUENCES.length; i++) {
+      if (HTML_SEQUENCES[i][0].test(lineText)) { break; }
     }
-    if (i === HTML_SEQUENCES.length) { return false }
+
+    if (i === HTML_SEQUENCES.length) { return false; }
 
     if (silent) {
       // true if this sequence can be a terminator, false otherwise
-      return HTML_SEQUENCES[i][2]
+      return HTML_SEQUENCES[i][2];
     }
 
-    let nextLine = startLine + 1;
+    nextLine = startLine + 1;
 
     // If we are here - we detected HTML block.
     // Let's roll down till block end.
     if (!HTML_SEQUENCES[i][1].test(lineText)) {
       for (; nextLine < endLine; nextLine++) {
-        if (state.sCount[nextLine] < state.blkIndent) { break }
+        if (state.sCount[nextLine] < state.blkIndent) { break; }
 
         pos = state.bMarks[nextLine] + state.tShift[nextLine];
         max = state.eMarks[nextLine];
@@ -18852,98 +22101,95 @@
 
         if (HTML_SEQUENCES[i][1].test(lineText)) {
           if (lineText.length !== 0) { nextLine++; }
-          break
+          break;
         }
       }
     }
 
     state.line = nextLine;
 
-    const token   = state.push('html_block', '', 0);
-    token.map     = [startLine, nextLine];
+    token         = state.push('html_block', '', 0);
+    token.map     = [ startLine, nextLine ];
     token.content = state.getLines(startLine, nextLine, state.blkIndent, true);
 
-    return true
-  }
+    return true;
+  };
 
-  // heading (#, ##, ...)
+  var isSpace$5 = utils$1.isSpace;
 
 
-  function heading (state, startLine, endLine, silent) {
-    let pos = state.bMarks[startLine] + state.tShift[startLine];
-    let max = state.eMarks[startLine];
+  var heading = function heading(state, startLine, endLine, silent) {
+    var ch, level, tmp, token,
+        pos = state.bMarks[startLine] + state.tShift[startLine],
+        max = state.eMarks[startLine];
 
     // if it's indented more than 3 spaces, it should be a code block
-    if (state.sCount[startLine] - state.blkIndent >= 4) { return false }
+    if (state.sCount[startLine] - state.blkIndent >= 4) { return false; }
 
-    let ch  = state.src.charCodeAt(pos);
+    ch  = state.src.charCodeAt(pos);
 
-    if (ch !== 0x23/* # */ || pos >= max) { return false }
+    if (ch !== 0x23/* # */ || pos >= max) { return false; }
 
     // count heading level
-    let level = 1;
+    level = 1;
     ch = state.src.charCodeAt(++pos);
     while (ch === 0x23/* # */ && pos < max && level <= 6) {
       level++;
       ch = state.src.charCodeAt(++pos);
     }
 
-    if (level > 6 || (pos < max && !isSpace(ch))) { return false }
+    if (level > 6 || (pos < max && !isSpace$5(ch))) { return false; }
 
-    if (silent) { return true }
+    if (silent) { return true; }
 
     // Let's cut tails like '    ###  ' from the end of string
 
     max = state.skipSpacesBack(max, pos);
-    const tmp = state.skipCharsBack(max, 0x23, pos); // #
-    if (tmp > pos && isSpace(state.src.charCodeAt(tmp - 1))) {
+    tmp = state.skipCharsBack(max, 0x23, pos); // #
+    if (tmp > pos && isSpace$5(state.src.charCodeAt(tmp - 1))) {
       max = tmp;
     }
 
     state.line = startLine + 1;
 
-    const token_o  = state.push('heading_open', 'h' + String(level), 1);
-    token_o.markup = '########'.slice(0, level);
-    token_o.map    = [startLine, state.line];
+    token        = state.push('heading_open', 'h' + String(level), 1);
+    token.markup = '########'.slice(0, level);
+    token.map    = [ startLine, state.line ];
 
-    const token_i    = state.push('inline', '', 0);
-    token_i.content  = state.src.slice(pos, max).trim();
-    token_i.map      = [startLine, state.line];
-    token_i.children = [];
+    token          = state.push('inline', '', 0);
+    token.content  = state.src.slice(pos, max).trim();
+    token.map      = [ startLine, state.line ];
+    token.children = [];
 
-    const token_c  = state.push('heading_close', 'h' + String(level), -1);
-    token_c.markup = '########'.slice(0, level);
+    token        = state.push('heading_close', 'h' + String(level), -1);
+    token.markup = '########'.slice(0, level);
 
-    return true
-  }
+    return true;
+  };
 
-  // lheading (---, ===)
-
-  function lheading (state, startLine, endLine/*, silent */) {
-    const terminatorRules = state.md.block.ruler.getRules('paragraph');
+  var lheading = function lheading(state, startLine, endLine/*, silent*/) {
+    var content, terminate, i, l, token, pos, max, level, marker,
+        nextLine = startLine + 1, oldParentType,
+        terminatorRules = state.md.block.ruler.getRules('paragraph');
 
     // if it's indented more than 3 spaces, it should be a code block
-    if (state.sCount[startLine] - state.blkIndent >= 4) { return false }
+    if (state.sCount[startLine] - state.blkIndent >= 4) { return false; }
 
-    const oldParentType = state.parentType;
+    oldParentType = state.parentType;
     state.parentType = 'paragraph'; // use paragraph to match terminatorRules
 
     // jump line-by-line until empty one or EOF
-    let level = 0;
-    let marker;
-    let nextLine = startLine + 1;
-
     for (; nextLine < endLine && !state.isEmpty(nextLine); nextLine++) {
       // this would be a code block normally, but after paragraph
       // it's considered a lazy continuation regardless of what's there
-      if (state.sCount[nextLine] - state.blkIndent > 3) { continue }
+      if (state.sCount[nextLine] - state.blkIndent > 3) { continue; }
 
       //
       // Check for underline in setext header
       //
       if (state.sCount[nextLine] >= state.blkIndent) {
-        let pos = state.bMarks[nextLine] + state.tShift[nextLine];
-        const max = state.eMarks[nextLine];
+        pos = state.bMarks[nextLine] + state.tShift[nextLine];
+        max = state.eMarks[nextLine];
 
         if (pos < max) {
           marker = state.src.charCodeAt(pos);
@@ -18954,98 +22200,326 @@
 
             if (pos >= max) {
               level = (marker === 0x3D/* = */ ? 1 : 2);
-              break
+              break;
             }
           }
         }
       }
 
       // quirk for blockquotes, this line should already be checked by that rule
-      if (state.sCount[nextLine] < 0) { continue }
+      if (state.sCount[nextLine] < 0) { continue; }
 
       // Some tags can terminate paragraph without empty line.
-      let terminate = false;
-      for (let i = 0, l = terminatorRules.length; i < l; i++) {
+      terminate = false;
+      for (i = 0, l = terminatorRules.length; i < l; i++) {
         if (terminatorRules[i](state, nextLine, endLine, true)) {
           terminate = true;
-          break
+          break;
         }
       }
-      if (terminate) { break }
+      if (terminate) { break; }
     }
 
     if (!level) {
       // Didn't find valid underline
-      return false
+      return false;
     }
 
-    const content = state.getLines(startLine, nextLine, state.blkIndent, false).trim();
+    content = state.getLines(startLine, nextLine, state.blkIndent, false).trim();
 
     state.line = nextLine + 1;
 
-    const token_o    = state.push('heading_open', 'h' + String(level), 1);
-    token_o.markup   = String.fromCharCode(marker);
-    token_o.map      = [startLine, state.line];
+    token          = state.push('heading_open', 'h' + String(level), 1);
+    token.markup   = String.fromCharCode(marker);
+    token.map      = [ startLine, state.line ];
 
-    const token_i    = state.push('inline', '', 0);
-    token_i.content  = content;
-    token_i.map      = [startLine, state.line - 1];
-    token_i.children = [];
+    token          = state.push('inline', '', 0);
+    token.content  = content;
+    token.map      = [ startLine, state.line - 1 ];
+    token.children = [];
 
-    const token_c    = state.push('heading_close', 'h' + String(level), -1);
-    token_c.markup   = String.fromCharCode(marker);
+    token          = state.push('heading_close', 'h' + String(level), -1);
+    token.markup   = String.fromCharCode(marker);
 
     state.parentType = oldParentType;
 
-    return true
-  }
+    return true;
+  };
 
-  // Paragraph
+  var paragraph = function paragraph(state, startLine, endLine) {
+    var content, terminate, i, l, token, oldParentType,
+        nextLine = startLine + 1,
+        terminatorRules = state.md.block.ruler.getRules('paragraph');
 
-  function paragraph (state, startLine, endLine) {
-    const terminatorRules = state.md.block.ruler.getRules('paragraph');
-    const oldParentType = state.parentType;
-    let nextLine = startLine + 1;
+    oldParentType = state.parentType;
     state.parentType = 'paragraph';
 
     // jump line-by-line until empty one or EOF
     for (; nextLine < endLine && !state.isEmpty(nextLine); nextLine++) {
       // this would be a code block normally, but after paragraph
       // it's considered a lazy continuation regardless of what's there
-      if (state.sCount[nextLine] - state.blkIndent > 3) { continue }
+      if (state.sCount[nextLine] - state.blkIndent > 3) { continue; }
 
       // quirk for blockquotes, this line should already be checked by that rule
-      if (state.sCount[nextLine] < 0) { continue }
+      if (state.sCount[nextLine] < 0) { continue; }
 
       // Some tags can terminate paragraph without empty line.
-      let terminate = false;
-      for (let i = 0, l = terminatorRules.length; i < l; i++) {
+      terminate = false;
+      for (i = 0, l = terminatorRules.length; i < l; i++) {
         if (terminatorRules[i](state, nextLine, endLine, true)) {
           terminate = true;
-          break
+          break;
         }
       }
-      if (terminate) { break }
+      if (terminate) { break; }
     }
 
-    const content = state.getLines(startLine, nextLine, state.blkIndent, false).trim();
+    content = state.getLines(startLine, nextLine, state.blkIndent, false).trim();
 
     state.line = nextLine;
 
-    const token_o    = state.push('paragraph_open', 'p', 1);
-    token_o.map      = [startLine, state.line];
+    token          = state.push('paragraph_open', 'p', 1);
+    token.map      = [ startLine, state.line ];
 
-    const token_i    = state.push('inline', '', 0);
-    token_i.content  = content;
-    token_i.map      = [startLine, state.line];
-    token_i.children = [];
+    token          = state.push('inline', '', 0);
+    token.content  = content;
+    token.map      = [ startLine, state.line ];
+    token.children = [];
 
-    state.push('paragraph_close', 'p', -1);
+    token          = state.push('paragraph_close', 'p', -1);
 
     state.parentType = oldParentType;
 
-    return true
+    return true;
+  };
+
+  var Token$1 = token;
+  var isSpace$4 = utils$1.isSpace;
+
+
+  function StateBlock(src, md, env, tokens) {
+    var ch, s, start, pos, len, indent, offset, indent_found;
+
+    this.src = src;
+
+    // link to parser instance
+    this.md     = md;
+
+    this.env = env;
+
+    //
+    // Internal state vartiables
+    //
+
+    this.tokens = tokens;
+
+    this.bMarks = [];  // line begin offsets for fast jumps
+    this.eMarks = [];  // line end offsets for fast jumps
+    this.tShift = [];  // offsets of the first non-space characters (tabs not expanded)
+    this.sCount = [];  // indents for each line (tabs expanded)
+
+    // An amount of virtual spaces (tabs expanded) between beginning
+    // of each line (bMarks) and real beginning of that line.
+    //
+    // It exists only as a hack because blockquotes override bMarks
+    // losing information in the process.
+    //
+    // It's used only when expanding tabs, you can think about it as
+    // an initial tab length, e.g. bsCount=21 applied to string `\t123`
+    // means first tab should be expanded to 4-21%4 === 3 spaces.
+    //
+    this.bsCount = [];
+
+    // block parser variables
+    this.blkIndent  = 0; // required block content indent (for example, if we are
+                         // inside a list, it would be positioned after list marker)
+    this.line       = 0; // line index in src
+    this.lineMax    = 0; // lines count
+    this.tight      = false;  // loose/tight mode for lists
+    this.ddIndent   = -1; // indent of the current dd block (-1 if there isn't any)
+    this.listIndent = -1; // indent of the current list block (-1 if there isn't any)
+
+    // can be 'blockquote', 'list', 'root', 'paragraph' or 'reference'
+    // used in lists to determine if they interrupt a paragraph
+    this.parentType = 'root';
+
+    this.level = 0;
+
+    // renderer
+    this.result = '';
+
+    // Create caches
+    // Generate markers.
+    s = this.src;
+    indent_found = false;
+
+    for (start = pos = indent = offset = 0, len = s.length; pos < len; pos++) {
+      ch = s.charCodeAt(pos);
+
+      if (!indent_found) {
+        if (isSpace$4(ch)) {
+          indent++;
+
+          if (ch === 0x09) {
+            offset += 4 - offset % 4;
+          } else {
+            offset++;
+          }
+          continue;
+        } else {
+          indent_found = true;
+        }
+      }
+
+      if (ch === 0x0A || pos === len - 1) {
+        if (ch !== 0x0A) { pos++; }
+        this.bMarks.push(start);
+        this.eMarks.push(pos);
+        this.tShift.push(indent);
+        this.sCount.push(offset);
+        this.bsCount.push(0);
+
+        indent_found = false;
+        indent = 0;
+        offset = 0;
+        start = pos + 1;
+      }
+    }
+
+    // Push fake entry to simplify cache bounds checks
+    this.bMarks.push(s.length);
+    this.eMarks.push(s.length);
+    this.tShift.push(0);
+    this.sCount.push(0);
+    this.bsCount.push(0);
+
+    this.lineMax = this.bMarks.length - 1; // don't count last fake line
   }
+
+  // Push new token to "stream".
+  //
+  StateBlock.prototype.push = function (type, tag, nesting) {
+    var token = new Token$1(type, tag, nesting);
+    token.block = true;
+
+    if (nesting < 0) this.level--; // closing tag
+    token.level = this.level;
+    if (nesting > 0) this.level++; // opening tag
+
+    this.tokens.push(token);
+    return token;
+  };
+
+  StateBlock.prototype.isEmpty = function isEmpty(line) {
+    return this.bMarks[line] + this.tShift[line] >= this.eMarks[line];
+  };
+
+  StateBlock.prototype.skipEmptyLines = function skipEmptyLines(from) {
+    for (var max = this.lineMax; from < max; from++) {
+      if (this.bMarks[from] + this.tShift[from] < this.eMarks[from]) {
+        break;
+      }
+    }
+    return from;
+  };
+
+  // Skip spaces from given position.
+  StateBlock.prototype.skipSpaces = function skipSpaces(pos) {
+    var ch;
+
+    for (var max = this.src.length; pos < max; pos++) {
+      ch = this.src.charCodeAt(pos);
+      if (!isSpace$4(ch)) { break; }
+    }
+    return pos;
+  };
+
+  // Skip spaces from given position in reverse.
+  StateBlock.prototype.skipSpacesBack = function skipSpacesBack(pos, min) {
+    if (pos <= min) { return pos; }
+
+    while (pos > min) {
+      if (!isSpace$4(this.src.charCodeAt(--pos))) { return pos + 1; }
+    }
+    return pos;
+  };
+
+  // Skip char codes from given position
+  StateBlock.prototype.skipChars = function skipChars(pos, code) {
+    for (var max = this.src.length; pos < max; pos++) {
+      if (this.src.charCodeAt(pos) !== code) { break; }
+    }
+    return pos;
+  };
+
+  // Skip char codes reverse from given position - 1
+  StateBlock.prototype.skipCharsBack = function skipCharsBack(pos, code, min) {
+    if (pos <= min) { return pos; }
+
+    while (pos > min) {
+      if (code !== this.src.charCodeAt(--pos)) { return pos + 1; }
+    }
+    return pos;
+  };
+
+  // cut lines range from source.
+  StateBlock.prototype.getLines = function getLines(begin, end, indent, keepLastLF) {
+    var i, lineIndent, ch, first, last, queue, lineStart,
+        line = begin;
+
+    if (begin >= end) {
+      return '';
+    }
+
+    queue = new Array(end - begin);
+
+    for (i = 0; line < end; line++, i++) {
+      lineIndent = 0;
+      lineStart = first = this.bMarks[line];
+
+      if (line + 1 < end || keepLastLF) {
+        // No need for bounds check because we have fake entry on tail.
+        last = this.eMarks[line] + 1;
+      } else {
+        last = this.eMarks[line];
+      }
+
+      while (first < last && lineIndent < indent) {
+        ch = this.src.charCodeAt(first);
+
+        if (isSpace$4(ch)) {
+          if (ch === 0x09) {
+            lineIndent += 4 - (lineIndent + this.bsCount[line]) % 4;
+          } else {
+            lineIndent++;
+          }
+        } else if (first - lineStart < this.tShift[line]) {
+          // patched tShift masked characters to look like spaces (blockquotes, list markers)
+          lineIndent++;
+        } else {
+          break;
+        }
+
+        first++;
+      }
+
+      if (lineIndent > indent) {
+        // partially expanding tabs in code blocks, e.g '\t\tfoobar'
+        // with indent=2 becomes '  \tfoobar'
+        queue[i] = new Array(lineIndent - indent + 1).join(' ') + this.src.slice(first, last);
+      } else {
+        queue[i] = this.src.slice(first, last);
+      }
+    }
+
+    return queue.join('');
+  };
+
+  // re-export Token class to use in block rules
+  StateBlock.prototype.Token = Token$1;
+
+
+  var state_block = StateBlock;
 
   /** internal
    * class ParserBlock
@@ -19054,60 +22528,66 @@
    **/
 
 
-  const _rules$1 = [
+  var Ruler$1           = ruler;
+
+
+  var _rules$1 = [
     // First 2 params - rule name & source. Secondary array - list of rules,
     // which can be terminated by this one.
-    ['table',      table,      ['paragraph', 'reference']],
-    ['code',       code],
-    ['fence',      fence,      ['paragraph', 'reference', 'blockquote', 'list']],
-    ['blockquote', blockquote, ['paragraph', 'reference', 'blockquote', 'list']],
-    ['hr',         hr,         ['paragraph', 'reference', 'blockquote', 'list']],
-    ['list',       list,       ['paragraph', 'reference', 'blockquote']],
-    ['reference',  reference],
-    ['html_block', html_block, ['paragraph', 'reference', 'blockquote']],
-    ['heading',    heading,    ['paragraph', 'reference', 'blockquote']],
-    ['lheading',   lheading],
-    ['paragraph',  paragraph]
+    [ 'table',      table,      [ 'paragraph', 'reference' ] ],
+    [ 'code',       code ],
+    [ 'fence',      fence,      [ 'paragraph', 'reference', 'blockquote', 'list' ] ],
+    [ 'blockquote', blockquote, [ 'paragraph', 'reference', 'blockquote', 'list' ] ],
+    [ 'hr',         hr,         [ 'paragraph', 'reference', 'blockquote', 'list' ] ],
+    [ 'list',       list,       [ 'paragraph', 'reference', 'blockquote' ] ],
+    [ 'reference',  reference ],
+    [ 'html_block', html_block, [ 'paragraph', 'reference', 'blockquote' ] ],
+    [ 'heading',    heading,    [ 'paragraph', 'reference', 'blockquote' ] ],
+    [ 'lheading',   lheading ],
+    [ 'paragraph',  paragraph ]
   ];
+
 
   /**
    * new ParserBlock()
    **/
-  function ParserBlock () {
+  function ParserBlock$1() {
     /**
      * ParserBlock#ruler -> Ruler
      *
      * [[Ruler]] instance. Keep configuration of block rules.
      **/
-    this.ruler = new Ruler();
+    this.ruler = new Ruler$1();
 
-    for (let i = 0; i < _rules$1.length; i++) {
+    for (var i = 0; i < _rules$1.length; i++) {
       this.ruler.push(_rules$1[i][0], _rules$1[i][1], { alt: (_rules$1[i][2] || []).slice() });
     }
   }
 
+
   // Generate tokens for input range
   //
-  ParserBlock.prototype.tokenize = function (state, startLine, endLine) {
-    const rules = this.ruler.getRules('');
-    const len = rules.length;
-    const maxNesting = state.md.options.maxNesting;
-    let line = startLine;
-    let hasEmptyLines = false;
+  ParserBlock$1.prototype.tokenize = function (state, startLine, endLine) {
+    var ok, i, prevLine,
+        rules = this.ruler.getRules(''),
+        len = rules.length,
+        line = startLine,
+        hasEmptyLines = false,
+        maxNesting = state.md.options.maxNesting;
 
     while (line < endLine) {
       state.line = line = state.skipEmptyLines(line);
-      if (line >= endLine) { break }
+      if (line >= endLine) { break; }
 
       // Termination condition for nested calls.
       // Nested calls currently used for blockquotes & lists
-      if (state.sCount[line] < state.blkIndent) { break }
+      if (state.sCount[line] < state.blkIndent) { break; }
 
       // If nesting level exceeded - skip tail to the end. That's not ordinary
       // situation and we should not care about content.
       if (state.level >= maxNesting) {
         state.line = endLine;
-        break
+        break;
       }
 
       // Try all possible rules.
@@ -19116,21 +22596,20 @@
       // - update `state.line`
       // - update `state.tokens`
       // - return true
-      const prevLine = state.line;
-      let ok = false;
+      prevLine = state.line;
 
-      for (let i = 0; i < len; i++) {
+      for (i = 0; i < len; i++) {
         ok = rules[i](state, line, endLine, false);
         if (ok) {
           if (prevLine >= state.line) {
-            throw new Error("block rule didn't increment state.line")
+            throw new Error("block rule didn't increment state.line");
           }
-          break
+          break;
         }
       }
 
       // this can only happen if user disables paragraph rule
-      if (!ok) throw new Error('none of the block rules matched')
+      if (!ok) throw new Error('none of the block rules matched');
 
       // set state.tight if we had an empty line before current tag
       // i.e. latest empty line should not count
@@ -19151,25 +22630,1204 @@
     }
   };
 
+
   /**
    * ParserBlock.parse(str, md, env, outTokens)
    *
    * Process input string and push block tokens into `outTokens`
    **/
-  ParserBlock.prototype.parse = function (src, md, env, outTokens) {
-    if (!src) { return }
+  ParserBlock$1.prototype.parse = function (src, md, env, outTokens) {
+    var state;
 
-    const state = new this.State(src, md, env, outTokens);
+    if (!src) { return; }
+
+    state = new this.State(src, md, env, outTokens);
 
     this.tokenize(state, state.line, state.lineMax);
   };
 
-  ParserBlock.prototype.State = StateBlock;
 
-  // Inline parser state
+  ParserBlock$1.prototype.State = state_block;
 
 
-  function StateInline (src, md, env, outTokens) {
+  var parser_block = ParserBlock$1;
+
+  // Rule to skip pure text
+  // '{}$%@~+=:' reserved for extentions
+
+  // !, ", #, $, %, &, ', (, ), *, +, ,, -, ., /, :, ;, <, =, >, ?, @, [, \, ], ^, _, `, {, |, }, or ~
+
+  // !!!! Don't confuse with "Markdown ASCII Punctuation" chars
+  // http://spec.commonmark.org/0.15/#ascii-punctuation-character
+  function isTerminatorChar(ch) {
+    switch (ch) {
+      case 0x0A/* \n */:
+      case 0x21/* ! */:
+      case 0x23/* # */:
+      case 0x24/* $ */:
+      case 0x25/* % */:
+      case 0x26/* & */:
+      case 0x2A/* * */:
+      case 0x2B/* + */:
+      case 0x2D/* - */:
+      case 0x3A/* : */:
+      case 0x3C/* < */:
+      case 0x3D/* = */:
+      case 0x3E/* > */:
+      case 0x40/* @ */:
+      case 0x5B/* [ */:
+      case 0x5C/* \ */:
+      case 0x5D/* ] */:
+      case 0x5E/* ^ */:
+      case 0x5F/* _ */:
+      case 0x60/* ` */:
+      case 0x7B/* { */:
+      case 0x7D/* } */:
+      case 0x7E/* ~ */:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  var text = function text(state, silent) {
+    var pos = state.pos;
+
+    while (pos < state.posMax && !isTerminatorChar(state.src.charCodeAt(pos))) {
+      pos++;
+    }
+
+    if (pos === state.pos) { return false; }
+
+    if (!silent) { state.pending += state.src.slice(state.pos, pos); }
+
+    state.pos = pos;
+
+    return true;
+  };
+
+  // RFC3986: scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
+  var SCHEME_RE = /(?:^|[^a-z0-9.+-])([a-z][a-z0-9.+-]*)$/i;
+
+
+  var linkify = function linkify(state, silent) {
+    var pos, max, match, proto, link, url, fullUrl, token;
+
+    if (!state.md.options.linkify) return false;
+    if (state.linkLevel > 0) return false;
+
+    pos = state.pos;
+    max = state.posMax;
+
+    if (pos + 3 > max) return false;
+    if (state.src.charCodeAt(pos) !== 0x3A/* : */) return false;
+    if (state.src.charCodeAt(pos + 1) !== 0x2F/* / */) return false;
+    if (state.src.charCodeAt(pos + 2) !== 0x2F/* / */) return false;
+
+    match = state.pending.match(SCHEME_RE);
+    if (!match) return false;
+
+    proto = match[1];
+
+    link = state.md.linkify.matchAtStart(state.src.slice(pos - proto.length));
+    if (!link) return false;
+
+    url = link.url;
+
+    // invalid link, but still detected by linkify somehow;
+    // need to check to prevent infinite loop below
+    if (url.length <= proto.length) return false;
+
+    // disallow '*' at the end of the link (conflicts with emphasis)
+    url = url.replace(/\*+$/, '');
+
+    fullUrl = state.md.normalizeLink(url);
+    if (!state.md.validateLink(fullUrl)) return false;
+
+    if (!silent) {
+      state.pending = state.pending.slice(0, -proto.length);
+
+      token         = state.push('link_open', 'a', 1);
+      token.attrs   = [ [ 'href', fullUrl ] ];
+      token.markup  = 'linkify';
+      token.info    = 'auto';
+
+      token         = state.push('text', '', 0);
+      token.content = state.md.normalizeLinkText(url);
+
+      token         = state.push('link_close', 'a', -1);
+      token.markup  = 'linkify';
+      token.info    = 'auto';
+    }
+
+    state.pos += url.length - proto.length;
+    return true;
+  };
+
+  var isSpace$3 = utils$1.isSpace;
+
+
+  var newline = function newline(state, silent) {
+    var pmax, max, ws, pos = state.pos;
+
+    if (state.src.charCodeAt(pos) !== 0x0A/* \n */) { return false; }
+
+    pmax = state.pending.length - 1;
+    max = state.posMax;
+
+    // '  \n' -> hardbreak
+    // Lookup in pending chars is bad practice! Don't copy to other rules!
+    // Pending string is stored in concat mode, indexed lookups will cause
+    // convertion to flat mode.
+    if (!silent) {
+      if (pmax >= 0 && state.pending.charCodeAt(pmax) === 0x20) {
+        if (pmax >= 1 && state.pending.charCodeAt(pmax - 1) === 0x20) {
+          // Find whitespaces tail of pending chars.
+          ws = pmax - 1;
+          while (ws >= 1 && state.pending.charCodeAt(ws - 1) === 0x20) ws--;
+
+          state.pending = state.pending.slice(0, ws);
+          state.push('hardbreak', 'br', 0);
+        } else {
+          state.pending = state.pending.slice(0, -1);
+          state.push('softbreak', 'br', 0);
+        }
+
+      } else {
+        state.push('softbreak', 'br', 0);
+      }
+    }
+
+    pos++;
+
+    // skip heading spaces for next line
+    while (pos < max && isSpace$3(state.src.charCodeAt(pos))) { pos++; }
+
+    state.pos = pos;
+    return true;
+  };
+
+  var isSpace$2 = utils$1.isSpace;
+
+  var ESCAPED$1 = [];
+
+  for (var i$2 = 0; i$2 < 256; i$2++) { ESCAPED$1.push(0); }
+
+  '\\!"#$%&\'()*+,./:;<=>?@[]^_`{|}~-'
+    .split('').forEach(function (ch) { ESCAPED$1[ch.charCodeAt(0)] = 1; });
+
+
+  var _escape = function escape(state, silent) {
+    var ch1, ch2, origStr, escapedStr, token, pos = state.pos, max = state.posMax;
+
+    if (state.src.charCodeAt(pos) !== 0x5C/* \ */) return false;
+    pos++;
+
+    // '\' at the end of the inline block
+    if (pos >= max) return false;
+
+    ch1 = state.src.charCodeAt(pos);
+
+    if (ch1 === 0x0A) {
+      if (!silent) {
+        state.push('hardbreak', 'br', 0);
+      }
+
+      pos++;
+      // skip leading whitespaces from next line
+      while (pos < max) {
+        ch1 = state.src.charCodeAt(pos);
+        if (!isSpace$2(ch1)) break;
+        pos++;
+      }
+
+      state.pos = pos;
+      return true;
+    }
+
+    escapedStr = state.src[pos];
+
+    if (ch1 >= 0xD800 && ch1 <= 0xDBFF && pos + 1 < max) {
+      ch2 = state.src.charCodeAt(pos + 1);
+
+      if (ch2 >= 0xDC00 && ch2 <= 0xDFFF) {
+        escapedStr += state.src[pos + 1];
+        pos++;
+      }
+    }
+
+    origStr = '\\' + escapedStr;
+
+    if (!silent) {
+      token = state.push('text_special', '', 0);
+
+      if (ch1 < 256 && ESCAPED$1[ch1] !== 0) {
+        token.content = escapedStr;
+      } else {
+        token.content = origStr;
+      }
+
+      token.markup = origStr;
+      token.info   = 'escape';
+    }
+
+    state.pos = pos + 1;
+    return true;
+  };
+
+  var backticks = function backtick(state, silent) {
+    var start, max, marker, token, matchStart, matchEnd, openerLength, closerLength,
+        pos = state.pos,
+        ch = state.src.charCodeAt(pos);
+
+    if (ch !== 0x60/* ` */) { return false; }
+
+    start = pos;
+    pos++;
+    max = state.posMax;
+
+    // scan marker length
+    while (pos < max && state.src.charCodeAt(pos) === 0x60/* ` */) { pos++; }
+
+    marker = state.src.slice(start, pos);
+    openerLength = marker.length;
+
+    if (state.backticksScanned && (state.backticks[openerLength] || 0) <= start) {
+      if (!silent) state.pending += marker;
+      state.pos += openerLength;
+      return true;
+    }
+
+    matchEnd = pos;
+
+    // Nothing found in the cache, scan until the end of the line (or until marker is found)
+    while ((matchStart = state.src.indexOf('`', matchEnd)) !== -1) {
+      matchEnd = matchStart + 1;
+
+      // scan marker length
+      while (matchEnd < max && state.src.charCodeAt(matchEnd) === 0x60/* ` */) { matchEnd++; }
+
+      closerLength = matchEnd - matchStart;
+
+      if (closerLength === openerLength) {
+        // Found matching closer length.
+        if (!silent) {
+          token     = state.push('code_inline', 'code', 0);
+          token.markup  = marker;
+          token.content = state.src.slice(pos, matchStart)
+            .replace(/\n/g, ' ')
+            .replace(/^ (.+) $/, '$1');
+        }
+        state.pos = matchEnd;
+        return true;
+      }
+
+      // Some different length found, put it in cache as upper limit of where closer can be found
+      state.backticks[closerLength] = matchStart;
+    }
+
+    // Scanned through the end, didn't find anything
+    state.backticksScanned = true;
+
+    if (!silent) state.pending += marker;
+    state.pos += openerLength;
+    return true;
+  };
+
+  var strikethrough = {};
+
+  // Insert each marker as a separate text token, and add it to delimiter list
+  //
+  strikethrough.tokenize = function strikethrough(state, silent) {
+    var i, scanned, token, len, ch,
+        start = state.pos,
+        marker = state.src.charCodeAt(start);
+
+    if (silent) { return false; }
+
+    if (marker !== 0x7E/* ~ */) { return false; }
+
+    scanned = state.scanDelims(state.pos, true);
+    len = scanned.length;
+    ch = String.fromCharCode(marker);
+
+    if (len < 2) { return false; }
+
+    if (len % 2) {
+      token         = state.push('text', '', 0);
+      token.content = ch;
+      len--;
+    }
+
+    for (i = 0; i < len; i += 2) {
+      token         = state.push('text', '', 0);
+      token.content = ch + ch;
+
+      state.delimiters.push({
+        marker: marker,
+        length: 0,     // disable "rule of 3" length checks meant for emphasis
+        token:  state.tokens.length - 1,
+        end:    -1,
+        open:   scanned.can_open,
+        close:  scanned.can_close
+      });
+    }
+
+    state.pos += scanned.length;
+
+    return true;
+  };
+
+
+  function postProcess$1(state, delimiters) {
+    var i, j,
+        startDelim,
+        endDelim,
+        token,
+        loneMarkers = [],
+        max = delimiters.length;
+
+    for (i = 0; i < max; i++) {
+      startDelim = delimiters[i];
+
+      if (startDelim.marker !== 0x7E/* ~ */) {
+        continue;
+      }
+
+      if (startDelim.end === -1) {
+        continue;
+      }
+
+      endDelim = delimiters[startDelim.end];
+
+      token         = state.tokens[startDelim.token];
+      token.type    = 's_open';
+      token.tag     = 's';
+      token.nesting = 1;
+      token.markup  = '~~';
+      token.content = '';
+
+      token         = state.tokens[endDelim.token];
+      token.type    = 's_close';
+      token.tag     = 's';
+      token.nesting = -1;
+      token.markup  = '~~';
+      token.content = '';
+
+      if (state.tokens[endDelim.token - 1].type === 'text' &&
+          state.tokens[endDelim.token - 1].content === '~') {
+
+        loneMarkers.push(endDelim.token - 1);
+      }
+    }
+
+    // If a marker sequence has an odd number of characters, it's splitted
+    // like this: `~~~~~` -> `~` + `~~` + `~~`, leaving one marker at the
+    // start of the sequence.
+    //
+    // So, we have to move all those markers after subsequent s_close tags.
+    //
+    while (loneMarkers.length) {
+      i = loneMarkers.pop();
+      j = i + 1;
+
+      while (j < state.tokens.length && state.tokens[j].type === 's_close') {
+        j++;
+      }
+
+      j--;
+
+      if (i !== j) {
+        token = state.tokens[j];
+        state.tokens[j] = state.tokens[i];
+        state.tokens[i] = token;
+      }
+    }
+  }
+
+
+  // Walk through delimiter list and replace text tokens with tags
+  //
+  strikethrough.postProcess = function strikethrough(state) {
+    var curr,
+        tokens_meta = state.tokens_meta,
+        max = state.tokens_meta.length;
+
+    postProcess$1(state, state.delimiters);
+
+    for (curr = 0; curr < max; curr++) {
+      if (tokens_meta[curr] && tokens_meta[curr].delimiters) {
+        postProcess$1(state, tokens_meta[curr].delimiters);
+      }
+    }
+  };
+
+  var emphasis = {};
+
+  // Insert each marker as a separate text token, and add it to delimiter list
+  //
+  emphasis.tokenize = function emphasis(state, silent) {
+    var i, scanned, token,
+        start = state.pos,
+        marker = state.src.charCodeAt(start);
+
+    if (silent) { return false; }
+
+    if (marker !== 0x5F /* _ */ && marker !== 0x2A /* * */) { return false; }
+
+    scanned = state.scanDelims(state.pos, marker === 0x2A);
+
+    for (i = 0; i < scanned.length; i++) {
+      token         = state.push('text', '', 0);
+      token.content = String.fromCharCode(marker);
+
+      state.delimiters.push({
+        // Char code of the starting marker (number).
+        //
+        marker: marker,
+
+        // Total length of these series of delimiters.
+        //
+        length: scanned.length,
+
+        // A position of the token this delimiter corresponds to.
+        //
+        token:  state.tokens.length - 1,
+
+        // If this delimiter is matched as a valid opener, `end` will be
+        // equal to its position, otherwise it's `-1`.
+        //
+        end:    -1,
+
+        // Boolean flags that determine if this delimiter could open or close
+        // an emphasis.
+        //
+        open:   scanned.can_open,
+        close:  scanned.can_close
+      });
+    }
+
+    state.pos += scanned.length;
+
+    return true;
+  };
+
+
+  function postProcess(state, delimiters) {
+    var i,
+        startDelim,
+        endDelim,
+        token,
+        ch,
+        isStrong,
+        max = delimiters.length;
+
+    for (i = max - 1; i >= 0; i--) {
+      startDelim = delimiters[i];
+
+      if (startDelim.marker !== 0x5F/* _ */ && startDelim.marker !== 0x2A/* * */) {
+        continue;
+      }
+
+      // Process only opening markers
+      if (startDelim.end === -1) {
+        continue;
+      }
+
+      endDelim = delimiters[startDelim.end];
+
+      // If the previous delimiter has the same marker and is adjacent to this one,
+      // merge those into one strong delimiter.
+      //
+      // `<em><em>whatever</em></em>` -> `<strong>whatever</strong>`
+      //
+      isStrong = i > 0 &&
+                 delimiters[i - 1].end === startDelim.end + 1 &&
+                 // check that first two markers match and adjacent
+                 delimiters[i - 1].marker === startDelim.marker &&
+                 delimiters[i - 1].token === startDelim.token - 1 &&
+                 // check that last two markers are adjacent (we can safely assume they match)
+                 delimiters[startDelim.end + 1].token === endDelim.token + 1;
+
+      ch = String.fromCharCode(startDelim.marker);
+
+      token         = state.tokens[startDelim.token];
+      token.type    = isStrong ? 'strong_open' : 'em_open';
+      token.tag     = isStrong ? 'strong' : 'em';
+      token.nesting = 1;
+      token.markup  = isStrong ? ch + ch : ch;
+      token.content = '';
+
+      token         = state.tokens[endDelim.token];
+      token.type    = isStrong ? 'strong_close' : 'em_close';
+      token.tag     = isStrong ? 'strong' : 'em';
+      token.nesting = -1;
+      token.markup  = isStrong ? ch + ch : ch;
+      token.content = '';
+
+      if (isStrong) {
+        state.tokens[delimiters[i - 1].token].content = '';
+        state.tokens[delimiters[startDelim.end + 1].token].content = '';
+        i--;
+      }
+    }
+  }
+
+
+  // Walk through delimiter list and replace text tokens with tags
+  //
+  emphasis.postProcess = function emphasis(state) {
+    var curr,
+        tokens_meta = state.tokens_meta,
+        max = state.tokens_meta.length;
+
+    postProcess(state, state.delimiters);
+
+    for (curr = 0; curr < max; curr++) {
+      if (tokens_meta[curr] && tokens_meta[curr].delimiters) {
+        postProcess(state, tokens_meta[curr].delimiters);
+      }
+    }
+  };
+
+  var normalizeReference$1   = utils$1.normalizeReference;
+  var isSpace$1              = utils$1.isSpace;
+
+
+  var link = function link(state, silent) {
+    var attrs,
+        code,
+        label,
+        labelEnd,
+        labelStart,
+        pos,
+        res,
+        ref,
+        token,
+        href = '',
+        title = '',
+        oldPos = state.pos,
+        max = state.posMax,
+        start = state.pos,
+        parseReference = true;
+
+    if (state.src.charCodeAt(state.pos) !== 0x5B/* [ */) { return false; }
+
+    labelStart = state.pos + 1;
+    labelEnd = state.md.helpers.parseLinkLabel(state, state.pos, true);
+
+    // parser failed to find ']', so it's not a valid link
+    if (labelEnd < 0) { return false; }
+
+    pos = labelEnd + 1;
+    if (pos < max && state.src.charCodeAt(pos) === 0x28/* ( */) {
+      //
+      // Inline link
+      //
+
+      // might have found a valid shortcut link, disable reference parsing
+      parseReference = false;
+
+      // [link](  <href>  "title"  )
+      //        ^^ skipping these spaces
+      pos++;
+      for (; pos < max; pos++) {
+        code = state.src.charCodeAt(pos);
+        if (!isSpace$1(code) && code !== 0x0A) { break; }
+      }
+      if (pos >= max) { return false; }
+
+      // [link](  <href>  "title"  )
+      //          ^^^^^^ parsing link destination
+      start = pos;
+      res = state.md.helpers.parseLinkDestination(state.src, pos, state.posMax);
+      if (res.ok) {
+        href = state.md.normalizeLink(res.str);
+        if (state.md.validateLink(href)) {
+          pos = res.pos;
+        } else {
+          href = '';
+        }
+
+        // [link](  <href>  "title"  )
+        //                ^^ skipping these spaces
+        start = pos;
+        for (; pos < max; pos++) {
+          code = state.src.charCodeAt(pos);
+          if (!isSpace$1(code) && code !== 0x0A) { break; }
+        }
+
+        // [link](  <href>  "title"  )
+        //                  ^^^^^^^ parsing link title
+        res = state.md.helpers.parseLinkTitle(state.src, pos, state.posMax);
+        if (pos < max && start !== pos && res.ok) {
+          title = res.str;
+          pos = res.pos;
+
+          // [link](  <href>  "title"  )
+          //                         ^^ skipping these spaces
+          for (; pos < max; pos++) {
+            code = state.src.charCodeAt(pos);
+            if (!isSpace$1(code) && code !== 0x0A) { break; }
+          }
+        }
+      }
+
+      if (pos >= max || state.src.charCodeAt(pos) !== 0x29/* ) */) {
+        // parsing a valid shortcut link failed, fallback to reference
+        parseReference = true;
+      }
+      pos++;
+    }
+
+    if (parseReference) {
+      //
+      // Link reference
+      //
+      if (typeof state.env.references === 'undefined') { return false; }
+
+      if (pos < max && state.src.charCodeAt(pos) === 0x5B/* [ */) {
+        start = pos + 1;
+        pos = state.md.helpers.parseLinkLabel(state, pos);
+        if (pos >= 0) {
+          label = state.src.slice(start, pos++);
+        } else {
+          pos = labelEnd + 1;
+        }
+      } else {
+        pos = labelEnd + 1;
+      }
+
+      // covers label === '' and label === undefined
+      // (collapsed reference link and shortcut reference link respectively)
+      if (!label) { label = state.src.slice(labelStart, labelEnd); }
+
+      ref = state.env.references[normalizeReference$1(label)];
+      if (!ref) {
+        state.pos = oldPos;
+        return false;
+      }
+      href = ref.href;
+      title = ref.title;
+    }
+
+    //
+    // We found the end of the link, and know for a fact it's a valid link;
+    // so all that's left to do is to call tokenizer.
+    //
+    if (!silent) {
+      state.pos = labelStart;
+      state.posMax = labelEnd;
+
+      token        = state.push('link_open', 'a', 1);
+      token.attrs  = attrs = [ [ 'href', href ] ];
+      if (title) {
+        attrs.push([ 'title', title ]);
+      }
+
+      state.linkLevel++;
+      state.md.inline.tokenize(state);
+      state.linkLevel--;
+
+      token        = state.push('link_close', 'a', -1);
+    }
+
+    state.pos = pos;
+    state.posMax = max;
+    return true;
+  };
+
+  var normalizeReference   = utils$1.normalizeReference;
+  var isSpace              = utils$1.isSpace;
+
+
+  var image = function image(state, silent) {
+    var attrs,
+        code,
+        content,
+        label,
+        labelEnd,
+        labelStart,
+        pos,
+        ref,
+        res,
+        title,
+        token,
+        tokens,
+        start,
+        href = '',
+        oldPos = state.pos,
+        max = state.posMax;
+
+    if (state.src.charCodeAt(state.pos) !== 0x21/* ! */) { return false; }
+    if (state.src.charCodeAt(state.pos + 1) !== 0x5B/* [ */) { return false; }
+
+    labelStart = state.pos + 2;
+    labelEnd = state.md.helpers.parseLinkLabel(state, state.pos + 1, false);
+
+    // parser failed to find ']', so it's not a valid link
+    if (labelEnd < 0) { return false; }
+
+    pos = labelEnd + 1;
+    if (pos < max && state.src.charCodeAt(pos) === 0x28/* ( */) {
+      //
+      // Inline link
+      //
+
+      // [link](  <href>  "title"  )
+      //        ^^ skipping these spaces
+      pos++;
+      for (; pos < max; pos++) {
+        code = state.src.charCodeAt(pos);
+        if (!isSpace(code) && code !== 0x0A) { break; }
+      }
+      if (pos >= max) { return false; }
+
+      // [link](  <href>  "title"  )
+      //          ^^^^^^ parsing link destination
+      start = pos;
+      res = state.md.helpers.parseLinkDestination(state.src, pos, state.posMax);
+      if (res.ok) {
+        href = state.md.normalizeLink(res.str);
+        if (state.md.validateLink(href)) {
+          pos = res.pos;
+        } else {
+          href = '';
+        }
+      }
+
+      // [link](  <href>  "title"  )
+      //                ^^ skipping these spaces
+      start = pos;
+      for (; pos < max; pos++) {
+        code = state.src.charCodeAt(pos);
+        if (!isSpace(code) && code !== 0x0A) { break; }
+      }
+
+      // [link](  <href>  "title"  )
+      //                  ^^^^^^^ parsing link title
+      res = state.md.helpers.parseLinkTitle(state.src, pos, state.posMax);
+      if (pos < max && start !== pos && res.ok) {
+        title = res.str;
+        pos = res.pos;
+
+        // [link](  <href>  "title"  )
+        //                         ^^ skipping these spaces
+        for (; pos < max; pos++) {
+          code = state.src.charCodeAt(pos);
+          if (!isSpace(code) && code !== 0x0A) { break; }
+        }
+      } else {
+        title = '';
+      }
+
+      if (pos >= max || state.src.charCodeAt(pos) !== 0x29/* ) */) {
+        state.pos = oldPos;
+        return false;
+      }
+      pos++;
+    } else {
+      //
+      // Link reference
+      //
+      if (typeof state.env.references === 'undefined') { return false; }
+
+      if (pos < max && state.src.charCodeAt(pos) === 0x5B/* [ */) {
+        start = pos + 1;
+        pos = state.md.helpers.parseLinkLabel(state, pos);
+        if (pos >= 0) {
+          label = state.src.slice(start, pos++);
+        } else {
+          pos = labelEnd + 1;
+        }
+      } else {
+        pos = labelEnd + 1;
+      }
+
+      // covers label === '' and label === undefined
+      // (collapsed reference link and shortcut reference link respectively)
+      if (!label) { label = state.src.slice(labelStart, labelEnd); }
+
+      ref = state.env.references[normalizeReference(label)];
+      if (!ref) {
+        state.pos = oldPos;
+        return false;
+      }
+      href = ref.href;
+      title = ref.title;
+    }
+
+    //
+    // We found the end of the link, and know for a fact it's a valid link;
+    // so all that's left to do is to call tokenizer.
+    //
+    if (!silent) {
+      content = state.src.slice(labelStart, labelEnd);
+
+      state.md.inline.parse(
+        content,
+        state.md,
+        state.env,
+        tokens = []
+      );
+
+      token          = state.push('image', 'img', 0);
+      token.attrs    = attrs = [ [ 'src', href ], [ 'alt', '' ] ];
+      token.children = tokens;
+      token.content  = content;
+
+      if (title) {
+        attrs.push([ 'title', title ]);
+      }
+    }
+
+    state.pos = pos;
+    state.posMax = max;
+    return true;
+  };
+
+  /*eslint max-len:0*/
+  var EMAIL_RE    = /^([a-zA-Z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*)$/;
+  var AUTOLINK_RE = /^([a-zA-Z][a-zA-Z0-9+.\-]{1,31}):([^<>\x00-\x20]*)$/;
+
+
+  var autolink = function autolink(state, silent) {
+    var url, fullUrl, token, ch, start, max,
+        pos = state.pos;
+
+    if (state.src.charCodeAt(pos) !== 0x3C/* < */) { return false; }
+
+    start = state.pos;
+    max = state.posMax;
+
+    for (;;) {
+      if (++pos >= max) return false;
+
+      ch = state.src.charCodeAt(pos);
+
+      if (ch === 0x3C /* < */) return false;
+      if (ch === 0x3E /* > */) break;
+    }
+
+    url = state.src.slice(start + 1, pos);
+
+    if (AUTOLINK_RE.test(url)) {
+      fullUrl = state.md.normalizeLink(url);
+      if (!state.md.validateLink(fullUrl)) { return false; }
+
+      if (!silent) {
+        token         = state.push('link_open', 'a', 1);
+        token.attrs   = [ [ 'href', fullUrl ] ];
+        token.markup  = 'autolink';
+        token.info    = 'auto';
+
+        token         = state.push('text', '', 0);
+        token.content = state.md.normalizeLinkText(url);
+
+        token         = state.push('link_close', 'a', -1);
+        token.markup  = 'autolink';
+        token.info    = 'auto';
+      }
+
+      state.pos += url.length + 2;
+      return true;
+    }
+
+    if (EMAIL_RE.test(url)) {
+      fullUrl = state.md.normalizeLink('mailto:' + url);
+      if (!state.md.validateLink(fullUrl)) { return false; }
+
+      if (!silent) {
+        token         = state.push('link_open', 'a', 1);
+        token.attrs   = [ [ 'href', fullUrl ] ];
+        token.markup  = 'autolink';
+        token.info    = 'auto';
+
+        token         = state.push('text', '', 0);
+        token.content = state.md.normalizeLinkText(url);
+
+        token         = state.push('link_close', 'a', -1);
+        token.markup  = 'autolink';
+        token.info    = 'auto';
+      }
+
+      state.pos += url.length + 2;
+      return true;
+    }
+
+    return false;
+  };
+
+  var HTML_TAG_RE = html_re.HTML_TAG_RE;
+
+
+  function isLinkOpen(str) {
+    return /^<a[>\s]/i.test(str);
+  }
+  function isLinkClose(str) {
+    return /^<\/a\s*>/i.test(str);
+  }
+
+
+  function isLetter(ch) {
+    /*eslint no-bitwise:0*/
+    var lc = ch | 0x20; // to lower case
+    return (lc >= 0x61/* a */) && (lc <= 0x7a/* z */);
+  }
+
+
+  var html_inline = function html_inline(state, silent) {
+    var ch, match, max, token,
+        pos = state.pos;
+
+    if (!state.md.options.html) { return false; }
+
+    // Check start
+    max = state.posMax;
+    if (state.src.charCodeAt(pos) !== 0x3C/* < */ ||
+        pos + 2 >= max) {
+      return false;
+    }
+
+    // Quick fail on second char
+    ch = state.src.charCodeAt(pos + 1);
+    if (ch !== 0x21/* ! */ &&
+        ch !== 0x3F/* ? */ &&
+        ch !== 0x2F/* / */ &&
+        !isLetter(ch)) {
+      return false;
+    }
+
+    match = state.src.slice(pos).match(HTML_TAG_RE);
+    if (!match) { return false; }
+
+    if (!silent) {
+      token         = state.push('html_inline', '', 0);
+      token.content = match[0];
+
+      if (isLinkOpen(token.content))  state.linkLevel++;
+      if (isLinkClose(token.content)) state.linkLevel--;
+    }
+    state.pos += match[0].length;
+    return true;
+  };
+
+  var entities          = entities$1;
+  var has               = utils$1.has;
+  var isValidEntityCode = utils$1.isValidEntityCode;
+  var fromCodePoint     = utils$1.fromCodePoint;
+
+
+  var DIGITAL_RE = /^&#((?:x[a-f0-9]{1,6}|[0-9]{1,7}));/i;
+  var NAMED_RE   = /^&([a-z][a-z0-9]{1,31});/i;
+
+
+  var entity = function entity(state, silent) {
+    var ch, code, match, token, pos = state.pos, max = state.posMax;
+
+    if (state.src.charCodeAt(pos) !== 0x26/* & */) return false;
+
+    if (pos + 1 >= max) return false;
+
+    ch = state.src.charCodeAt(pos + 1);
+
+    if (ch === 0x23 /* # */) {
+      match = state.src.slice(pos).match(DIGITAL_RE);
+      if (match) {
+        if (!silent) {
+          code = match[1][0].toLowerCase() === 'x' ? parseInt(match[1].slice(1), 16) : parseInt(match[1], 10);
+
+          token         = state.push('text_special', '', 0);
+          token.content = isValidEntityCode(code) ? fromCodePoint(code) : fromCodePoint(0xFFFD);
+          token.markup  = match[0];
+          token.info    = 'entity';
+        }
+        state.pos += match[0].length;
+        return true;
+      }
+    } else {
+      match = state.src.slice(pos).match(NAMED_RE);
+      if (match) {
+        if (has(entities, match[1])) {
+          if (!silent) {
+            token         = state.push('text_special', '', 0);
+            token.content = entities[match[1]];
+            token.markup  = match[0];
+            token.info    = 'entity';
+          }
+          state.pos += match[0].length;
+          return true;
+        }
+      }
+    }
+
+    return false;
+  };
+
+  function processDelimiters(delimiters) {
+    var closerIdx, openerIdx, closer, opener, minOpenerIdx, newMinOpenerIdx,
+        isOddMatch, lastJump,
+        openersBottom = {},
+        max = delimiters.length;
+
+    if (!max) return;
+
+    // headerIdx is the first delimiter of the current (where closer is) delimiter run
+    var headerIdx = 0;
+    var lastTokenIdx = -2; // needs any value lower than -1
+    var jumps = [];
+
+    for (closerIdx = 0; closerIdx < max; closerIdx++) {
+      closer = delimiters[closerIdx];
+
+      jumps.push(0);
+
+      // markers belong to same delimiter run if:
+      //  - they have adjacent tokens
+      //  - AND markers are the same
+      //
+      if (delimiters[headerIdx].marker !== closer.marker || lastTokenIdx !== closer.token - 1) {
+        headerIdx = closerIdx;
+      }
+
+      lastTokenIdx = closer.token;
+
+      // Length is only used for emphasis-specific "rule of 3",
+      // if it's not defined (in strikethrough or 3rd party plugins),
+      // we can default it to 0 to disable those checks.
+      //
+      closer.length = closer.length || 0;
+
+      if (!closer.close) continue;
+
+      // Previously calculated lower bounds (previous fails)
+      // for each marker, each delimiter length modulo 3,
+      // and for whether this closer can be an opener;
+      // https://github.com/commonmark/cmark/commit/34250e12ccebdc6372b8b49c44fab57c72443460
+      if (!openersBottom.hasOwnProperty(closer.marker)) {
+        openersBottom[closer.marker] = [ -1, -1, -1, -1, -1, -1 ];
+      }
+
+      minOpenerIdx = openersBottom[closer.marker][(closer.open ? 3 : 0) + (closer.length % 3)];
+
+      openerIdx = headerIdx - jumps[headerIdx] - 1;
+
+      newMinOpenerIdx = openerIdx;
+
+      for (; openerIdx > minOpenerIdx; openerIdx -= jumps[openerIdx] + 1) {
+        opener = delimiters[openerIdx];
+
+        if (opener.marker !== closer.marker) continue;
+
+        if (opener.open && opener.end < 0) {
+
+          isOddMatch = false;
+
+          // from spec:
+          //
+          // If one of the delimiters can both open and close emphasis, then the
+          // sum of the lengths of the delimiter runs containing the opening and
+          // closing delimiters must not be a multiple of 3 unless both lengths
+          // are multiples of 3.
+          //
+          if (opener.close || closer.open) {
+            if ((opener.length + closer.length) % 3 === 0) {
+              if (opener.length % 3 !== 0 || closer.length % 3 !== 0) {
+                isOddMatch = true;
+              }
+            }
+          }
+
+          if (!isOddMatch) {
+            // If previous delimiter cannot be an opener, we can safely skip
+            // the entire sequence in future checks. This is required to make
+            // sure algorithm has linear complexity (see *_*_*_*_*_... case).
+            //
+            lastJump = openerIdx > 0 && !delimiters[openerIdx - 1].open ?
+              jumps[openerIdx - 1] + 1 :
+              0;
+
+            jumps[closerIdx] = closerIdx - openerIdx + lastJump;
+            jumps[openerIdx] = lastJump;
+
+            closer.open  = false;
+            opener.end   = closerIdx;
+            opener.close = false;
+            newMinOpenerIdx = -1;
+            // treat next token as start of run,
+            // it optimizes skips in **<...>**a**<...>** pathological case
+            lastTokenIdx = -2;
+            break;
+          }
+        }
+      }
+
+      if (newMinOpenerIdx !== -1) {
+        // If match for this delimiter run failed, we want to set lower bound for
+        // future lookups. This is required to make sure algorithm has linear
+        // complexity.
+        //
+        // See details here:
+        // https://github.com/commonmark/cmark/issues/178#issuecomment-270417442
+        //
+        openersBottom[closer.marker][(closer.open ? 3 : 0) + ((closer.length || 0) % 3)] = newMinOpenerIdx;
+      }
+    }
+  }
+
+
+  var balance_pairs = function link_pairs(state) {
+    var curr,
+        tokens_meta = state.tokens_meta,
+        max = state.tokens_meta.length;
+
+    processDelimiters(state.delimiters);
+
+    for (curr = 0; curr < max; curr++) {
+      if (tokens_meta[curr] && tokens_meta[curr].delimiters) {
+        processDelimiters(tokens_meta[curr].delimiters);
+      }
+    }
+  };
+
+  var fragments_join = function fragments_join(state) {
+    var curr, last,
+        level = 0,
+        tokens = state.tokens,
+        max = state.tokens.length;
+
+    for (curr = last = 0; curr < max; curr++) {
+      // re-calculate levels after emphasis/strikethrough turns some text nodes
+      // into opening/closing tags
+      if (tokens[curr].nesting < 0) level--; // closing tag
+      tokens[curr].level = level;
+      if (tokens[curr].nesting > 0) level++; // opening tag
+
+      if (tokens[curr].type === 'text' &&
+          curr + 1 < max &&
+          tokens[curr + 1].type === 'text') {
+
+        // collapse two adjacent text nodes
+        tokens[curr + 1].content = tokens[curr].content + tokens[curr + 1].content;
+      } else {
+        if (curr !== last) { tokens[last] = tokens[curr]; }
+
+        last++;
+      }
+    }
+
+    if (curr !== last) {
+      tokens.length = last;
+    }
+  };
+
+  var Token          = token;
+  var isWhiteSpace   = utils$1.isWhiteSpace;
+  var isPunctChar    = utils$1.isPunctChar;
+  var isMdAsciiPunct = utils$1.isMdAsciiPunct;
+
+
+  function StateInline(src, md, env, outTokens) {
     this.src = src;
     this.env = env;
     this.md = md;
@@ -19201,16 +23859,18 @@
     this.linkLevel = 0;
   }
 
+
   // Flush pending text
   //
   StateInline.prototype.pushPending = function () {
-    const token = new Token('text', '', 0);
+    var token = new Token('text', '', 0);
     token.content = this.pending;
     token.level = this.pendingLevel;
     this.tokens.push(token);
     this.pending = '';
-    return token
+    return token;
   };
+
 
   // Push new token to "stream".
   // If pending text exists - flush it as text token
@@ -19220,8 +23880,8 @@
       this.pushPending();
     }
 
-    const token = new Token(type, tag, nesting);
-    let token_meta = null;
+    var token = new Token(type, tag, nesting);
+    var token_meta = null;
 
     if (nesting < 0) {
       // closing tag
@@ -19242,8 +23902,9 @@
     this.pendingLevel = this.level;
     this.tokens.push(token);
     this.tokens_meta.push(token_meta);
-    return token
+    return token;
   };
+
 
   // Scan a sequence of emphasis-like markers, and determine whether
   // it can start an emphasis sequence or end an emphasis sequence.
@@ -19252,1228 +23913,67 @@
   //  - canSplitWord - determine if these markers can be found inside a word
   //
   StateInline.prototype.scanDelims = function (start, canSplitWord) {
-    const max = this.posMax;
-    const marker = this.src.charCodeAt(start);
+    var pos = start, lastChar, nextChar, count, can_open, can_close,
+        isLastWhiteSpace, isLastPunctChar,
+        isNextWhiteSpace, isNextPunctChar,
+        left_flanking = true,
+        right_flanking = true,
+        max = this.posMax,
+        marker = this.src.charCodeAt(start);
 
     // treat beginning of the line as a whitespace
-    const lastChar = start > 0 ? this.src.charCodeAt(start - 1) : 0x20;
+    lastChar = start > 0 ? this.src.charCodeAt(start - 1) : 0x20;
 
-    let pos = start;
     while (pos < max && this.src.charCodeAt(pos) === marker) { pos++; }
 
-    const count = pos - start;
+    count = pos - start;
 
     // treat end of the line as a whitespace
-    const nextChar = pos < max ? this.src.charCodeAt(pos) : 0x20;
+    nextChar = pos < max ? this.src.charCodeAt(pos) : 0x20;
 
-    const isLastPunctChar = isMdAsciiPunct(lastChar) || isPunctChar(String.fromCharCode(lastChar));
-    const isNextPunctChar = isMdAsciiPunct(nextChar) || isPunctChar(String.fromCharCode(nextChar));
+    isLastPunctChar = isMdAsciiPunct(lastChar) || isPunctChar(String.fromCharCode(lastChar));
+    isNextPunctChar = isMdAsciiPunct(nextChar) || isPunctChar(String.fromCharCode(nextChar));
 
-    const isLastWhiteSpace = isWhiteSpace(lastChar);
-    const isNextWhiteSpace = isWhiteSpace(nextChar);
+    isLastWhiteSpace = isWhiteSpace(lastChar);
+    isNextWhiteSpace = isWhiteSpace(nextChar);
 
-    const left_flanking =
-      !isNextWhiteSpace && (!isNextPunctChar || isLastWhiteSpace || isLastPunctChar);
-    const right_flanking =
-      !isLastWhiteSpace && (!isLastPunctChar || isNextWhiteSpace || isNextPunctChar);
+    if (isNextWhiteSpace) {
+      left_flanking = false;
+    } else if (isNextPunctChar) {
+      if (!(isLastWhiteSpace || isLastPunctChar)) {
+        left_flanking = false;
+      }
+    }
 
-    const can_open  = left_flanking  && (canSplitWord || !right_flanking || isLastPunctChar);
-    const can_close = right_flanking && (canSplitWord || !left_flanking  || isNextPunctChar);
+    if (isLastWhiteSpace) {
+      right_flanking = false;
+    } else if (isLastPunctChar) {
+      if (!(isNextWhiteSpace || isNextPunctChar)) {
+        right_flanking = false;
+      }
+    }
 
-    return { can_open, can_close, length: count }
+    if (!canSplitWord) {
+      can_open  = left_flanking  && (!right_flanking || isLastPunctChar);
+      can_close = right_flanking && (!left_flanking  || isNextPunctChar);
+    } else {
+      can_open  = left_flanking;
+      can_close = right_flanking;
+    }
+
+    return {
+      can_open:  can_open,
+      can_close: can_close,
+      length:    count
+    };
   };
+
 
   // re-export Token class to use in block rules
   StateInline.prototype.Token = Token;
 
-  // Skip text characters for text token, place those to pending buffer
-  // and increment current pos
 
-  // Rule to skip pure text
-  // '{}$%@~+=:' reserved for extentions
-
-  // !, ", #, $, %, &, ', (, ), *, +, ,, -, ., /, :, ;, <, =, >, ?, @, [, \, ], ^, _, `, {, |, }, or ~
-
-  // !!!! Don't confuse with "Markdown ASCII Punctuation" chars
-  // http://spec.commonmark.org/0.15/#ascii-punctuation-character
-  function isTerminatorChar (ch) {
-    switch (ch) {
-      case 0x0A/* \n */:
-      case 0x21/* ! */:
-      case 0x23/* # */:
-      case 0x24/* $ */:
-      case 0x25/* % */:
-      case 0x26/* & */:
-      case 0x2A/* * */:
-      case 0x2B/* + */:
-      case 0x2D/* - */:
-      case 0x3A/* : */:
-      case 0x3C/* < */:
-      case 0x3D/* = */:
-      case 0x3E/* > */:
-      case 0x40/* @ */:
-      case 0x5B/* [ */:
-      case 0x5C/* \ */:
-      case 0x5D/* ] */:
-      case 0x5E/* ^ */:
-      case 0x5F/* _ */:
-      case 0x60/* ` */:
-      case 0x7B/* { */:
-      case 0x7D/* } */:
-      case 0x7E/* ~ */:
-        return true
-      default:
-        return false
-    }
-  }
-
-  function text (state, silent) {
-    let pos = state.pos;
-
-    while (pos < state.posMax && !isTerminatorChar(state.src.charCodeAt(pos))) {
-      pos++;
-    }
-
-    if (pos === state.pos) { return false }
-
-    if (!silent) { state.pending += state.src.slice(state.pos, pos); }
-
-    state.pos = pos;
-
-    return true
-  }
-
-  // Alternative implementation, for memory.
-  //
-  // It costs 10% of performance, but allows extend terminators list, if place it
-  // to `ParserInline` property. Probably, will switch to it sometime, such
-  // flexibility required.
-
-  /*
-  var TERMINATOR_RE = /[\n!#$%&*+\-:<=>@[\\\]^_`{}~]/;
-
-  module.exports = function text(state, silent) {
-    var pos = state.pos,
-        idx = state.src.slice(pos).search(TERMINATOR_RE);
-
-    // first char is terminator -> empty text
-    if (idx === 0) { return false; }
-
-    // no terminator -> text till end of string
-    if (idx < 0) {
-      if (!silent) { state.pending += state.src.slice(pos); }
-      state.pos = state.src.length;
-      return true;
-    }
-
-    if (!silent) { state.pending += state.src.slice(pos, pos + idx); }
-
-    state.pos += idx;
-
-    return true;
-  }; */
-
-  // Process links like https://example.org/
-
-  // RFC3986: scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
-  const SCHEME_RE = /(?:^|[^a-z0-9.+-])([a-z][a-z0-9.+-]*)$/i;
-
-  function linkify (state, silent) {
-    if (!state.md.options.linkify) return false
-    if (state.linkLevel > 0) return false
-
-    const pos = state.pos;
-    const max = state.posMax;
-
-    if (pos + 3 > max) return false
-    if (state.src.charCodeAt(pos) !== 0x3A/* : */) return false
-    if (state.src.charCodeAt(pos + 1) !== 0x2F/* / */) return false
-    if (state.src.charCodeAt(pos + 2) !== 0x2F/* / */) return false
-
-    const match = state.pending.match(SCHEME_RE);
-    if (!match) return false
-
-    const proto = match[1];
-
-    const link = state.md.linkify.matchAtStart(state.src.slice(pos - proto.length));
-    if (!link) return false
-
-    let url = link.url;
-
-    // invalid link, but still detected by linkify somehow;
-    // need to check to prevent infinite loop below
-    if (url.length <= proto.length) return false
-
-    // disallow '*' at the end of the link (conflicts with emphasis)
-    // do manual backsearch to avoid perf issues with regex /\*+$/ on "****...****a".
-    let urlEnd = url.length;
-    while (urlEnd > 0 && url.charCodeAt(urlEnd - 1) === 0x2A/* * */) {
-      urlEnd--;
-    }
-    if (urlEnd !== url.length) {
-      url = url.slice(0, urlEnd);
-    }
-
-    const fullUrl = state.md.normalizeLink(url);
-    if (!state.md.validateLink(fullUrl)) return false
-
-    if (!silent) {
-      state.pending = state.pending.slice(0, -proto.length);
-
-      const token_o = state.push('link_open', 'a', 1);
-      token_o.attrs = [['href', fullUrl]];
-      token_o.markup = 'linkify';
-      token_o.info = 'auto';
-
-      const token_t = state.push('text', '', 0);
-      token_t.content = state.md.normalizeLinkText(url);
-
-      const token_c = state.push('link_close', 'a', -1);
-      token_c.markup = 'linkify';
-      token_c.info = 'auto';
-    }
-
-    state.pos += url.length - proto.length;
-    return true
-  }
-
-  // Proceess '\n'
-
-
-  function newline (state, silent) {
-    let pos = state.pos;
-
-    if (state.src.charCodeAt(pos) !== 0x0A/* \n */) { return false }
-
-    const pmax = state.pending.length - 1;
-    const max = state.posMax;
-
-    // '  \n' -> hardbreak
-    // Lookup in pending chars is bad practice! Don't copy to other rules!
-    // Pending string is stored in concat mode, indexed lookups will cause
-    // convertion to flat mode.
-    if (!silent) {
-      if (pmax >= 0 && state.pending.charCodeAt(pmax) === 0x20) {
-        if (pmax >= 1 && state.pending.charCodeAt(pmax - 1) === 0x20) {
-          // Find whitespaces tail of pending chars.
-          let ws = pmax - 1;
-          while (ws >= 1 && state.pending.charCodeAt(ws - 1) === 0x20) ws--;
-
-          state.pending = state.pending.slice(0, ws);
-          state.push('hardbreak', 'br', 0);
-        } else {
-          state.pending = state.pending.slice(0, -1);
-          state.push('softbreak', 'br', 0);
-        }
-      } else {
-        state.push('softbreak', 'br', 0);
-      }
-    }
-
-    pos++;
-
-    // skip heading spaces for next line
-    while (pos < max && isSpace(state.src.charCodeAt(pos))) { pos++; }
-
-    state.pos = pos;
-    return true
-  }
-
-  // Process escaped chars and hardbreaks
-
-
-  const ESCAPED = [];
-
-  for (let i = 0; i < 256; i++) { ESCAPED.push(0); }
-
-  '\\!"#$%&\'()*+,./:;<=>?@[]^_`{|}~-'
-    .split('').forEach(function (ch) { ESCAPED[ch.charCodeAt(0)] = 1; });
-
-  function escape$1 (state, silent) {
-    let pos = state.pos;
-    const max = state.posMax;
-
-    if (state.src.charCodeAt(pos) !== 0x5C/* \ */) return false
-    pos++;
-
-    // '\' at the end of the inline block
-    if (pos >= max) return false
-
-    let ch1 = state.src.charCodeAt(pos);
-
-    if (ch1 === 0x0A) {
-      if (!silent) {
-        state.push('hardbreak', 'br', 0);
-      }
-
-      pos++;
-      // skip leading whitespaces from next line
-      while (pos < max) {
-        ch1 = state.src.charCodeAt(pos);
-        if (!isSpace(ch1)) break
-        pos++;
-      }
-
-      state.pos = pos;
-      return true
-    }
-
-    let escapedStr = state.src[pos];
-
-    if (ch1 >= 0xD800 && ch1 <= 0xDBFF && pos + 1 < max) {
-      const ch2 = state.src.charCodeAt(pos + 1);
-
-      if (ch2 >= 0xDC00 && ch2 <= 0xDFFF) {
-        escapedStr += state.src[pos + 1];
-        pos++;
-      }
-    }
-
-    const origStr = '\\' + escapedStr;
-
-    if (!silent) {
-      const token = state.push('text_special', '', 0);
-
-      if (ch1 < 256 && ESCAPED[ch1] !== 0) {
-        token.content = escapedStr;
-      } else {
-        token.content = origStr;
-      }
-
-      token.markup = origStr;
-      token.info   = 'escape';
-    }
-
-    state.pos = pos + 1;
-    return true
-  }
-
-  // Parse backticks
-
-  function backtick (state, silent) {
-    let pos = state.pos;
-    const ch = state.src.charCodeAt(pos);
-
-    if (ch !== 0x60/* ` */) { return false }
-
-    const start = pos;
-    pos++;
-    const max = state.posMax;
-
-    // scan marker length
-    while (pos < max && state.src.charCodeAt(pos) === 0x60/* ` */) { pos++; }
-
-    const marker = state.src.slice(start, pos);
-    const openerLength = marker.length;
-
-    if (state.backticksScanned && (state.backticks[openerLength] || 0) <= start) {
-      if (!silent) state.pending += marker;
-      state.pos += openerLength;
-      return true
-    }
-
-    let matchEnd = pos;
-    let matchStart;
-
-    // Nothing found in the cache, scan until the end of the line (or until marker is found)
-    while ((matchStart = state.src.indexOf('`', matchEnd)) !== -1) {
-      matchEnd = matchStart + 1;
-
-      // scan marker length
-      while (matchEnd < max && state.src.charCodeAt(matchEnd) === 0x60/* ` */) { matchEnd++; }
-
-      const closerLength = matchEnd - matchStart;
-
-      if (closerLength === openerLength) {
-        // Found matching closer length.
-        if (!silent) {
-          const token = state.push('code_inline', 'code', 0);
-          token.markup = marker;
-          token.content = state.src.slice(pos, matchStart)
-            .replace(/\n/g, ' ')
-            .replace(/^ (.+) $/, '$1');
-        }
-        state.pos = matchEnd;
-        return true
-      }
-
-      // Some different length found, put it in cache as upper limit of where closer can be found
-      state.backticks[closerLength] = matchStart;
-    }
-
-    // Scanned through the end, didn't find anything
-    state.backticksScanned = true;
-
-    if (!silent) state.pending += marker;
-    state.pos += openerLength;
-    return true
-  }
-
-  // ~~strike through~~
-  //
-
-  // Insert each marker as a separate text token, and add it to delimiter list
-  //
-  function strikethrough_tokenize (state, silent) {
-    const start = state.pos;
-    const marker = state.src.charCodeAt(start);
-
-    if (silent) { return false }
-
-    if (marker !== 0x7E/* ~ */) { return false }
-
-    const scanned = state.scanDelims(state.pos, true);
-    let len = scanned.length;
-    const ch = String.fromCharCode(marker);
-
-    if (len < 2) { return false }
-
-    let token;
-
-    if (len % 2) {
-      token         = state.push('text', '', 0);
-      token.content = ch;
-      len--;
-    }
-
-    for (let i = 0; i < len; i += 2) {
-      token         = state.push('text', '', 0);
-      token.content = ch + ch;
-
-      state.delimiters.push({
-        marker,
-        length: 0,     // disable "rule of 3" length checks meant for emphasis
-        token: state.tokens.length - 1,
-        end: -1,
-        open: scanned.can_open,
-        close: scanned.can_close
-      });
-    }
-
-    state.pos += scanned.length;
-
-    return true
-  }
-
-  function postProcess$1 (state, delimiters) {
-    let token;
-    const loneMarkers = [];
-    const max = delimiters.length;
-
-    for (let i = 0; i < max; i++) {
-      const startDelim = delimiters[i];
-
-      if (startDelim.marker !== 0x7E/* ~ */) {
-        continue
-      }
-
-      if (startDelim.end === -1) {
-        continue
-      }
-
-      const endDelim = delimiters[startDelim.end];
-
-      token         = state.tokens[startDelim.token];
-      token.type    = 's_open';
-      token.tag     = 's';
-      token.nesting = 1;
-      token.markup  = '~~';
-      token.content = '';
-
-      token         = state.tokens[endDelim.token];
-      token.type    = 's_close';
-      token.tag     = 's';
-      token.nesting = -1;
-      token.markup  = '~~';
-      token.content = '';
-
-      if (state.tokens[endDelim.token - 1].type === 'text' &&
-          state.tokens[endDelim.token - 1].content === '~') {
-        loneMarkers.push(endDelim.token - 1);
-      }
-    }
-
-    // If a marker sequence has an odd number of characters, it's splitted
-    // like this: `~~~~~` -> `~` + `~~` + `~~`, leaving one marker at the
-    // start of the sequence.
-    //
-    // So, we have to move all those markers after subsequent s_close tags.
-    //
-    while (loneMarkers.length) {
-      const i = loneMarkers.pop();
-      let j = i + 1;
-
-      while (j < state.tokens.length && state.tokens[j].type === 's_close') {
-        j++;
-      }
-
-      j--;
-
-      if (i !== j) {
-        token = state.tokens[j];
-        state.tokens[j] = state.tokens[i];
-        state.tokens[i] = token;
-      }
-    }
-  }
-
-  // Walk through delimiter list and replace text tokens with tags
-  //
-  function strikethrough_postProcess (state) {
-    const tokens_meta = state.tokens_meta;
-    const max = state.tokens_meta.length;
-
-    postProcess$1(state, state.delimiters);
-
-    for (let curr = 0; curr < max; curr++) {
-      if (tokens_meta[curr] && tokens_meta[curr].delimiters) {
-        postProcess$1(state, tokens_meta[curr].delimiters);
-      }
-    }
-  }
-
-  var r_strikethrough = {
-    tokenize: strikethrough_tokenize,
-    postProcess: strikethrough_postProcess
-  };
-
-  // Process *this* and _that_
-  //
-
-  // Insert each marker as a separate text token, and add it to delimiter list
-  //
-  function emphasis_tokenize (state, silent) {
-    const start = state.pos;
-    const marker = state.src.charCodeAt(start);
-
-    if (silent) { return false }
-
-    if (marker !== 0x5F /* _ */ && marker !== 0x2A /* * */) { return false }
-
-    const scanned = state.scanDelims(state.pos, marker === 0x2A);
-
-    for (let i = 0; i < scanned.length; i++) {
-      const token = state.push('text', '', 0);
-      token.content = String.fromCharCode(marker);
-
-      state.delimiters.push({
-        // Char code of the starting marker (number).
-        //
-        marker,
-
-        // Total length of these series of delimiters.
-        //
-        length: scanned.length,
-
-        // A position of the token this delimiter corresponds to.
-        //
-        token: state.tokens.length - 1,
-
-        // If this delimiter is matched as a valid opener, `end` will be
-        // equal to its position, otherwise it's `-1`.
-        //
-        end: -1,
-
-        // Boolean flags that determine if this delimiter could open or close
-        // an emphasis.
-        //
-        open: scanned.can_open,
-        close: scanned.can_close
-      });
-    }
-
-    state.pos += scanned.length;
-
-    return true
-  }
-
-  function postProcess (state, delimiters) {
-    const max = delimiters.length;
-
-    for (let i = max - 1; i >= 0; i--) {
-      const startDelim = delimiters[i];
-
-      if (startDelim.marker !== 0x5F/* _ */ && startDelim.marker !== 0x2A/* * */) {
-        continue
-      }
-
-      // Process only opening markers
-      if (startDelim.end === -1) {
-        continue
-      }
-
-      const endDelim = delimiters[startDelim.end];
-
-      // If the previous delimiter has the same marker and is adjacent to this one,
-      // merge those into one strong delimiter.
-      //
-      // `<em><em>whatever</em></em>` -> `<strong>whatever</strong>`
-      //
-      const isStrong = i > 0 &&
-                 delimiters[i - 1].end === startDelim.end + 1 &&
-                 // check that first two markers match and adjacent
-                 delimiters[i - 1].marker === startDelim.marker &&
-                 delimiters[i - 1].token === startDelim.token - 1 &&
-                 // check that last two markers are adjacent (we can safely assume they match)
-                 delimiters[startDelim.end + 1].token === endDelim.token + 1;
-
-      const ch = String.fromCharCode(startDelim.marker);
-
-      const token_o   = state.tokens[startDelim.token];
-      token_o.type    = isStrong ? 'strong_open' : 'em_open';
-      token_o.tag     = isStrong ? 'strong' : 'em';
-      token_o.nesting = 1;
-      token_o.markup  = isStrong ? ch + ch : ch;
-      token_o.content = '';
-
-      const token_c   = state.tokens[endDelim.token];
-      token_c.type    = isStrong ? 'strong_close' : 'em_close';
-      token_c.tag     = isStrong ? 'strong' : 'em';
-      token_c.nesting = -1;
-      token_c.markup  = isStrong ? ch + ch : ch;
-      token_c.content = '';
-
-      if (isStrong) {
-        state.tokens[delimiters[i - 1].token].content = '';
-        state.tokens[delimiters[startDelim.end + 1].token].content = '';
-        i--;
-      }
-    }
-  }
-
-  // Walk through delimiter list and replace text tokens with tags
-  //
-  function emphasis_post_process (state) {
-    const tokens_meta = state.tokens_meta;
-    const max = state.tokens_meta.length;
-
-    postProcess(state, state.delimiters);
-
-    for (let curr = 0; curr < max; curr++) {
-      if (tokens_meta[curr] && tokens_meta[curr].delimiters) {
-        postProcess(state, tokens_meta[curr].delimiters);
-      }
-    }
-  }
-
-  var r_emphasis = {
-    tokenize: emphasis_tokenize,
-    postProcess: emphasis_post_process
-  };
-
-  // Process [link](<to> "stuff")
-
-
-  function link$1 (state, silent) {
-    let code, label, res, ref;
-    let href = '';
-    let title = '';
-    let start = state.pos;
-    let parseReference = true;
-
-    if (state.src.charCodeAt(state.pos) !== 0x5B/* [ */) { return false }
-
-    const oldPos = state.pos;
-    const max = state.posMax;
-    const labelStart = state.pos + 1;
-    const labelEnd = state.md.helpers.parseLinkLabel(state, state.pos, true);
-
-    // parser failed to find ']', so it's not a valid link
-    if (labelEnd < 0) { return false }
-
-    let pos = labelEnd + 1;
-    if (pos < max && state.src.charCodeAt(pos) === 0x28/* ( */) {
-      //
-      // Inline link
-      //
-
-      // might have found a valid shortcut link, disable reference parsing
-      parseReference = false;
-
-      // [link](  <href>  "title"  )
-      //        ^^ skipping these spaces
-      pos++;
-      for (; pos < max; pos++) {
-        code = state.src.charCodeAt(pos);
-        if (!isSpace(code) && code !== 0x0A) { break }
-      }
-      if (pos >= max) { return false }
-
-      // [link](  <href>  "title"  )
-      //          ^^^^^^ parsing link destination
-      start = pos;
-      res = state.md.helpers.parseLinkDestination(state.src, pos, state.posMax);
-      if (res.ok) {
-        href = state.md.normalizeLink(res.str);
-        if (state.md.validateLink(href)) {
-          pos = res.pos;
-        } else {
-          href = '';
-        }
-
-        // [link](  <href>  "title"  )
-        //                ^^ skipping these spaces
-        start = pos;
-        for (; pos < max; pos++) {
-          code = state.src.charCodeAt(pos);
-          if (!isSpace(code) && code !== 0x0A) { break }
-        }
-
-        // [link](  <href>  "title"  )
-        //                  ^^^^^^^ parsing link title
-        res = state.md.helpers.parseLinkTitle(state.src, pos, state.posMax);
-        if (pos < max && start !== pos && res.ok) {
-          title = res.str;
-          pos = res.pos;
-
-          // [link](  <href>  "title"  )
-          //                         ^^ skipping these spaces
-          for (; pos < max; pos++) {
-            code = state.src.charCodeAt(pos);
-            if (!isSpace(code) && code !== 0x0A) { break }
-          }
-        }
-      }
-
-      if (pos >= max || state.src.charCodeAt(pos) !== 0x29/* ) */) {
-        // parsing a valid shortcut link failed, fallback to reference
-        parseReference = true;
-      }
-      pos++;
-    }
-
-    if (parseReference) {
-      //
-      // Link reference
-      //
-      if (typeof state.env.references === 'undefined') { return false }
-
-      if (pos < max && state.src.charCodeAt(pos) === 0x5B/* [ */) {
-        start = pos + 1;
-        pos = state.md.helpers.parseLinkLabel(state, pos);
-        if (pos >= 0) {
-          label = state.src.slice(start, pos++);
-        } else {
-          pos = labelEnd + 1;
-        }
-      } else {
-        pos = labelEnd + 1;
-      }
-
-      // covers label === '' and label === undefined
-      // (collapsed reference link and shortcut reference link respectively)
-      if (!label) { label = state.src.slice(labelStart, labelEnd); }
-
-      ref = state.env.references[normalizeReference(label)];
-      if (!ref) {
-        state.pos = oldPos;
-        return false
-      }
-      href = ref.href;
-      title = ref.title;
-    }
-
-    //
-    // We found the end of the link, and know for a fact it's a valid link;
-    // so all that's left to do is to call tokenizer.
-    //
-    if (!silent) {
-      state.pos = labelStart;
-      state.posMax = labelEnd;
-
-      const token_o = state.push('link_open', 'a', 1);
-      const attrs = [['href', href]];
-      token_o.attrs  = attrs;
-      if (title) {
-        attrs.push(['title', title]);
-      }
-
-      state.linkLevel++;
-      state.md.inline.tokenize(state);
-      state.linkLevel--;
-
-      state.push('link_close', 'a', -1);
-    }
-
-    state.pos = pos;
-    state.posMax = max;
-    return true
-  }
-
-  // Process ![image](<src> "title")
-
-
-  function image (state, silent) {
-    let code, content, label, pos, ref, res, title, start;
-    let href = '';
-    const oldPos = state.pos;
-    const max = state.posMax;
-
-    if (state.src.charCodeAt(state.pos) !== 0x21/* ! */) { return false }
-    if (state.src.charCodeAt(state.pos + 1) !== 0x5B/* [ */) { return false }
-
-    const labelStart = state.pos + 2;
-    const labelEnd = state.md.helpers.parseLinkLabel(state, state.pos + 1, false);
-
-    // parser failed to find ']', so it's not a valid link
-    if (labelEnd < 0) { return false }
-
-    pos = labelEnd + 1;
-    if (pos < max && state.src.charCodeAt(pos) === 0x28/* ( */) {
-      //
-      // Inline link
-      //
-
-      // [link](  <href>  "title"  )
-      //        ^^ skipping these spaces
-      pos++;
-      for (; pos < max; pos++) {
-        code = state.src.charCodeAt(pos);
-        if (!isSpace(code) && code !== 0x0A) { break }
-      }
-      if (pos >= max) { return false }
-
-      // [link](  <href>  "title"  )
-      //          ^^^^^^ parsing link destination
-      start = pos;
-      res = state.md.helpers.parseLinkDestination(state.src, pos, state.posMax);
-      if (res.ok) {
-        href = state.md.normalizeLink(res.str);
-        if (state.md.validateLink(href)) {
-          pos = res.pos;
-        } else {
-          href = '';
-        }
-      }
-
-      // [link](  <href>  "title"  )
-      //                ^^ skipping these spaces
-      start = pos;
-      for (; pos < max; pos++) {
-        code = state.src.charCodeAt(pos);
-        if (!isSpace(code) && code !== 0x0A) { break }
-      }
-
-      // [link](  <href>  "title"  )
-      //                  ^^^^^^^ parsing link title
-      res = state.md.helpers.parseLinkTitle(state.src, pos, state.posMax);
-      if (pos < max && start !== pos && res.ok) {
-        title = res.str;
-        pos = res.pos;
-
-        // [link](  <href>  "title"  )
-        //                         ^^ skipping these spaces
-        for (; pos < max; pos++) {
-          code = state.src.charCodeAt(pos);
-          if (!isSpace(code) && code !== 0x0A) { break }
-        }
-      } else {
-        title = '';
-      }
-
-      if (pos >= max || state.src.charCodeAt(pos) !== 0x29/* ) */) {
-        state.pos = oldPos;
-        return false
-      }
-      pos++;
-    } else {
-      //
-      // Link reference
-      //
-      if (typeof state.env.references === 'undefined') { return false }
-
-      if (pos < max && state.src.charCodeAt(pos) === 0x5B/* [ */) {
-        start = pos + 1;
-        pos = state.md.helpers.parseLinkLabel(state, pos);
-        if (pos >= 0) {
-          label = state.src.slice(start, pos++);
-        } else {
-          pos = labelEnd + 1;
-        }
-      } else {
-        pos = labelEnd + 1;
-      }
-
-      // covers label === '' and label === undefined
-      // (collapsed reference link and shortcut reference link respectively)
-      if (!label) { label = state.src.slice(labelStart, labelEnd); }
-
-      ref = state.env.references[normalizeReference(label)];
-      if (!ref) {
-        state.pos = oldPos;
-        return false
-      }
-      href = ref.href;
-      title = ref.title;
-    }
-
-    //
-    // We found the end of the link, and know for a fact it's a valid link;
-    // so all that's left to do is to call tokenizer.
-    //
-    if (!silent) {
-      content = state.src.slice(labelStart, labelEnd);
-
-      const tokens = [];
-      state.md.inline.parse(
-        content,
-        state.md,
-        state.env,
-        tokens
-      );
-
-      const token = state.push('image', 'img', 0);
-      const attrs = [['src', href], ['alt', '']];
-      token.attrs = attrs;
-      token.children = tokens;
-      token.content = content;
-
-      if (title) {
-        attrs.push(['title', title]);
-      }
-    }
-
-    state.pos = pos;
-    state.posMax = max;
-    return true
-  }
-
-  // Process autolinks '<protocol:...>'
-
-  /* eslint max-len:0 */
-  const EMAIL_RE    = /^([a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*)$/;
-  /* eslint-disable-next-line no-control-regex */
-  const AUTOLINK_RE = /^([a-zA-Z][a-zA-Z0-9+.-]{1,31}):([^<>\x00-\x20]*)$/;
-
-  function autolink (state, silent) {
-    let pos = state.pos;
-
-    if (state.src.charCodeAt(pos) !== 0x3C/* < */) { return false }
-
-    const start = state.pos;
-    const max = state.posMax;
-
-    for (;;) {
-      if (++pos >= max) return false
-
-      const ch = state.src.charCodeAt(pos);
-
-      if (ch === 0x3C /* < */) return false
-      if (ch === 0x3E /* > */) break
-    }
-
-    const url = state.src.slice(start + 1, pos);
-
-    if (AUTOLINK_RE.test(url)) {
-      const fullUrl = state.md.normalizeLink(url);
-      if (!state.md.validateLink(fullUrl)) { return false }
-
-      if (!silent) {
-        const token_o   = state.push('link_open', 'a', 1);
-        token_o.attrs   = [['href', fullUrl]];
-        token_o.markup  = 'autolink';
-        token_o.info    = 'auto';
-
-        const token_t   = state.push('text', '', 0);
-        token_t.content = state.md.normalizeLinkText(url);
-
-        const token_c   = state.push('link_close', 'a', -1);
-        token_c.markup  = 'autolink';
-        token_c.info    = 'auto';
-      }
-
-      state.pos += url.length + 2;
-      return true
-    }
-
-    if (EMAIL_RE.test(url)) {
-      const fullUrl = state.md.normalizeLink('mailto:' + url);
-      if (!state.md.validateLink(fullUrl)) { return false }
-
-      if (!silent) {
-        const token_o   = state.push('link_open', 'a', 1);
-        token_o.attrs   = [['href', fullUrl]];
-        token_o.markup  = 'autolink';
-        token_o.info    = 'auto';
-
-        const token_t   = state.push('text', '', 0);
-        token_t.content = state.md.normalizeLinkText(url);
-
-        const token_c   = state.push('link_close', 'a', -1);
-        token_c.markup  = 'autolink';
-        token_c.info    = 'auto';
-      }
-
-      state.pos += url.length + 2;
-      return true
-    }
-
-    return false
-  }
-
-  // Process html tags
-
-
-  function isLinkOpen (str) {
-    return /^<a[>\s]/i.test(str)
-  }
-  function isLinkClose (str) {
-    return /^<\/a\s*>/i.test(str)
-  }
-
-  function isLetter (ch) {
-    /* eslint no-bitwise:0 */
-    const lc = ch | 0x20; // to lower case
-    return (lc >= 0x61/* a */) && (lc <= 0x7a/* z */)
-  }
-
-  function html_inline (state, silent) {
-    if (!state.md.options.html) { return false }
-
-    // Check start
-    const max = state.posMax;
-    const pos = state.pos;
-    if (state.src.charCodeAt(pos) !== 0x3C/* < */ ||
-        pos + 2 >= max) {
-      return false
-    }
-
-    // Quick fail on second char
-    const ch = state.src.charCodeAt(pos + 1);
-    if (ch !== 0x21/* ! */ &&
-        ch !== 0x3F/* ? */ &&
-        ch !== 0x2F/* / */ &&
-        !isLetter(ch)) {
-      return false
-    }
-
-    const match = state.src.slice(pos).match(HTML_TAG_RE);
-    if (!match) { return false }
-
-    if (!silent) {
-      const token = state.push('html_inline', '', 0);
-      token.content = match[0];
-
-      if (isLinkOpen(token.content))  state.linkLevel++;
-      if (isLinkClose(token.content)) state.linkLevel--;
-    }
-    state.pos += match[0].length;
-    return true
-  }
-
-  // Process html entity - &#123;, &#xAF;, &quot;, ...
-
-
-  const DIGITAL_RE = /^&#((?:x[a-f0-9]{1,6}|[0-9]{1,7}));/i;
-  const NAMED_RE   = /^&([a-z][a-z0-9]{1,31});/i;
-
-  function entity (state, silent) {
-    const pos = state.pos;
-    const max = state.posMax;
-
-    if (state.src.charCodeAt(pos) !== 0x26/* & */) return false
-
-    if (pos + 1 >= max) return false
-
-    const ch = state.src.charCodeAt(pos + 1);
-
-    if (ch === 0x23 /* # */) {
-      const match = state.src.slice(pos).match(DIGITAL_RE);
-      if (match) {
-        if (!silent) {
-          const code = match[1][0].toLowerCase() === 'x' ? parseInt(match[1].slice(1), 16) : parseInt(match[1], 10);
-
-          const token   = state.push('text_special', '', 0);
-          token.content = isValidEntityCode(code) ? fromCodePoint(code) : fromCodePoint(0xFFFD);
-          token.markup  = match[0];
-          token.info    = 'entity';
-        }
-        state.pos += match[0].length;
-        return true
-      }
-    } else {
-      const match = state.src.slice(pos).match(NAMED_RE);
-      if (match) {
-        const decoded = decodeHTML(match[0]);
-        if (decoded !== match[0]) {
-          if (!silent) {
-            const token   = state.push('text_special', '', 0);
-            token.content = decoded;
-            token.markup  = match[0];
-            token.info    = 'entity';
-          }
-          state.pos += match[0].length;
-          return true
-        }
-      }
-    }
-
-    return false
-  }
-
-  // For each opening emphasis-like marker find a matching closing one
-  //
-
-  function processDelimiters (delimiters) {
-    const openersBottom = {};
-    const max = delimiters.length;
-
-    if (!max) return
-
-    // headerIdx is the first delimiter of the current (where closer is) delimiter run
-    let headerIdx = 0;
-    let lastTokenIdx = -2; // needs any value lower than -1
-    const jumps = [];
-
-    for (let closerIdx = 0; closerIdx < max; closerIdx++) {
-      const closer = delimiters[closerIdx];
-
-      jumps.push(0);
-
-      // markers belong to same delimiter run if:
-      //  - they have adjacent tokens
-      //  - AND markers are the same
-      //
-      if (delimiters[headerIdx].marker !== closer.marker || lastTokenIdx !== closer.token - 1) {
-        headerIdx = closerIdx;
-      }
-
-      lastTokenIdx = closer.token;
-
-      // Length is only used for emphasis-specific "rule of 3",
-      // if it's not defined (in strikethrough or 3rd party plugins),
-      // we can default it to 0 to disable those checks.
-      //
-      closer.length = closer.length || 0;
-
-      if (!closer.close) continue
-
-      // Previously calculated lower bounds (previous fails)
-      // for each marker, each delimiter length modulo 3,
-      // and for whether this closer can be an opener;
-      // https://github.com/commonmark/cmark/commit/34250e12ccebdc6372b8b49c44fab57c72443460
-      /* eslint-disable-next-line no-prototype-builtins */
-      if (!openersBottom.hasOwnProperty(closer.marker)) {
-        openersBottom[closer.marker] = [-1, -1, -1, -1, -1, -1];
-      }
-
-      const minOpenerIdx = openersBottom[closer.marker][(closer.open ? 3 : 0) + (closer.length % 3)];
-
-      let openerIdx = headerIdx - jumps[headerIdx] - 1;
-
-      let newMinOpenerIdx = openerIdx;
-
-      for (; openerIdx > minOpenerIdx; openerIdx -= jumps[openerIdx] + 1) {
-        const opener = delimiters[openerIdx];
-
-        if (opener.marker !== closer.marker) continue
-
-        if (opener.open && opener.end < 0) {
-          let isOddMatch = false;
-
-          // from spec:
-          //
-          // If one of the delimiters can both open and close emphasis, then the
-          // sum of the lengths of the delimiter runs containing the opening and
-          // closing delimiters must not be a multiple of 3 unless both lengths
-          // are multiples of 3.
-          //
-          if (opener.close || closer.open) {
-            if ((opener.length + closer.length) % 3 === 0) {
-              if (opener.length % 3 !== 0 || closer.length % 3 !== 0) {
-                isOddMatch = true;
-              }
-            }
-          }
-
-          if (!isOddMatch) {
-            // If previous delimiter cannot be an opener, we can safely skip
-            // the entire sequence in future checks. This is required to make
-            // sure algorithm has linear complexity (see *_*_*_*_*_... case).
-            //
-            const lastJump = openerIdx > 0 && !delimiters[openerIdx - 1].open
-              ? jumps[openerIdx - 1] + 1
-              : 0;
-
-            jumps[closerIdx] = closerIdx - openerIdx + lastJump;
-            jumps[openerIdx] = lastJump;
-
-            closer.open  = false;
-            opener.end   = closerIdx;
-            opener.close = false;
-            newMinOpenerIdx = -1;
-            // treat next token as start of run,
-            // it optimizes skips in **<...>**a**<...>** pathological case
-            lastTokenIdx = -2;
-            break
-          }
-        }
-      }
-
-      if (newMinOpenerIdx !== -1) {
-        // If match for this delimiter run failed, we want to set lower bound for
-        // future lookups. This is required to make sure algorithm has linear
-        // complexity.
-        //
-        // See details here:
-        // https://github.com/commonmark/cmark/issues/178#issuecomment-270417442
-        //
-        openersBottom[closer.marker][(closer.open ? 3 : 0) + ((closer.length || 0) % 3)] = newMinOpenerIdx;
-      }
-    }
-  }
-
-  function link_pairs (state) {
-    const tokens_meta = state.tokens_meta;
-    const max = state.tokens_meta.length;
-
-    processDelimiters(state.delimiters);
-
-    for (let curr = 0; curr < max; curr++) {
-      if (tokens_meta[curr] && tokens_meta[curr].delimiters) {
-        processDelimiters(tokens_meta[curr].delimiters);
-      }
-    }
-  }
-
-  // Clean up tokens after emphasis and strikethrough postprocessing:
-  // merge adjacent text nodes into one and re-calculate all token levels
-  //
-  // This is necessary because initially emphasis delimiter markers (*, _, ~)
-  // are treated as their own separate text tokens. Then emphasis rule either
-  // leaves them as text (needed to merge with adjacent text) or turns them
-  // into opening/closing tags (which messes up levels inside).
-  //
-
-  function fragments_join (state) {
-    let curr, last;
-    let level = 0;
-    const tokens = state.tokens;
-    const max = state.tokens.length;
-
-    for (curr = last = 0; curr < max; curr++) {
-      // re-calculate levels after emphasis/strikethrough turns some text nodes
-      // into opening/closing tags
-      if (tokens[curr].nesting < 0) level--; // closing tag
-      tokens[curr].level = level;
-      if (tokens[curr].nesting > 0) level++; // opening tag
-
-      if (tokens[curr].type === 'text' &&
-          curr + 1 < max &&
-          tokens[curr + 1].type === 'text') {
-        // collapse two adjacent text nodes
-        tokens[curr + 1].content = tokens[curr].content + tokens[curr + 1].content;
-      } else {
-        if (curr !== last) { tokens[last] = tokens[curr]; }
-
-        last++;
-      }
-    }
-
-    if (curr !== last) {
-      tokens.length = last;
-    }
-  }
+  var state_inline = StateInline;
 
   /** internal
    * class ParserInline
@@ -20482,21 +23982,25 @@
    **/
 
 
+  var Ruler           = ruler;
+
+
+  ////////////////////////////////////////////////////////////////////////////////
   // Parser rules
 
-  const _rules = [
-    ['text',            text],
-    ['linkify',         linkify],
-    ['newline',         newline],
-    ['escape',          escape$1],
-    ['backticks',       backtick],
-    ['strikethrough',   r_strikethrough.tokenize],
-    ['emphasis',        r_emphasis.tokenize],
-    ['link',            link$1],
-    ['image',           image],
-    ['autolink',        autolink],
-    ['html_inline',     html_inline],
-    ['entity',          entity]
+  var _rules = [
+    [ 'text',            text ],
+    [ 'linkify',         linkify ],
+    [ 'newline',         newline ],
+    [ 'escape',          _escape ],
+    [ 'backticks',       backticks ],
+    [ 'strikethrough',   strikethrough.tokenize ],
+    [ 'emphasis',        emphasis.tokenize ],
+    [ 'link',            link ],
+    [ 'image',           image ],
+    [ 'autolink',        autolink ],
+    [ 'html_inline',     html_inline ],
+    [ 'entity',          entity ]
   ];
 
   // `rule2` ruleset was created specifically for emphasis/strikethrough
@@ -20504,19 +24008,22 @@
   //
   // Don't use this for anything except pairs (plugins working with `balance_pairs`).
   //
-  const _rules2 = [
-    ['balance_pairs',   link_pairs],
-    ['strikethrough',   r_strikethrough.postProcess],
-    ['emphasis',        r_emphasis.postProcess],
+  var _rules2 = [
+    [ 'balance_pairs',   balance_pairs ],
+    [ 'strikethrough',   strikethrough.postProcess ],
+    [ 'emphasis',        emphasis.postProcess ],
     // rules for pairs separate '**' into its own text tokens, which may be left unused,
     // rule below merges unused segments back with the rest of the text
-    ['fragments_join',  fragments_join]
+    [ 'fragments_join',  fragments_join ]
   ];
+
 
   /**
    * new ParserInline()
    **/
-  function ParserInline () {
+  function ParserInline$1() {
+    var i;
+
     /**
      * ParserInline#ruler -> Ruler
      *
@@ -20524,7 +24031,7 @@
      **/
     this.ruler = new Ruler();
 
-    for (let i = 0; i < _rules.length; i++) {
+    for (i = 0; i < _rules.length; i++) {
       this.ruler.push(_rules[i][0], _rules[i][1]);
     }
 
@@ -20536,30 +24043,30 @@
      **/
     this.ruler2 = new Ruler();
 
-    for (let i = 0; i < _rules2.length; i++) {
+    for (i = 0; i < _rules2.length; i++) {
       this.ruler2.push(_rules2[i][0], _rules2[i][1]);
     }
   }
 
+
   // Skip single token by running all rules in validation mode;
   // returns `true` if any rule reported success
   //
-  ParserInline.prototype.skipToken = function (state) {
-    const pos = state.pos;
-    const rules = this.ruler.getRules('');
-    const len = rules.length;
-    const maxNesting = state.md.options.maxNesting;
-    const cache = state.cache;
+  ParserInline$1.prototype.skipToken = function (state) {
+    var ok, i, pos = state.pos,
+        rules = this.ruler.getRules(''),
+        len = rules.length,
+        maxNesting = state.md.options.maxNesting,
+        cache = state.cache;
+
 
     if (typeof cache[pos] !== 'undefined') {
       state.pos = cache[pos];
-      return
+      return;
     }
 
-    let ok = false;
-
     if (state.level < maxNesting) {
-      for (let i = 0; i < len; i++) {
+      for (i = 0; i < len; i++) {
         // Increment state.level and decrement it later to limit recursion.
         // It's harmless to do here, because no tokens are created. But ideally,
         // we'd need a separate private state variable for this purpose.
@@ -20569,8 +24076,8 @@
         state.level--;
 
         if (ok) {
-          if (pos >= state.pos) { throw new Error("inline rule didn't increment state.pos") }
-          break
+          if (pos >= state.pos) { throw new Error("inline rule didn't increment state.pos"); }
+          break;
         }
       }
     } else {
@@ -20592,13 +24099,15 @@
     cache[pos] = state.pos;
   };
 
+
   // Generate tokens for input range
   //
-  ParserInline.prototype.tokenize = function (state) {
-    const rules = this.ruler.getRules('');
-    const len = rules.length;
-    const end = state.posMax;
-    const maxNesting = state.md.options.maxNesting;
+  ParserInline$1.prototype.tokenize = function (state) {
+    var ok, i, prevPos,
+        rules = this.ruler.getRules(''),
+        len = rules.length,
+        end = state.posMax,
+        maxNesting = state.md.options.maxNesting;
 
     while (state.pos < end) {
       // Try all possible rules.
@@ -20607,22 +24116,21 @@
       // - update `state.pos`
       // - update `state.tokens`
       // - return true
-      const prevPos = state.pos;
-      let ok = false;
+      prevPos = state.pos;
 
       if (state.level < maxNesting) {
-        for (let i = 0; i < len; i++) {
+        for (i = 0; i < len; i++) {
           ok = rules[i](state, false);
           if (ok) {
-            if (prevPos >= state.pos) { throw new Error("inline rule didn't increment state.pos") }
-            break
+            if (prevPos >= state.pos) { throw new Error("inline rule didn't increment state.pos"); }
+            break;
           }
         }
       }
 
       if (ok) {
-        if (state.pos >= end) { break }
-        continue
+        if (state.pos >= end) { break; }
+        continue;
       }
 
       state.pending += state.src[state.pos++];
@@ -20633,283 +24141,294 @@
     }
   };
 
+
   /**
    * ParserInline.parse(str, md, env, outTokens)
    *
    * Process input string and push inline tokens into `outTokens`
    **/
-  ParserInline.prototype.parse = function (str, md, env, outTokens) {
-    const state = new this.State(str, md, env, outTokens);
+  ParserInline$1.prototype.parse = function (str, md, env, outTokens) {
+    var i, rules, len;
+    var state = new this.State(str, md, env, outTokens);
 
     this.tokenize(state);
 
-    const rules = this.ruler2.getRules('');
-    const len = rules.length;
+    rules = this.ruler2.getRules('');
+    len = rules.length;
 
-    for (let i = 0; i < len; i++) {
+    for (i = 0; i < len; i++) {
       rules[i](state);
     }
   };
 
-  ParserInline.prototype.State = StateInline;
 
-  function reFactory (opts) {
-    const re = {};
-    opts = opts || {};
+  ParserInline$1.prototype.State = state_inline;
 
-    re.src_Any = Any.source;
-    re.src_Cc = Cc.source;
-    re.src_Z = Z.source;
-    re.src_P = P.source;
 
-    // \p{\Z\P\Cc\CF} (white spaces + control + format + punctuation)
-    re.src_ZPCc = [re.src_Z, re.src_P, re.src_Cc].join('|');
+  var parser_inline = ParserInline$1;
 
-    // \p{\Z\Cc} (white spaces + control)
-    re.src_ZCc = [re.src_Z, re.src_Cc].join('|');
+  var re;
+  var hasRequiredRe;
 
-    // Experimental. List of chars, completely prohibited in links
-    // because can separate it from other part of text
-    const text_separators = '[><\uff5c]';
+  function requireRe () {
+  	if (hasRequiredRe) return re;
+  	hasRequiredRe = 1;
 
-    // All possible word characters (everything without punctuation, spaces & controls)
-    // Defined via punctuation & spaces to save space
-    // Should be something like \p{\L\N\S\M} (\w but without `_`)
-    re.src_pseudo_letter = '(?:(?!' + text_separators + '|' + re.src_ZPCc + ')' + re.src_Any + ')';
-    // The same as abothe but without [0-9]
-    // var src_pseudo_letter_non_d = '(?:(?![0-9]|' + src_ZPCc + ')' + src_Any + ')';
 
-    re.src_ip4 =
+  	re = function (opts) {
+  	  var re = {};
+  	  opts = opts || {};
 
-      '(?:(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)';
+  	  // Use direct extract instead of `regenerate` to reduse browserified size
+  	  re.src_Any = requireRegex$3().source;
+  	  re.src_Cc  = requireRegex$2().source;
+  	  re.src_Z   = requireRegex().source;
+  	  re.src_P   = regex$4.source;
 
-    // Prohibit any of "@/[]()" in user/pass to avoid wrong domain fetch.
-    re.src_auth = '(?:(?:(?!' + re.src_ZCc + '|[@/\\[\\]()]).)+@)?';
+  	  // \p{\Z\P\Cc\CF} (white spaces + control + format + punctuation)
+  	  re.src_ZPCc = [ re.src_Z, re.src_P, re.src_Cc ].join('|');
 
-    re.src_port =
+  	  // \p{\Z\Cc} (white spaces + control)
+  	  re.src_ZCc = [ re.src_Z, re.src_Cc ].join('|');
 
-      '(?::(?:6(?:[0-4]\\d{3}|5(?:[0-4]\\d{2}|5(?:[0-2]\\d|3[0-5])))|[1-5]?\\d{1,4}))?';
+  	  // Experimental. List of chars, completely prohibited in links
+  	  // because can separate it from other part of text
+  	  var text_separators = '[><\uff5c]';
 
-    re.src_host_terminator =
+  	  // All possible word characters (everything without punctuation, spaces & controls)
+  	  // Defined via punctuation & spaces to save space
+  	  // Should be something like \p{\L\N\S\M} (\w but without `_`)
+  	  re.src_pseudo_letter       = '(?:(?!' + text_separators + '|' + re.src_ZPCc + ')' + re.src_Any + ')';
+  	  // The same as abothe but without [0-9]
+  	  // var src_pseudo_letter_non_d = '(?:(?![0-9]|' + src_ZPCc + ')' + src_Any + ')';
 
-      '(?=$|' + text_separators + '|' + re.src_ZPCc + ')' +
-      '(?!' + (opts['---'] ? '-(?!--)|' : '-|') + '_|:\\d|\\.-|\\.(?!$|' + re.src_ZPCc + '))';
+  	  ////////////////////////////////////////////////////////////////////////////////
 
-    re.src_path =
+  	  re.src_ip4 =
 
-      '(?:' +
-        '[/?#]' +
-          '(?:' +
-            '(?!' + re.src_ZCc + '|' + text_separators + '|[()[\\]{}.,"\'?!\\-;]).|' +
-            '\\[(?:(?!' + re.src_ZCc + '|\\]).)*\\]|' +
-            '\\((?:(?!' + re.src_ZCc + '|[)]).)*\\)|' +
-            '\\{(?:(?!' + re.src_ZCc + '|[}]).)*\\}|' +
-            '\\"(?:(?!' + re.src_ZCc + '|["]).)+\\"|' +
-            "\\'(?:(?!" + re.src_ZCc + "|[']).)+\\'|" +
+  	    '(?:(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)';
 
-            // allow `I'm_king` if no pair found
-            "\\'(?=" + re.src_pseudo_letter + '|[-])|' +
+  	  // Prohibit any of "@/[]()" in user/pass to avoid wrong domain fetch.
+  	  re.src_auth    = '(?:(?:(?!' + re.src_ZCc + '|[@/\\[\\]()]).)+@)?';
 
-            // google has many dots in "google search" links (#66, #81).
-            // github has ... in commit range links,
-            // Restrict to
-            // - english
-            // - percent-encoded
-            // - parts of file path
-            // - params separator
-            // until more examples found.
-            '\\.{2,}[a-zA-Z0-9%/&]|' +
+  	  re.src_port =
 
-            '\\.(?!' + re.src_ZCc + '|[.]|$)|' +
-            (opts['---']
-              ? '\\-(?!--(?:[^-]|$))(?:-*)|' // `---` => long dash, terminate
-              : '\\-+|'
-            ) +
-            // allow `,,,` in paths
-            ',(?!' + re.src_ZCc + '|$)|' +
+  	    '(?::(?:6(?:[0-4]\\d{3}|5(?:[0-4]\\d{2}|5(?:[0-2]\\d|3[0-5])))|[1-5]?\\d{1,4}))?';
 
-            // allow `;` if not followed by space-like char
-            ';(?!' + re.src_ZCc + '|$)|' +
+  	  re.src_host_terminator =
 
-            // allow `!!!` in paths, but not at the end
-            '\\!+(?!' + re.src_ZCc + '|[!]|$)|' +
+  	    '(?=$|' + text_separators + '|' + re.src_ZPCc + ')' +
+  	    '(?!' + (opts['---'] ? '-(?!--)|' : '-|') + '_|:\\d|\\.-|\\.(?!$|' + re.src_ZPCc + '))';
 
-            '\\?(?!' + re.src_ZCc + '|[?]|$)' +
-          ')+' +
-        '|\\/' +
-      ')?';
+  	  re.src_path =
 
-    // Allow anything in markdown spec, forbid quote (") at the first position
-    // because emails enclosed in quotes are far more common
-    re.src_email_name =
+  	    '(?:' +
+  	      '[/?#]' +
+  	        '(?:' +
+  	          '(?!' + re.src_ZCc + '|' + text_separators + '|[()[\\]{}.,"\'?!\\-;]).|' +
+  	          '\\[(?:(?!' + re.src_ZCc + '|\\]).)*\\]|' +
+  	          '\\((?:(?!' + re.src_ZCc + '|[)]).)*\\)|' +
+  	          '\\{(?:(?!' + re.src_ZCc + '|[}]).)*\\}|' +
+  	          '\\"(?:(?!' + re.src_ZCc + '|["]).)+\\"|' +
+  	          "\\'(?:(?!" + re.src_ZCc + "|[']).)+\\'|" +
+  	          "\\'(?=" + re.src_pseudo_letter + '|[-])|' +  // allow `I'm_king` if no pair found
+  	          '\\.{2,}[a-zA-Z0-9%/&]|' + // google has many dots in "google search" links (#66, #81).
+  	                                     // github has ... in commit range links,
+  	                                     // Restrict to
+  	                                     // - english
+  	                                     // - percent-encoded
+  	                                     // - parts of file path
+  	                                     // - params separator
+  	                                     // until more examples found.
+  	          '\\.(?!' + re.src_ZCc + '|[.]|$)|' +
+  	          (opts['---'] ?
+  	            '\\-(?!--(?:[^-]|$))(?:-*)|' // `---` => long dash, terminate
+  	            :
+  	            '\\-+|'
+  	          ) +
+  	          ',(?!' + re.src_ZCc + '|$)|' +       // allow `,,,` in paths
+  	          ';(?!' + re.src_ZCc + '|$)|' +       // allow `;` if not followed by space-like char
+  	          '\\!+(?!' + re.src_ZCc + '|[!]|$)|' +  // allow `!!!` in paths, but not at the end
+  	          '\\?(?!' + re.src_ZCc + '|[?]|$)' +
+  	        ')+' +
+  	      '|\\/' +
+  	    ')?';
 
-      '[\\-;:&=\\+\\$,\\.a-zA-Z0-9_][\\-;:&=\\+\\$,\\"\\.a-zA-Z0-9_]*';
+  	  // Allow anything in markdown spec, forbid quote (") at the first position
+  	  // because emails enclosed in quotes are far more common
+  	  re.src_email_name =
 
-    re.src_xn =
+  	    '[\\-;:&=\\+\\$,\\.a-zA-Z0-9_][\\-;:&=\\+\\$,\\"\\.a-zA-Z0-9_]*';
 
-      'xn--[a-z0-9\\-]{1,59}';
+  	  re.src_xn =
 
-    // More to read about domain names
-    // http://serverfault.com/questions/638260/
+  	    'xn--[a-z0-9\\-]{1,59}';
 
-    re.src_domain_root =
+  	  // More to read about domain names
+  	  // http://serverfault.com/questions/638260/
 
-      // Allow letters & digits (http://test1)
-      '(?:' +
-        re.src_xn +
-        '|' +
-        re.src_pseudo_letter + '{1,63}' +
-      ')';
+  	  re.src_domain_root =
 
-    re.src_domain =
+  	    // Allow letters & digits (http://test1)
+  	    '(?:' +
+  	      re.src_xn +
+  	      '|' +
+  	      re.src_pseudo_letter + '{1,63}' +
+  	    ')';
 
-      '(?:' +
-        re.src_xn +
-        '|' +
-        '(?:' + re.src_pseudo_letter + ')' +
-        '|' +
-        '(?:' + re.src_pseudo_letter + '(?:-|' + re.src_pseudo_letter + '){0,61}' + re.src_pseudo_letter + ')' +
-      ')';
+  	  re.src_domain =
 
-    re.src_host =
+  	    '(?:' +
+  	      re.src_xn +
+  	      '|' +
+  	      '(?:' + re.src_pseudo_letter + ')' +
+  	      '|' +
+  	      '(?:' + re.src_pseudo_letter + '(?:-|' + re.src_pseudo_letter + '){0,61}' + re.src_pseudo_letter + ')' +
+  	    ')';
 
-      '(?:' +
-      // Don't need IP check, because digits are already allowed in normal domain names
-      //   src_ip4 +
-      // '|' +
-        '(?:(?:(?:' + re.src_domain + ')\\.)*' + re.src_domain/* _root */ + ')' +
-      ')';
+  	  re.src_host =
 
-    re.tpl_host_fuzzy =
+  	    '(?:' +
+  	    // Don't need IP check, because digits are already allowed in normal domain names
+  	    //   src_ip4 +
+  	    // '|' +
+  	      '(?:(?:(?:' + re.src_domain + ')\\.)*' + re.src_domain/*_root*/ + ')' +
+  	    ')';
 
-      '(?:' +
-        re.src_ip4 +
-      '|' +
-        '(?:(?:(?:' + re.src_domain + ')\\.)+(?:%TLDS%))' +
-      ')';
+  	  re.tpl_host_fuzzy =
 
-    re.tpl_host_no_ip_fuzzy =
+  	    '(?:' +
+  	      re.src_ip4 +
+  	    '|' +
+  	      '(?:(?:(?:' + re.src_domain + ')\\.)+(?:%TLDS%))' +
+  	    ')';
 
-      '(?:(?:(?:' + re.src_domain + ')\\.)+(?:%TLDS%))';
+  	  re.tpl_host_no_ip_fuzzy =
 
-    re.src_host_strict =
+  	    '(?:(?:(?:' + re.src_domain + ')\\.)+(?:%TLDS%))';
 
-      re.src_host + re.src_host_terminator;
+  	  re.src_host_strict =
 
-    re.tpl_host_fuzzy_strict =
+  	    re.src_host + re.src_host_terminator;
 
-      re.tpl_host_fuzzy + re.src_host_terminator;
+  	  re.tpl_host_fuzzy_strict =
 
-    re.src_host_port_strict =
+  	    re.tpl_host_fuzzy + re.src_host_terminator;
 
-      re.src_host + re.src_port + re.src_host_terminator;
+  	  re.src_host_port_strict =
 
-    re.tpl_host_port_fuzzy_strict =
+  	    re.src_host + re.src_port + re.src_host_terminator;
 
-      re.tpl_host_fuzzy + re.src_port + re.src_host_terminator;
+  	  re.tpl_host_port_fuzzy_strict =
 
-    re.tpl_host_port_no_ip_fuzzy_strict =
+  	    re.tpl_host_fuzzy + re.src_port + re.src_host_terminator;
 
-      re.tpl_host_no_ip_fuzzy + re.src_port + re.src_host_terminator;
+  	  re.tpl_host_port_no_ip_fuzzy_strict =
 
-    //
-    // Main rules
-    //
+  	    re.tpl_host_no_ip_fuzzy + re.src_port + re.src_host_terminator;
 
-    // Rude test fuzzy links by host, for quick deny
-    re.tpl_host_fuzzy_test =
 
-      'localhost|www\\.|\\.\\d{1,3}\\.|(?:\\.(?:%TLDS%)(?:' + re.src_ZPCc + '|>|$))';
+  	  ////////////////////////////////////////////////////////////////////////////////
+  	  // Main rules
 
-    re.tpl_email_fuzzy =
+  	  // Rude test fuzzy links by host, for quick deny
+  	  re.tpl_host_fuzzy_test =
 
-        '(^|' + text_separators + '|"|\\(|' + re.src_ZCc + ')' +
-        '(' + re.src_email_name + '@' + re.tpl_host_fuzzy_strict + ')';
+  	    'localhost|www\\.|\\.\\d{1,3}\\.|(?:\\.(?:%TLDS%)(?:' + re.src_ZPCc + '|>|$))';
 
-    re.tpl_link_fuzzy =
-        // Fuzzy link can't be prepended with .:/\- and non punctuation.
-        // but can start with > (markdown blockquote)
-        '(^|(?![.:/\\-_@])(?:[$+<=>^`|\uff5c]|' + re.src_ZPCc + '))' +
-        '((?![$+<=>^`|\uff5c])' + re.tpl_host_port_fuzzy_strict + re.src_path + ')';
+  	  re.tpl_email_fuzzy =
 
-    re.tpl_link_no_ip_fuzzy =
-        // Fuzzy link can't be prepended with .:/\- and non punctuation.
-        // but can start with > (markdown blockquote)
-        '(^|(?![.:/\\-_@])(?:[$+<=>^`|\uff5c]|' + re.src_ZPCc + '))' +
-        '((?![$+<=>^`|\uff5c])' + re.tpl_host_port_no_ip_fuzzy_strict + re.src_path + ')';
+  	      '(^|' + text_separators + '|"|\\(|' + re.src_ZCc + ')' +
+  	      '(' + re.src_email_name + '@' + re.tpl_host_fuzzy_strict + ')';
 
-    return re
+  	  re.tpl_link_fuzzy =
+  	      // Fuzzy link can't be prepended with .:/\- and non punctuation.
+  	      // but can start with > (markdown blockquote)
+  	      '(^|(?![.:/\\-_@])(?:[$+<=>^`|\uff5c]|' + re.src_ZPCc + '))' +
+  	      '((?![$+<=>^`|\uff5c])' + re.tpl_host_port_fuzzy_strict + re.src_path + ')';
+
+  	  re.tpl_link_no_ip_fuzzy =
+  	      // Fuzzy link can't be prepended with .:/\- and non punctuation.
+  	      // but can start with > (markdown blockquote)
+  	      '(^|(?![.:/\\-_@])(?:[$+<=>^`|\uff5c]|' + re.src_ZPCc + '))' +
+  	      '((?![$+<=>^`|\uff5c])' + re.tpl_host_port_no_ip_fuzzy_strict + re.src_path + ')';
+
+  	  return re;
+  	};
+  	return re;
   }
 
-  //
+  ////////////////////////////////////////////////////////////////////////////////
   // Helpers
-  //
 
   // Merge objects
   //
-  function assign$1 (obj /* from1, from2, from3, ... */) {
-    const sources = Array.prototype.slice.call(arguments, 1);
+  function assign$1(obj /*from1, from2, from3, ...*/) {
+    var sources = Array.prototype.slice.call(arguments, 1);
 
     sources.forEach(function (source) {
-      if (!source) { return }
+      if (!source) { return; }
 
       Object.keys(source).forEach(function (key) {
         obj[key] = source[key];
       });
     });
 
-    return obj
+    return obj;
   }
 
-  function _class (obj) { return Object.prototype.toString.call(obj) }
-  function isString (obj) { return _class(obj) === '[object String]' }
-  function isObject$2 (obj) { return _class(obj) === '[object Object]' }
-  function isRegExp (obj) { return _class(obj) === '[object RegExp]' }
-  function isFunction (obj) { return _class(obj) === '[object Function]' }
+  function _class(obj) { return Object.prototype.toString.call(obj); }
+  function isString(obj) { return _class(obj) === '[object String]'; }
+  function isObject$3(obj) { return _class(obj) === '[object Object]'; }
+  function isRegExp(obj) { return _class(obj) === '[object RegExp]'; }
+  function isFunction(obj) { return _class(obj) === '[object Function]'; }
 
-  function escapeRE (str) { return str.replace(/[.?*+^$[\]\\(){}|-]/g, '\\$&') }
 
-  //
+  function escapeRE(str) { return str.replace(/[.?*+^$[\]\\(){}|-]/g, '\\$&'); }
 
-  const defaultOptions = {
+  ////////////////////////////////////////////////////////////////////////////////
+
+
+  var defaultOptions = {
     fuzzyLink: true,
     fuzzyEmail: true,
     fuzzyIP: false
   };
 
-  function isOptionsObj (obj) {
+
+  function isOptionsObj(obj) {
     return Object.keys(obj || {}).reduce(function (acc, k) {
-      /* eslint-disable-next-line no-prototype-builtins */
-      return acc || defaultOptions.hasOwnProperty(k)
-    }, false)
+      return acc || defaultOptions.hasOwnProperty(k);
+    }, false);
   }
 
-  const defaultSchemas = {
+
+  var defaultSchemas = {
     'http:': {
       validate: function (text, pos, self) {
-        const tail = text.slice(pos);
+        var tail = text.slice(pos);
 
         if (!self.re.http) {
           // compile lazily, because "host"-containing variables can change on tlds update.
-          self.re.http = new RegExp(
+          self.re.http =  new RegExp(
             '^\\/\\/' + self.re.src_auth + self.re.src_host_port_strict + self.re.src_path, 'i'
           );
         }
         if (self.re.http.test(tail)) {
-          return tail.match(self.re.http)[0].length
+          return tail.match(self.re.http)[0].length;
         }
-        return 0
+        return 0;
       }
     },
-    'https:': 'http:',
-    'ftp:': 'http:',
-    '//': {
+    'https:':  'http:',
+    'ftp:':    'http:',
+    '//':      {
       validate: function (text, pos, self) {
-        const tail = text.slice(pos);
+        var tail = text.slice(pos);
 
         if (!self.re.no_http) {
         // compile lazily, because "host"-containing variables can change on tlds update.
-          self.re.no_http = new RegExp(
+          self.re.no_http =  new RegExp(
             '^' +
             self.re.src_auth +
             // Don't allow single-level domains, because of false positives like '//test'
@@ -20925,67 +24444,73 @@
 
         if (self.re.no_http.test(tail)) {
           // should not be `://` & `///`, that protects from errors in protocol name
-          if (pos >= 3 && text[pos - 3] === ':') { return 0 }
-          if (pos >= 3 && text[pos - 3] === '/') { return 0 }
-          return tail.match(self.re.no_http)[0].length
+          if (pos >= 3 && text[pos - 3] === ':') { return 0; }
+          if (pos >= 3 && text[pos - 3] === '/') { return 0; }
+          return tail.match(self.re.no_http)[0].length;
         }
-        return 0
+        return 0;
       }
     },
     'mailto:': {
       validate: function (text, pos, self) {
-        const tail = text.slice(pos);
+        var tail = text.slice(pos);
 
         if (!self.re.mailto) {
-          self.re.mailto = new RegExp(
+          self.re.mailto =  new RegExp(
             '^' + self.re.src_email_name + '@' + self.re.src_host_strict, 'i'
           );
         }
         if (self.re.mailto.test(tail)) {
-          return tail.match(self.re.mailto)[0].length
+          return tail.match(self.re.mailto)[0].length;
         }
-        return 0
+        return 0;
       }
     }
   };
 
+  /*eslint-disable max-len*/
+
   // RE pattern for 2-character tlds (autogenerated by ./support/tlds_2char_gen.js)
-  /* eslint-disable-next-line max-len */
-  const tlds_2ch_src_re = 'a[cdefgilmnoqrstuwxz]|b[abdefghijmnorstvwyz]|c[acdfghiklmnoruvwxyz]|d[ejkmoz]|e[cegrstu]|f[ijkmor]|g[abdefghilmnpqrstuwy]|h[kmnrtu]|i[delmnoqrst]|j[emop]|k[eghimnprwyz]|l[abcikrstuvy]|m[acdeghklmnopqrstuvwxyz]|n[acefgilopruz]|om|p[aefghklmnrstwy]|qa|r[eosuw]|s[abcdeghijklmnortuvxyz]|t[cdfghjklmnortvwz]|u[agksyz]|v[aceginu]|w[fs]|y[et]|z[amw]';
+  var tlds_2ch_src_re = 'a[cdefgilmnoqrstuwxz]|b[abdefghijmnorstvwyz]|c[acdfghiklmnoruvwxyz]|d[ejkmoz]|e[cegrstu]|f[ijkmor]|g[abdefghilmnpqrstuwy]|h[kmnrtu]|i[delmnoqrst]|j[emop]|k[eghimnprwyz]|l[abcikrstuvy]|m[acdeghklmnopqrstuvwxyz]|n[acefgilopruz]|om|p[aefghklmnrstwy]|qa|r[eosuw]|s[abcdeghijklmnortuvxyz]|t[cdfghjklmnortvwz]|u[agksyz]|v[aceginu]|w[fs]|y[et]|z[amw]';
 
   // DON'T try to make PRs with changes. Extend TLDs with LinkifyIt.tlds() instead
-  const tlds_default = 'biz|com|edu|gov|net|org|pro|web|xxx|aero|asia|coop|info|museum|name|shop|рф'.split('|');
+  var tlds_default = 'biz|com|edu|gov|net|org|pro|web|xxx|aero|asia|coop|info|museum|name|shop|рф'.split('|');
 
-  function resetScanCache (self) {
+  /*eslint-enable max-len*/
+
+  ////////////////////////////////////////////////////////////////////////////////
+
+  function resetScanCache(self) {
     self.__index__ = -1;
-    self.__text_cache__ = '';
+    self.__text_cache__   = '';
   }
 
-  function createValidator (re) {
+  function createValidator(re) {
     return function (text, pos) {
-      const tail = text.slice(pos);
+      var tail = text.slice(pos);
 
       if (re.test(tail)) {
-        return tail.match(re)[0].length
+        return tail.match(re)[0].length;
       }
-      return 0
-    }
+      return 0;
+    };
   }
 
-  function createNormalizer () {
+  function createNormalizer() {
     return function (match, self) {
       self.normalize(match);
-    }
+    };
   }
 
   // Schemas compiler. Build regexps.
   //
-  function compile (self) {
+  function compile(self) {
+
     // Load & clone RE patterns.
-    const re = self.re = reFactory(self.__opts__);
+    var re = self.re = requireRe()(self.__opts__);
 
     // Define dynamic patterns
-    const tlds = self.__tlds__.slice();
+    var tlds = self.__tlds__.slice();
 
     self.onCompile();
 
@@ -20996,36 +24521,36 @@
 
     re.src_tlds = tlds.join('|');
 
-    function untpl (tpl) { return tpl.replace('%TLDS%', re.src_tlds) }
+    function untpl(tpl) { return tpl.replace('%TLDS%', re.src_tlds); }
 
-    re.email_fuzzy = RegExp(untpl(re.tpl_email_fuzzy), 'i');
-    re.link_fuzzy = RegExp(untpl(re.tpl_link_fuzzy), 'i');
+    re.email_fuzzy      = RegExp(untpl(re.tpl_email_fuzzy), 'i');
+    re.link_fuzzy       = RegExp(untpl(re.tpl_link_fuzzy), 'i');
     re.link_no_ip_fuzzy = RegExp(untpl(re.tpl_link_no_ip_fuzzy), 'i');
-    re.host_fuzzy_test = RegExp(untpl(re.tpl_host_fuzzy_test), 'i');
+    re.host_fuzzy_test  = RegExp(untpl(re.tpl_host_fuzzy_test), 'i');
 
     //
     // Compile each schema
     //
 
-    const aliases = [];
+    var aliases = [];
 
     self.__compiled__ = {}; // Reset compiled data
 
-    function schemaError (name, val) {
-      throw new Error('(LinkifyIt) Invalid schema "' + name + '": ' + val)
+    function schemaError(name, val) {
+      throw new Error('(LinkifyIt) Invalid schema "' + name + '": ' + val);
     }
 
     Object.keys(self.__schemas__).forEach(function (name) {
-      const val = self.__schemas__[name];
+      var val = self.__schemas__[name];
 
       // skip disabled methods
-      if (val === null) { return }
+      if (val === null) { return; }
 
-      const compiled = { validate: null, link: null };
+      var compiled = { validate: null, link: null };
 
       self.__compiled__[name] = compiled;
 
-      if (isObject$2(val)) {
+      if (isObject$3(val)) {
         if (isRegExp(val.validate)) {
           compiled.validate = createValidator(val.validate);
         } else if (isFunction(val.validate)) {
@@ -21042,12 +24567,12 @@
           schemaError(name, val);
         }
 
-        return
+        return;
       }
 
       if (isString(val)) {
         aliases.push(name);
-        return
+        return;
       }
 
       schemaError(name, val);
@@ -21061,7 +24586,7 @@
       if (!self.__compiled__[self.__schemas__[alias]]) {
         // Silently fail on missed schemas to avoid errons on disable.
         // schemaError(alias, self.__schemas__[alias]);
-        return
+        return;
       }
 
       self.__compiled__[alias].validate =
@@ -21078,16 +24603,16 @@
     //
     // Build schema condition
     //
-    const slist = Object.keys(self.__compiled__)
-      .filter(function (name) {
-        // Filter disabled & fake schemas
-        return name.length > 0 && self.__compiled__[name]
-      })
-      .map(escapeRE)
-      .join('|');
+    var slist = Object.keys(self.__compiled__)
+                        .filter(function (name) {
+                          // Filter disabled & fake schemas
+                          return name.length > 0 && self.__compiled__[name];
+                        })
+                        .map(escapeRE)
+                        .join('|');
     // (?!_) cause 1.5x slowdown
-    self.re.schema_test = RegExp('(^|(?!_)(?:[><\uff5c]|' + re.src_ZPCc + '))(' + slist + ')', 'i');
-    self.re.schema_search = RegExp('(^|(?!_)(?:[><\uff5c]|' + re.src_ZPCc + '))(' + slist + ')', 'ig');
+    self.re.schema_test     = RegExp('(^|(?!_)(?:[><\uff5c]|' + re.src_ZPCc + '))(' + slist + ')', 'i');
+    self.re.schema_search   = RegExp('(^|(?!_)(?:[><\uff5c]|' + re.src_ZPCc + '))(' + slist + ')', 'ig');
     self.re.schema_at_start = RegExp('^' + self.re.schema_search.source, 'i');
 
     self.re.pretest = RegExp(
@@ -21107,23 +24632,23 @@
    *
    * Match result. Single element of array, returned by [[LinkifyIt#match]]
    **/
-  function Match (self, shift) {
-    const start = self.__index__;
-    const end = self.__last_index__;
-    const text = self.__text_cache__.slice(start, end);
+  function Match(self, shift) {
+    var start = self.__index__,
+        end   = self.__last_index__,
+        text  = self.__text_cache__.slice(start, end);
 
     /**
      * Match#schema -> String
      *
      * Prefix (protocol) for matched string.
      **/
-    this.schema = self.__schema__.toLowerCase();
+    this.schema    = self.__schema__.toLowerCase();
     /**
      * Match#index -> Number
      *
      * First position of matched string.
      **/
-    this.index = start + shift;
+    this.index     = start + shift;
     /**
      * Match#lastIndex -> Number
      *
@@ -21135,28 +24660,29 @@
      *
      * Matched string.
      **/
-    this.raw = text;
+    this.raw       = text;
     /**
      * Match#text -> String
      *
      * Notmalized text of matched string.
      **/
-    this.text = text;
+    this.text      = text;
     /**
      * Match#url -> String
      *
      * Normalized url of matched string.
      **/
-    this.url = text;
+    this.url       = text;
   }
 
-  function createMatch (self, shift) {
-    const match = new Match(self, shift);
+  function createMatch(self, shift) {
+    var match = new Match(self, shift);
 
     self.__compiled__[match.schema].normalize(match, self);
 
-    return match
+    return match;
   }
+
 
   /**
    * class LinkifyIt
@@ -21196,9 +24722,9 @@
    * - __fuzzyEmail__ - recognize emails without `mailto:` prefix.
    *
    **/
-  function LinkifyIt (schemas, options) {
-    if (!(this instanceof LinkifyIt)) {
-      return new LinkifyIt(schemas, options)
+  function LinkifyIt$1(schemas, options) {
+    if (!(this instanceof LinkifyIt$1)) {
+      return new LinkifyIt$1(schemas, options);
     }
 
     if (!options) {
@@ -21208,24 +24734,25 @@
       }
     }
 
-    this.__opts__ = assign$1({}, defaultOptions, options);
+    this.__opts__           = assign$1({}, defaultOptions, options);
 
     // Cache last tested result. Used to skip repeating steps on next `match` call.
-    this.__index__ = -1;
-    this.__last_index__ = -1; // Next scan position
-    this.__schema__ = '';
-    this.__text_cache__ = '';
+    this.__index__          = -1;
+    this.__last_index__     = -1; // Next scan position
+    this.__schema__         = '';
+    this.__text_cache__     = '';
 
-    this.__schemas__ = assign$1({}, defaultSchemas, schemas);
-    this.__compiled__ = {};
+    this.__schemas__        = assign$1({}, defaultSchemas, schemas);
+    this.__compiled__       = {};
 
-    this.__tlds__ = tlds_default;
-    this.__tlds_replaced__ = false;
+    this.__tlds__           = tlds_default;
+    this.__tlds_replaced__  = false;
 
     this.re = {};
 
     compile(this);
   }
+
 
   /** chainable
    * LinkifyIt#add(schema, definition)
@@ -21234,11 +24761,12 @@
    *
    * Add new rule definition. See constructor description for details.
    **/
-  LinkifyIt.prototype.add = function add (schema, definition) {
+  LinkifyIt$1.prototype.add = function add(schema, definition) {
     this.__schemas__[schema] = definition;
     compile(this);
-    return this
+    return this;
   };
+
 
   /** chainable
    * LinkifyIt#set(options)
@@ -21246,24 +24774,25 @@
    *
    * Set recognition options for links without schema.
    **/
-  LinkifyIt.prototype.set = function set (options) {
+  LinkifyIt$1.prototype.set = function set(options) {
     this.__opts__ = assign$1(this.__opts__, options);
-    return this
+    return this;
   };
+
 
   /**
    * LinkifyIt#test(text) -> Boolean
    *
    * Searches linkifiable pattern and returns `true` on success or `false` on fail.
    **/
-  LinkifyIt.prototype.test = function test (text) {
+  LinkifyIt$1.prototype.test = function test(text) {
     // Reset scan cache
     this.__text_cache__ = text;
-    this.__index__ = -1;
+    this.__index__      = -1;
 
-    if (!text.length) { return false }
+    if (!text.length) { return false; }
 
-    let m, ml, me, len, shift, next, re, tld_pos, at_pos;
+    var m, ml, me, len, shift, next, re, tld_pos, at_pos;
 
     // try to scan for link with schema - that's the most simple rule
     if (this.re.schema_test.test(text)) {
@@ -21272,10 +24801,10 @@
       while ((m = re.exec(text)) !== null) {
         len = this.testSchemaAt(text, m[2], re.lastIndex);
         if (len) {
-          this.__schema__ = m[2];
-          this.__index__ = m.index + m[1].length;
+          this.__schema__     = m[2];
+          this.__index__      = m.index + m[1].length;
           this.__last_index__ = m.index + m[0].length + len;
-          break
+          break;
         }
       }
     }
@@ -21287,11 +24816,12 @@
         // if tld is located after found link - no need to check fuzzy pattern
         if (this.__index__ < 0 || tld_pos < this.__index__) {
           if ((ml = text.match(this.__opts__.fuzzyIP ? this.re.link_fuzzy : this.re.link_no_ip_fuzzy)) !== null) {
+
             shift = ml.index + ml[1].length;
 
             if (this.__index__ < 0 || shift < this.__index__) {
-              this.__schema__ = '';
-              this.__index__ = shift;
+              this.__schema__     = '';
+              this.__index__      = shift;
               this.__last_index__ = ml.index + ml[0].length;
             }
           }
@@ -21306,21 +24836,23 @@
         // We can't skip this check, because this cases are possible:
         // 192.168.1.1@gmail.com, my.in@example.com
         if ((me = text.match(this.re.email_fuzzy)) !== null) {
+
           shift = me.index + me[1].length;
-          next = me.index + me[0].length;
+          next  = me.index + me[0].length;
 
           if (this.__index__ < 0 || shift < this.__index__ ||
               (shift === this.__index__ && next > this.__last_index__)) {
-            this.__schema__ = 'mailto:';
-            this.__index__ = shift;
+            this.__schema__     = 'mailto:';
+            this.__index__      = shift;
             this.__last_index__ = next;
           }
         }
       }
     }
 
-    return this.__index__ >= 0
+    return this.__index__ >= 0;
   };
+
 
   /**
    * LinkifyIt#pretest(text) -> Boolean
@@ -21329,9 +24861,10 @@
    * can exists. Can be used for speed optimization, when you need to check that
    * link NOT exists.
    **/
-  LinkifyIt.prototype.pretest = function pretest (text) {
-    return this.re.pretest.test(text)
+  LinkifyIt$1.prototype.pretest = function pretest(text) {
+    return this.re.pretest.test(text);
   };
+
 
   /**
    * LinkifyIt#testSchemaAt(text, name, position) -> Number
@@ -21342,13 +24875,14 @@
    * Similar to [[LinkifyIt#test]] but checks only specific protocol tail exactly
    * at given position. Returns length of found pattern (0 on fail).
    **/
-  LinkifyIt.prototype.testSchemaAt = function testSchemaAt (text, schema, pos) {
+  LinkifyIt$1.prototype.testSchemaAt = function testSchemaAt(text, schema, pos) {
     // If not supported schema check requested - terminate
     if (!this.__compiled__[schema.toLowerCase()]) {
-      return 0
+      return 0;
     }
-    return this.__compiled__[schema.toLowerCase()].validate(text, pos, this)
+    return this.__compiled__[schema.toLowerCase()].validate(text, pos, this);
   };
+
 
   /**
    * LinkifyIt#match(text) -> Array|null
@@ -21366,9 +24900,8 @@
    * - __text__ - normalized text
    * - __url__ - link, generated from matched text
    **/
-  LinkifyIt.prototype.match = function match (text) {
-    const result = [];
-    let shift = 0;
+  LinkifyIt$1.prototype.match = function match(text) {
+    var shift = 0, result = [];
 
     // Try to take previous element from cache, if .test() called before
     if (this.__index__ >= 0 && this.__text_cache__ === text) {
@@ -21377,7 +24910,7 @@
     }
 
     // Cut head if cache was used
-    let tail = shift ? text.slice(shift) : text;
+    var tail = shift ? text.slice(shift) : text;
 
     // Scan string until end reached
     while (this.test(tail)) {
@@ -21388,11 +24921,12 @@
     }
 
     if (result.length) {
-      return result
+      return result;
     }
 
-    return null
+    return null;
   };
+
 
   /**
    * LinkifyIt#matchAtStart(text) -> Match|null
@@ -21400,25 +24934,26 @@
    * Returns fully-formed (not fuzzy) link if it starts at the beginning
    * of the string, and null otherwise.
    **/
-  LinkifyIt.prototype.matchAtStart = function matchAtStart (text) {
+  LinkifyIt$1.prototype.matchAtStart = function matchAtStart(text) {
     // Reset scan cache
     this.__text_cache__ = text;
-    this.__index__ = -1;
+    this.__index__      = -1;
 
-    if (!text.length) return null
+    if (!text.length) return null;
 
-    const m = this.re.schema_at_start.exec(text);
-    if (!m) return null
+    var m = this.re.schema_at_start.exec(text);
+    if (!m) return null;
 
-    const len = this.testSchemaAt(text, m[2], m[0].length);
-    if (!len) return null
+    var len = this.testSchemaAt(text, m[2], m[0].length);
+    if (!len) return null;
 
-    this.__schema__ = m[2];
-    this.__index__ = m.index + m[1].length;
+    this.__schema__     = m[2];
+    this.__index__      = m.index + m[1].length;
     this.__last_index__ = m.index + m[0].length + len;
 
-    return createMatch(this, 0)
+    return createMatch(this, 0);
   };
+
 
   /** chainable
    * LinkifyIt#tlds(list [, keepOld]) -> this
@@ -21435,25 +24970,25 @@
    *
    * If list is replaced, then exact match for 2-chars root zones will be checked.
    **/
-  LinkifyIt.prototype.tlds = function tlds (list, keepOld) {
-    list = Array.isArray(list) ? list : [list];
+  LinkifyIt$1.prototype.tlds = function tlds(list, keepOld) {
+    list = Array.isArray(list) ? list : [ list ];
 
     if (!keepOld) {
       this.__tlds__ = list.slice();
       this.__tlds_replaced__ = true;
       compile(this);
-      return this
+      return this;
     }
 
     this.__tlds__ = this.__tlds__.concat(list)
-      .sort()
-      .filter(function (el, idx, arr) {
-        return el !== arr[idx - 1]
-      })
-      .reverse();
+                                    .sort()
+                                    .filter(function (el, idx, arr) {
+                                      return el !== arr[idx - 1];
+                                    })
+                                    .reverse();
 
     compile(this);
-    return this
+    return this;
   };
 
   /**
@@ -21461,7 +24996,8 @@
    *
    * Default normalizer (if schema does not define it's own).
    **/
-  LinkifyIt.prototype.normalize = function normalize (match) {
+  LinkifyIt$1.prototype.normalize = function normalize(match) {
+
     // Do minimal possible changes by default. Need to collect feedback prior
     // to move forward https://github.com/markdown-it/linkify-it/issues/1
 
@@ -21472,475 +25008,28 @@
     }
   };
 
+
   /**
    * LinkifyIt#onCompile()
    *
    * Override to modify basic RegExp-s.
    **/
-  LinkifyIt.prototype.onCompile = function onCompile () {
+  LinkifyIt$1.prototype.onCompile = function onCompile() {
   };
 
-  /** Highest positive signed 32-bit float value */
-  const maxInt = 2147483647; // aka. 0x7FFFFFFF or 2^31-1
 
-  /** Bootstring parameters */
-  const base = 36;
-  const tMin = 1;
-  const tMax = 26;
-  const skew = 38;
-  const damp = 700;
-  const initialBias = 72;
-  const initialN = 128; // 0x80
-  const delimiter = '-'; // '\x2D'
+  var linkifyIt = LinkifyIt$1;
 
-  /** Regular expressions */
-  const regexPunycode = /^xn--/;
-  const regexNonASCII = /[^\0-\x7F]/; // Note: U+007F DEL is excluded too.
-  const regexSeparators = /[\x2E\u3002\uFF0E\uFF61]/g; // RFC 3490 separators
-
-  /** Error messages */
-  const errors = {
-  	'overflow': 'Overflow: input needs wider integers to process',
-  	'not-basic': 'Illegal input >= 0x80 (not a basic code point)',
-  	'invalid-input': 'Invalid input'
-  };
-
-  /** Convenience shortcuts */
-  const baseMinusTMin = base - tMin;
-  const floor$1 = Math.floor;
-  const stringFromCharCode = String.fromCharCode;
-
-  /*--------------------------------------------------------------------------*/
-
-  /**
-   * A generic error utility function.
-   * @private
-   * @param {String} type The error type.
-   * @returns {Error} Throws a `RangeError` with the applicable error message.
-   */
-  function error(type) {
-  	throw new RangeError(errors[type]);
-  }
-
-  /**
-   * A generic `Array#map` utility function.
-   * @private
-   * @param {Array} array The array to iterate over.
-   * @param {Function} callback The function that gets called for every array
-   * item.
-   * @returns {Array} A new array of values returned by the callback function.
-   */
-  function map$1(array, callback) {
-  	const result = [];
-  	let length = array.length;
-  	while (length--) {
-  		result[length] = callback(array[length]);
-  	}
-  	return result;
-  }
-
-  /**
-   * A simple `Array#map`-like wrapper to work with domain name strings or email
-   * addresses.
-   * @private
-   * @param {String} domain The domain name or email address.
-   * @param {Function} callback The function that gets called for every
-   * character.
-   * @returns {String} A new string of characters returned by the callback
-   * function.
-   */
-  function mapDomain(domain, callback) {
-  	const parts = domain.split('@');
-  	let result = '';
-  	if (parts.length > 1) {
-  		// In email addresses, only the domain name should be punycoded. Leave
-  		// the local part (i.e. everything up to `@`) intact.
-  		result = parts[0] + '@';
-  		domain = parts[1];
-  	}
-  	// Avoid `split(regex)` for IE8 compatibility. See #17.
-  	domain = domain.replace(regexSeparators, '\x2E');
-  	const labels = domain.split('.');
-  	const encoded = map$1(labels, callback).join('.');
-  	return result + encoded;
-  }
-
-  /**
-   * Creates an array containing the numeric code points of each Unicode
-   * character in the string. While JavaScript uses UCS-2 internally,
-   * this function will convert a pair of surrogate halves (each of which
-   * UCS-2 exposes as separate characters) into a single code point,
-   * matching UTF-16.
-   * @see `punycode.ucs2.encode`
-   * @see <https://mathiasbynens.be/notes/javascript-encoding>
-   * @memberOf punycode.ucs2
-   * @name decode
-   * @param {String} string The Unicode input string (UCS-2).
-   * @returns {Array} The new array of code points.
-   */
-  function ucs2decode(string) {
-  	const output = [];
-  	let counter = 0;
-  	const length = string.length;
-  	while (counter < length) {
-  		const value = string.charCodeAt(counter++);
-  		if (value >= 0xD800 && value <= 0xDBFF && counter < length) {
-  			// It's a high surrogate, and there is a next character.
-  			const extra = string.charCodeAt(counter++);
-  			if ((extra & 0xFC00) == 0xDC00) { // Low surrogate.
-  				output.push(((value & 0x3FF) << 10) + (extra & 0x3FF) + 0x10000);
-  			} else {
-  				// It's an unmatched surrogate; only append this code unit, in case the
-  				// next code unit is the high surrogate of a surrogate pair.
-  				output.push(value);
-  				counter--;
-  			}
-  		} else {
-  			output.push(value);
-  		}
-  	}
-  	return output;
-  }
-
-  /**
-   * Creates a string based on an array of numeric code points.
-   * @see `punycode.ucs2.decode`
-   * @memberOf punycode.ucs2
-   * @name encode
-   * @param {Array} codePoints The array of numeric code points.
-   * @returns {String} The new Unicode string (UCS-2).
-   */
-  const ucs2encode = codePoints => String.fromCodePoint(...codePoints);
-
-  /**
-   * Converts a basic code point into a digit/integer.
-   * @see `digitToBasic()`
-   * @private
-   * @param {Number} codePoint The basic numeric code point value.
-   * @returns {Number} The numeric value of a basic code point (for use in
-   * representing integers) in the range `0` to `base - 1`, or `base` if
-   * the code point does not represent a value.
-   */
-  const basicToDigit = function(codePoint) {
-  	if (codePoint >= 0x30 && codePoint < 0x3A) {
-  		return 26 + (codePoint - 0x30);
-  	}
-  	if (codePoint >= 0x41 && codePoint < 0x5B) {
-  		return codePoint - 0x41;
-  	}
-  	if (codePoint >= 0x61 && codePoint < 0x7B) {
-  		return codePoint - 0x61;
-  	}
-  	return base;
-  };
-
-  /**
-   * Converts a digit/integer into a basic code point.
-   * @see `basicToDigit()`
-   * @private
-   * @param {Number} digit The numeric value of a basic code point.
-   * @returns {Number} The basic code point whose value (when used for
-   * representing integers) is `digit`, which needs to be in the range
-   * `0` to `base - 1`. If `flag` is non-zero, the uppercase form is
-   * used; else, the lowercase form is used. The behavior is undefined
-   * if `flag` is non-zero and `digit` has no uppercase form.
-   */
-  const digitToBasic = function(digit, flag) {
-  	//  0..25 map to ASCII a..z or A..Z
-  	// 26..35 map to ASCII 0..9
-  	return digit + 22 + 75 * (digit < 26) - ((flag != 0) << 5);
-  };
-
-  /**
-   * Bias adaptation function as per section 3.4 of RFC 3492.
-   * https://tools.ietf.org/html/rfc3492#section-3.4
-   * @private
-   */
-  const adapt = function(delta, numPoints, firstTime) {
-  	let k = 0;
-  	delta = firstTime ? floor$1(delta / damp) : delta >> 1;
-  	delta += floor$1(delta / numPoints);
-  	for (/* no initialization */; delta > baseMinusTMin * tMax >> 1; k += base) {
-  		delta = floor$1(delta / baseMinusTMin);
-  	}
-  	return floor$1(k + (baseMinusTMin + 1) * delta / (delta + skew));
-  };
-
-  /**
-   * Converts a Punycode string of ASCII-only symbols to a string of Unicode
-   * symbols.
-   * @memberOf punycode
-   * @param {String} input The Punycode string of ASCII-only symbols.
-   * @returns {String} The resulting string of Unicode symbols.
-   */
-  const decode = function(input) {
-  	// Don't use UCS-2.
-  	const output = [];
-  	const inputLength = input.length;
-  	let i = 0;
-  	let n = initialN;
-  	let bias = initialBias;
-
-  	// Handle the basic code points: let `basic` be the number of input code
-  	// points before the last delimiter, or `0` if there is none, then copy
-  	// the first basic code points to the output.
-
-  	let basic = input.lastIndexOf(delimiter);
-  	if (basic < 0) {
-  		basic = 0;
-  	}
-
-  	for (let j = 0; j < basic; ++j) {
-  		// if it's not a basic code point
-  		if (input.charCodeAt(j) >= 0x80) {
-  			error('not-basic');
-  		}
-  		output.push(input.charCodeAt(j));
-  	}
-
-  	// Main decoding loop: start just after the last delimiter if any basic code
-  	// points were copied; start at the beginning otherwise.
-
-  	for (let index = basic > 0 ? basic + 1 : 0; index < inputLength; /* no final expression */) {
-
-  		// `index` is the index of the next character to be consumed.
-  		// Decode a generalized variable-length integer into `delta`,
-  		// which gets added to `i`. The overflow checking is easier
-  		// if we increase `i` as we go, then subtract off its starting
-  		// value at the end to obtain `delta`.
-  		const oldi = i;
-  		for (let w = 1, k = base; /* no condition */; k += base) {
-
-  			if (index >= inputLength) {
-  				error('invalid-input');
-  			}
-
-  			const digit = basicToDigit(input.charCodeAt(index++));
-
-  			if (digit >= base) {
-  				error('invalid-input');
-  			}
-  			if (digit > floor$1((maxInt - i) / w)) {
-  				error('overflow');
-  			}
-
-  			i += digit * w;
-  			const t = k <= bias ? tMin : (k >= bias + tMax ? tMax : k - bias);
-
-  			if (digit < t) {
-  				break;
-  			}
-
-  			const baseMinusT = base - t;
-  			if (w > floor$1(maxInt / baseMinusT)) {
-  				error('overflow');
-  			}
-
-  			w *= baseMinusT;
-
-  		}
-
-  		const out = output.length + 1;
-  		bias = adapt(i - oldi, out, oldi == 0);
-
-  		// `i` was supposed to wrap around from `out` to `0`,
-  		// incrementing `n` each time, so we'll fix that now:
-  		if (floor$1(i / out) > maxInt - n) {
-  			error('overflow');
-  		}
-
-  		n += floor$1(i / out);
-  		i %= out;
-
-  		// Insert `n` at position `i` of the output.
-  		output.splice(i++, 0, n);
-
-  	}
-
-  	return String.fromCodePoint(...output);
-  };
-
-  /**
-   * Converts a string of Unicode symbols (e.g. a domain name label) to a
-   * Punycode string of ASCII-only symbols.
-   * @memberOf punycode
-   * @param {String} input The string of Unicode symbols.
-   * @returns {String} The resulting Punycode string of ASCII-only symbols.
-   */
-  const encode$1 = function(input) {
-  	const output = [];
-
-  	// Convert the input in UCS-2 to an array of Unicode code points.
-  	input = ucs2decode(input);
-
-  	// Cache the length.
-  	const inputLength = input.length;
-
-  	// Initialize the state.
-  	let n = initialN;
-  	let delta = 0;
-  	let bias = initialBias;
-
-  	// Handle the basic code points.
-  	for (const currentValue of input) {
-  		if (currentValue < 0x80) {
-  			output.push(stringFromCharCode(currentValue));
-  		}
-  	}
-
-  	const basicLength = output.length;
-  	let handledCPCount = basicLength;
-
-  	// `handledCPCount` is the number of code points that have been handled;
-  	// `basicLength` is the number of basic code points.
-
-  	// Finish the basic string with a delimiter unless it's empty.
-  	if (basicLength) {
-  		output.push(delimiter);
-  	}
-
-  	// Main encoding loop:
-  	while (handledCPCount < inputLength) {
-
-  		// All non-basic code points < n have been handled already. Find the next
-  		// larger one:
-  		let m = maxInt;
-  		for (const currentValue of input) {
-  			if (currentValue >= n && currentValue < m) {
-  				m = currentValue;
-  			}
-  		}
-
-  		// Increase `delta` enough to advance the decoder's <n,i> state to <m,0>,
-  		// but guard against overflow.
-  		const handledCPCountPlusOne = handledCPCount + 1;
-  		if (m - n > floor$1((maxInt - delta) / handledCPCountPlusOne)) {
-  			error('overflow');
-  		}
-
-  		delta += (m - n) * handledCPCountPlusOne;
-  		n = m;
-
-  		for (const currentValue of input) {
-  			if (currentValue < n && ++delta > maxInt) {
-  				error('overflow');
-  			}
-  			if (currentValue === n) {
-  				// Represent delta as a generalized variable-length integer.
-  				let q = delta;
-  				for (let k = base; /* no condition */; k += base) {
-  					const t = k <= bias ? tMin : (k >= bias + tMax ? tMax : k - bias);
-  					if (q < t) {
-  						break;
-  					}
-  					const qMinusT = q - t;
-  					const baseMinusT = base - t;
-  					output.push(
-  						stringFromCharCode(digitToBasic(t + qMinusT % baseMinusT, 0))
-  					);
-  					q = floor$1(qMinusT / baseMinusT);
-  				}
-
-  				output.push(stringFromCharCode(digitToBasic(q, 0)));
-  				bias = adapt(delta, handledCPCountPlusOne, handledCPCount === basicLength);
-  				delta = 0;
-  				++handledCPCount;
-  			}
-  		}
-
-  		++delta;
-  		++n;
-
-  	}
-  	return output.join('');
-  };
-
-  /**
-   * Converts a Punycode string representing a domain name or an email address
-   * to Unicode. Only the Punycoded parts of the input will be converted, i.e.
-   * it doesn't matter if you call it on a string that has already been
-   * converted to Unicode.
-   * @memberOf punycode
-   * @param {String} input The Punycoded domain name or email address to
-   * convert to Unicode.
-   * @returns {String} The Unicode representation of the given Punycode
-   * string.
-   */
-  const toUnicode = function(input) {
-  	return mapDomain(input, function(string) {
-  		return regexPunycode.test(string)
-  			? decode(string.slice(4).toLowerCase())
-  			: string;
-  	});
-  };
-
-  /**
-   * Converts a Unicode string representing a domain name or an email address to
-   * Punycode. Only the non-ASCII parts of the domain name will be converted,
-   * i.e. it doesn't matter if you call it with a domain that's already in
-   * ASCII.
-   * @memberOf punycode
-   * @param {String} input The domain name or email address to convert, as a
-   * Unicode string.
-   * @returns {String} The Punycode representation of the given domain name or
-   * email address.
-   */
-  const toASCII = function(input) {
-  	return mapDomain(input, function(string) {
-  		return regexNonASCII.test(string)
-  			? 'xn--' + encode$1(string)
-  			: string;
-  	});
-  };
-
-  /*--------------------------------------------------------------------------*/
-
-  /** Define the public API */
-  const punycode = {
-  	/**
-  	 * A string representing the current Punycode.js version number.
-  	 * @memberOf punycode
-  	 * @type String
-  	 */
-  	'version': '2.3.1',
-  	/**
-  	 * An object of methods to convert from JavaScript's internal character
-  	 * representation (UCS-2) to Unicode code points, and back.
-  	 * @see <https://mathiasbynens.be/notes/javascript-encoding>
-  	 * @memberOf punycode
-  	 * @type Object
-  	 */
-  	'ucs2': {
-  		'decode': ucs2decode,
-  		'encode': ucs2encode
-  	},
-  	'decode': decode,
-  	'encode': encode$1,
-  	'toASCII': toASCII,
-  	'toUnicode': toUnicode
-  };
-
-  // markdown-it default options
-
-  var cfg_default = {
+  var _default = {
     options: {
-      // Enable HTML tags in source
-      html: false,
-
-      // Use '/' to close single tags (<br />)
-      xhtmlOut: false,
-
-      // Convert '\n' in paragraphs into <br>
-      breaks: false,
-
-      // CSS language prefix for fenced blocks
-      langPrefix: 'language-',
-
-      // autoconvert URL-like texts to links
-      linkify: false,
+      html:         false,        // Enable HTML tags in source
+      xhtmlOut:     false,        // Use '/' to close single tags (<br />)
+      breaks:       false,        // Convert '\n' in paragraphs into <br>
+      langPrefix:   'language-',  // CSS language prefix for fenced blocks
+      linkify:      false,        // autoconvert URL-like texts to links
 
       // Enable some language-neutral replacements + quotes beautification
-      typographer: false,
+      typographer:  false,
 
       // Double + single quotes replacement pairs, when typographer enabled,
       // and smartquotes on. Could be either a String or an Array.
@@ -21957,39 +25046,27 @@
       //
       highlight: null,
 
-      // Internal protection, recursion limit
-      maxNesting: 100
+      maxNesting:   100            // Internal protection, recursion limit
     },
 
     components: {
+
       core: {},
       block: {},
       inline: {}
     }
   };
 
-  // "Zero" preset, with nothing enabled. Useful for manual configuring of simple
-  // modes. For example, to parse bold/italic only.
-
-  var cfg_zero = {
+  var zero$1 = {
     options: {
-      // Enable HTML tags in source
-      html: false,
-
-      // Use '/' to close single tags (<br />)
-      xhtmlOut: false,
-
-      // Convert '\n' in paragraphs into <br>
-      breaks: false,
-
-      // CSS language prefix for fenced blocks
-      langPrefix: 'language-',
-
-      // autoconvert URL-like texts to links
-      linkify: false,
+      html:         false,        // Enable HTML tags in source
+      xhtmlOut:     false,        // Use '/' to close single tags (<br />)
+      breaks:       false,        // Convert '\n' in paragraphs into <br>
+      langPrefix:   'language-',  // CSS language prefix for fenced blocks
+      linkify:      false,        // autoconvert URL-like texts to links
 
       // Enable some language-neutral replacements + quotes beautification
-      typographer: false,
+      typographer:  false,
 
       // Double + single quotes replacement pairs, when typographer enabled,
       // and smartquotes on. Could be either a String or an Array.
@@ -22006,8 +25083,7 @@
       //
       highlight: null,
 
-      // Internal protection, recursion limit
-      maxNesting: 20
+      maxNesting:   20            // Internal protection, recursion limit
     },
 
     components: {
@@ -22039,27 +25115,16 @@
     }
   };
 
-  // Commonmark default options
-
-  var cfg_commonmark = {
+  var commonmark = {
     options: {
-      // Enable HTML tags in source
-      html: true,
-
-      // Use '/' to close single tags (<br />)
-      xhtmlOut: true,
-
-      // Convert '\n' in paragraphs into <br>
-      breaks: false,
-
-      // CSS language prefix for fenced blocks
-      langPrefix: 'language-',
-
-      // autoconvert URL-like texts to links
-      linkify: false,
+      html:         true,         // Enable HTML tags in source
+      xhtmlOut:     true,         // Use '/' to close single tags (<br />)
+      breaks:       false,        // Convert '\n' in paragraphs into <br>
+      langPrefix:   'language-',  // CSS language prefix for fenced blocks
+      linkify:      false,        // autoconvert URL-like texts to links
 
       // Enable some language-neutral replacements + quotes beautification
-      typographer: false,
+      typographer:  false,
 
       // Double + single quotes replacement pairs, when typographer enabled,
       // and smartquotes on. Could be either a String or an Array.
@@ -22076,8 +25141,7 @@
       //
       highlight: null,
 
-      // Internal protection, recursion limit
-      maxNesting: 20
+      maxNesting:   20            // Internal protection, recursion limit
     },
 
     components: {
@@ -22128,15 +25192,24 @@
     }
   };
 
-  // Main parser class
+  var utils        = utils$1;
+  var helpers      = helpers$1;
+  var Renderer     = renderer;
+  var ParserCore   = parser_core;
+  var ParserBlock  = parser_block;
+  var ParserInline = parser_inline;
+  var LinkifyIt    = linkifyIt;
+  var mdurl        = mdurl$1;
+  var punycode     = require$$8;
 
 
-  const config = {
-    default: cfg_default,
-    zero: cfg_zero,
-    commonmark: cfg_commonmark
+  var config = {
+    default: _default,
+    zero: zero$1,
+    commonmark: commonmark
   };
 
+  ////////////////////////////////////////////////////////////////////////////////
   //
   // This validator can prohibit more than really needed to prevent XSS. It's a
   // tradeoff to keep code simple and to be secure by default.
@@ -22145,20 +25218,23 @@
   // replace it with dummy function and use external sanitizer.
   //
 
-  const BAD_PROTO_RE = /^(vbscript|javascript|file|data):/;
-  const GOOD_DATA_RE = /^data:image\/(gif|png|jpeg|webp);/;
+  var BAD_PROTO_RE = /^(vbscript|javascript|file|data):/;
+  var GOOD_DATA_RE = /^data:image\/(gif|png|jpeg|webp);/;
 
-  function validateLink (url) {
+  function validateLink(url) {
     // url should be normalized at this point, and existing entities are decoded
-    const str = url.trim().toLowerCase();
+    var str = url.trim().toLowerCase();
 
-    return BAD_PROTO_RE.test(str) ? GOOD_DATA_RE.test(str) : true
+    return BAD_PROTO_RE.test(str) ? (GOOD_DATA_RE.test(str) ? true : false) : true;
   }
 
-  const RECODE_HOSTNAME_FOR = ['http:', 'https:', 'mailto:'];
+  ////////////////////////////////////////////////////////////////////////////////
 
-  function normalizeLink (url) {
-    const parsed = urlParse(url, true);
+
+  var RECODE_HOSTNAME_FOR = [ 'http:', 'https:', 'mailto:' ];
+
+  function normalizeLink(url) {
+    var parsed = mdurl.parse(url, true);
 
     if (parsed.hostname) {
       // Encode hostnames in urls like:
@@ -22174,11 +25250,11 @@
       }
     }
 
-    return encode$2(format$1(parsed))
+    return mdurl.encode(mdurl.format(parsed));
   }
 
-  function normalizeLinkText (url) {
-    const parsed = urlParse(url, true);
+  function normalizeLinkText(url) {
+    var parsed = mdurl.parse(url, true);
 
     if (parsed.hostname) {
       // Encode hostnames in urls like:
@@ -22195,8 +25271,9 @@
     }
 
     // add '%' to exclude list because of https://github.com/markdown-it/markdown-it/issues/720
-    return decode$1(format$1(parsed), decode$1.defaultChars + '%')
+    return mdurl.decode(mdurl.format(parsed), mdurl.decode.defaultChars + '%');
   }
+
 
   /**
    * class MarkdownIt
@@ -22241,12 +25318,12 @@
    * MarkdownIt provides named presets as a convenience to quickly
    * enable/disable active syntax rules and options for common use cases.
    *
-   * - ["commonmark"](https://github.com/markdown-it/markdown-it/blob/master/lib/presets/commonmark.mjs) -
+   * - ["commonmark"](https://github.com/markdown-it/markdown-it/blob/master/lib/presets/commonmark.js) -
    *   configures parser to strict [CommonMark](http://commonmark.org/) mode.
-   * - [default](https://github.com/markdown-it/markdown-it/blob/master/lib/presets/default.mjs) -
+   * - [default](https://github.com/markdown-it/markdown-it/blob/master/lib/presets/default.js) -
    *   similar to GFM, used when no preset name given. Enables all available rules,
    *   but still without html, typographer & autolinker.
-   * - ["zero"](https://github.com/markdown-it/markdown-it/blob/master/lib/presets/zero.mjs) -
+   * - ["zero"](https://github.com/markdown-it/markdown-it/blob/master/lib/presets/zero.js) -
    *   all rules disabled. Useful to quickly setup your config via `.enable()`.
    *   For example, when you need only `bold` and `italic` markup and nothing else.
    *
@@ -22263,7 +25340,7 @@
    *   Can be useful for external highlighters.
    * - __linkify__ - `false`. Set `true` to autoconvert URL-like text to links.
    * - __typographer__  - `false`. Set `true` to enable [some language-neutral
-   *   replacement](https://github.com/markdown-it/markdown-it/blob/master/lib/rules_core/replacements.mjs) +
+   *   replacement](https://github.com/markdown-it/markdown-it/blob/master/lib/rules_core/replacements.js) +
    *   quotes beautification (smartquotes).
    * - __quotes__ - `“”‘’`, String or Array. Double + single quotes replacement
    *   pairs, when typographer enabled and smartquotes on. For example, you can
@@ -22309,7 +25386,7 @@
    * });
    * ```
    *
-   * Or with full wrapper override (if you need assign class to `<pre>` or `<code>`):
+   * Or with full wrapper override (if you need assign class to `<pre>`):
    *
    * ```javascript
    * var hljs = require('highlight.js') // https://highlightjs.org/
@@ -22319,25 +25396,25 @@
    *   highlight: function (str, lang) {
    *     if (lang && hljs.getLanguage(lang)) {
    *       try {
-   *         return '<pre><code class="hljs">' +
+   *         return '<pre class="hljs"><code>' +
    *                hljs.highlight(str, { language: lang, ignoreIllegals: true }).value +
    *                '</code></pre>';
    *       } catch (__) {}
    *     }
    *
-   *     return '<pre><code class="hljs">' + md.utils.escapeHtml(str) + '</code></pre>';
+   *     return '<pre class="hljs"><code>' + md.utils.escapeHtml(str) + '</code></pre>';
    *   }
    * });
    * ```
    *
    **/
-  function MarkdownIt (presetName, options) {
-    if (!(this instanceof MarkdownIt)) {
-      return new MarkdownIt(presetName, options)
+  function MarkdownIt$1(presetName, options) {
+    if (!(this instanceof MarkdownIt$1)) {
+      return new MarkdownIt$1(presetName, options);
     }
 
     if (!options) {
-      if (!isString$1(presetName)) {
+      if (!utils.isString(presetName)) {
         options = presetName || {};
         presetName = 'default';
       }
@@ -22368,7 +25445,7 @@
      * writing plugins. For simple rules control use [[MarkdownIt.disable]] and
      * [[MarkdownIt.enable]].
      **/
-    this.core = new Core();
+    this.core = new ParserCore();
 
     /**
      * MarkdownIt#renderer -> Renderer
@@ -22389,7 +25466,7 @@
      * md.renderer.rules['my_token'] = myToken
      * ```
      *
-     * See [[Renderer]] docs and [source code](https://github.com/markdown-it/markdown-it/blob/master/lib/renderer.mjs).
+     * See [[Renderer]] docs and [source code](https://github.com/markdown-it/markdown-it/blob/master/lib/renderer.js).
      **/
     this.renderer = new Renderer();
 
@@ -22397,7 +25474,7 @@
      * MarkdownIt#linkify -> LinkifyIt
      *
      * [linkify-it](https://github.com/markdown-it/linkify-it) instance.
-     * Used by [linkify](https://github.com/markdown-it/markdown-it/blob/master/lib/rules_core/linkify.mjs)
+     * Used by [linkify](https://github.com/markdown-it/markdown-it/blob/master/lib/rules_core/linkify.js)
      * rule.
      **/
     this.linkify = new LinkifyIt();
@@ -22434,13 +25511,14 @@
      **/
     this.normalizeLinkText = normalizeLinkText;
 
+
     // Expose utils & helpers for easy acces from plugins
 
     /**
      * MarkdownIt#utils -> utils
      *
      * Assorted utility functions, useful to write plugins. See details
-     * [here](https://github.com/markdown-it/markdown-it/blob/master/lib/common/utils.mjs).
+     * [here](https://github.com/markdown-it/markdown-it/blob/master/lib/common/utils.js).
      **/
     this.utils = utils;
 
@@ -22450,13 +25528,15 @@
      * Link components parser functions, useful to write plugins. See details
      * [here](https://github.com/markdown-it/markdown-it/blob/master/lib/helpers).
      **/
-    this.helpers = assign$2({}, helpers);
+    this.helpers = utils.assign({}, helpers);
+
 
     this.options = {};
     this.configure(presetName);
 
     if (options) { this.set(options); }
   }
+
 
   /** chainable
    * MarkdownIt.set(options)
@@ -22477,10 +25557,11 @@
    * it's best to create multiple instances and initialize each with separate
    * config.
    **/
-  MarkdownIt.prototype.set = function (options) {
-    assign$2(this.options, options);
-    return this
+  MarkdownIt$1.prototype.set = function (options) {
+    utils.assign(this.options, options);
+    return this;
   };
+
 
   /** chainable, internal
    * MarkdownIt.configure(presets)
@@ -22492,16 +25573,16 @@
    * We strongly recommend to use presets instead of direct config loads. That
    * will give better compatibility with next versions.
    **/
-  MarkdownIt.prototype.configure = function (presets) {
-    const self = this;
+  MarkdownIt$1.prototype.configure = function (presets) {
+    var self = this, presetName;
 
-    if (isString$1(presets)) {
-      const presetName = presets;
+    if (utils.isString(presets)) {
+      presetName = presets;
       presets = config[presetName];
-      if (!presets) { throw new Error('Wrong `markdown-it` preset "' + presetName + '", check name') }
+      if (!presets) { throw new Error('Wrong `markdown-it` preset "' + presetName + '", check name'); }
     }
 
-    if (!presets) { throw new Error('Wrong `markdown-it` preset, can\'t be empty') }
+    if (!presets) { throw new Error('Wrong `markdown-it` preset, can\'t be empty'); }
 
     if (presets.options) { self.set(presets.options); }
 
@@ -22515,8 +25596,9 @@
         }
       });
     }
-    return this
+    return this;
   };
+
 
   /** chainable
    * MarkdownIt.enable(list, ignoreInvalid)
@@ -22535,25 +25617,26 @@
    *             .disable('smartquotes');
    * ```
    **/
-  MarkdownIt.prototype.enable = function (list, ignoreInvalid) {
-    let result = [];
+  MarkdownIt$1.prototype.enable = function (list, ignoreInvalid) {
+    var result = [];
 
-    if (!Array.isArray(list)) { list = [list]; }
+    if (!Array.isArray(list)) { list = [ list ]; }
 
-    ['core', 'block', 'inline'].forEach(function (chain) {
+    [ 'core', 'block', 'inline' ].forEach(function (chain) {
       result = result.concat(this[chain].ruler.enable(list, true));
     }, this);
 
     result = result.concat(this.inline.ruler2.enable(list, true));
 
-    const missed = list.filter(function (name) { return result.indexOf(name) < 0 });
+    var missed = list.filter(function (name) { return result.indexOf(name) < 0; });
 
     if (missed.length && !ignoreInvalid) {
-      throw new Error('MarkdownIt. Failed to enable unknown rule(s): ' + missed)
+      throw new Error('MarkdownIt. Failed to enable unknown rule(s): ' + missed);
     }
 
-    return this
+    return this;
   };
+
 
   /** chainable
    * MarkdownIt.disable(list, ignoreInvalid)
@@ -22562,24 +25645,25 @@
    *
    * The same as [[MarkdownIt.enable]], but turn specified rules off.
    **/
-  MarkdownIt.prototype.disable = function (list, ignoreInvalid) {
-    let result = [];
+  MarkdownIt$1.prototype.disable = function (list, ignoreInvalid) {
+    var result = [];
 
-    if (!Array.isArray(list)) { list = [list]; }
+    if (!Array.isArray(list)) { list = [ list ]; }
 
-    ['core', 'block', 'inline'].forEach(function (chain) {
+    [ 'core', 'block', 'inline' ].forEach(function (chain) {
       result = result.concat(this[chain].ruler.disable(list, true));
     }, this);
 
     result = result.concat(this.inline.ruler2.disable(list, true));
 
-    const missed = list.filter(function (name) { return result.indexOf(name) < 0 });
+    var missed = list.filter(function (name) { return result.indexOf(name) < 0; });
 
     if (missed.length && !ignoreInvalid) {
-      throw new Error('MarkdownIt. Failed to disable unknown rule(s): ' + missed)
+      throw new Error('MarkdownIt. Failed to disable unknown rule(s): ' + missed);
     }
-    return this
+    return this;
   };
+
 
   /** chainable
    * MarkdownIt.use(plugin, params)
@@ -22597,11 +25681,12 @@
    *             });
    * ```
    **/
-  MarkdownIt.prototype.use = function (plugin /*, params, ... */) {
-    const args = [this].concat(Array.prototype.slice.call(arguments, 1));
+  MarkdownIt$1.prototype.use = function (plugin /*, params, ... */) {
+    var args = [ this ].concat(Array.prototype.slice.call(arguments, 1));
     plugin.apply(plugin, args);
-    return this
+    return this;
   };
+
 
   /** internal
    * MarkdownIt.parse(src, env) -> Array
@@ -22618,17 +25703,18 @@
    * inject data in specific cases. Usually, you will be ok to pass `{}`,
    * and then pass updated object to renderer.
    **/
-  MarkdownIt.prototype.parse = function (src, env) {
+  MarkdownIt$1.prototype.parse = function (src, env) {
     if (typeof src !== 'string') {
-      throw new Error('Input data should be a String')
+      throw new Error('Input data should be a String');
     }
 
-    const state = new this.core.State(src, this, env);
+    var state = new this.core.State(src, this, env);
 
     this.core.process(state);
 
-    return state.tokens
+    return state.tokens;
   };
+
 
   /**
    * MarkdownIt.render(src [, env]) -> String
@@ -22641,11 +25727,12 @@
    * But you will not need it with high probability. See also comment
    * in [[MarkdownIt.parse]].
    **/
-  MarkdownIt.prototype.render = function (src, env) {
+  MarkdownIt$1.prototype.render = function (src, env) {
     env = env || {};
 
-    return this.renderer.render(this.parse(src, env), this.options, env)
+    return this.renderer.render(this.parse(src, env), this.options, env);
   };
+
 
   /** internal
    * MarkdownIt.parseInline(src, env) -> Array
@@ -22656,14 +25743,15 @@
    * block tokens list with the single `inline` element, containing parsed inline
    * tokens in `children` property. Also updates `env` object.
    **/
-  MarkdownIt.prototype.parseInline = function (src, env) {
-    const state = new this.core.State(src, this, env);
+  MarkdownIt$1.prototype.parseInline = function (src, env) {
+    var state = new this.core.State(src, this, env);
 
     state.inlineMode = true;
     this.core.process(state);
 
-    return state.tokens
+    return state.tokens;
   };
+
 
   /**
    * MarkdownIt.renderInline(src [, env]) -> String
@@ -22673,16 +25761,23 @@
    * Similar to [[MarkdownIt.render]] but for single paragraph content. Result
    * will NOT be wrapped into `<p>` tags.
    **/
-  MarkdownIt.prototype.renderInline = function (src, env) {
+  MarkdownIt$1.prototype.renderInline = function (src, env) {
     env = env || {};
 
-    return this.renderer.render(this.parseInline(src, env), this.options, env)
+    return this.renderer.render(this.parseInline(src, env), this.options, env);
   };
+
+
+  var lib = MarkdownIt$1;
+
+  var markdownIt = lib;
+
+  var MarkdownIt = /*@__PURE__*/getDefaultExportFromCjs(markdownIt);
 
   /**
   Document schema for the data model used by CommonMark.
   */
-  const schema = new Schema$1({
+  const schema$1 = new Schema$2({
       nodes: {
           doc: {
               content: "block+"
@@ -22794,9 +25889,9 @@
           strong: {
               parseDOM: [
                   { tag: "strong" },
-                  { tag: "b", getAttrs: node => node.style.fontWeight != "normal" && null },
+                  { tag: "b", getAttrs: (node) => node.style.fontWeight != "normal" && null },
                   { style: "font-weight=400", clearMark: m => m.type.name == "strong" },
-                  { style: "font-weight", getAttrs: value => /^(bold(er)?|[5-9]\d{2,})$/.test(value) && null }
+                  { style: "font-weight", getAttrs: (value) => /^(bold(er)?|[5-9]\d{2,})$/.test(value) && null }
               ],
               toDOM() { return ["strong"]; }
           },
@@ -22812,7 +25907,6 @@
               toDOM(node) { return ["a", node.attrs]; }
           },
           code: {
-              code: true,
               parseDOM: [{ tag: "code" }],
               toDOM() { return ["code"]; }
           }
@@ -23023,7 +26117,7 @@
   A parser parsing unextended [CommonMark](http://commonmark.org/),
   without inline HTML, and producing a document in the basic schema.
   */
-  const defaultMarkdownParser = new MarkdownParser(schema, MarkdownIt("commonmark", { html: false }), {
+  const defaultMarkdownParser = new MarkdownParser(schema$1, MarkdownIt("commonmark", { html: false }), {
       blockquote: { block: "blockquote" },
       paragraph: { block: "paragraph" },
       list_item: { block: "list_item" },
@@ -23051,7 +26145,6 @@
       code_inline: { mark: "code", noCloseToken: true }
   });
 
-  const blankMark = { open: "", close: "", mixable: true };
   /**
   A specification for serializing a ProseMirror document as
   Markdown/CommonMark text.
@@ -23106,7 +26199,7 @@
       },
       heading(state, node) {
           state.write(state.repeat("#", node.attrs.level) + " ");
-          state.renderInline(node, false);
+          state.renderInline(node);
           state.closeBlock(node);
       },
       horizontal_rule(state, node) {
@@ -23259,18 +26352,6 @@
           }
       }
       /**
-      @internal
-      */
-      getMark(name) {
-          let info = this.marks[name];
-          if (!info) {
-              if (this.options.strict !== false)
-                  throw new Error(`Mark type \`${name}\` not supported by Markdown renderer`);
-              info = blankMark;
-          }
-          return info;
-      }
-      /**
       Render a block, prefixing each line with `delim`, and the first
       line in `firstDelim`. `node` should be the node that is closed at
       the end of the block, and `f` is a function that renders the
@@ -23335,22 +26416,11 @@
       Render the given node as a block.
       */
       render(node, parent, index) {
-          if (this.nodes[node.type.name]) {
-              this.nodes[node.type.name](this, node, parent, index);
-          }
-          else {
-              if (this.options.strict !== false) {
-                  throw new Error("Token type `" + node.type.name + "` not supported by Markdown renderer");
-              }
-              else if (!node.type.isLeaf) {
-                  if (node.type.inlineContent)
-                      this.renderInline(node);
-                  else
-                      this.renderContent(node);
-                  if (node.isBlock)
-                      this.closeBlock(node);
-              }
-          }
+          if (typeof parent == "number")
+              throw new Error("!");
+          if (!this.nodes[node.type.name])
+              throw new Error("Token type `" + node.type.name + "` not supported by Markdown renderer");
+          this.nodes[node.type.name](this, node, parent, index);
       }
       /**
       Render the contents of `parent` as block nodes.
@@ -23361,8 +26431,8 @@
       /**
       Render the contents of `parent` as inline content.
       */
-      renderInline(parent, fromBlockStart = true) {
-          this.atBlockStart = fromBlockStart;
+      renderInline(parent) {
+          this.atBlockStart = true;
           let active = [], trailing = "";
           let progress = (node, offset, index) => {
               let marks = node ? node.marks : [];
@@ -23381,7 +26451,7 @@
               // If whitespace has to be expelled from the node, adjust
               // leading and trailing accordingly.
               if (node && node.isText && marks.some(mark => {
-                  let info = this.getMark(mark.type.name);
+                  let info = this.marks[mark.type.name];
                   return info && info.expelEnclosingWhitespace && !mark.isInSet(active);
               })) {
                   let [_, lead, rest] = /^(\s*)(.*)$/m.exec(node.text);
@@ -23393,8 +26463,9 @@
                   }
               }
               if (node && node.isText && marks.some(mark => {
-                  let info = this.getMark(mark.type.name);
-                  return info && info.expelEnclosingWhitespace && !this.isMarkAhead(parent, index + 1, mark);
+                  let info = this.marks[mark.type.name];
+                  return info && info.expelEnclosingWhitespace &&
+                      (index == parent.childCount - 1 || !mark.isInSet(parent.child(index + 1).marks));
               })) {
                   let [_, rest, trail] = /^(.*?)(\s*)$/m.exec(node.text);
                   if (trail) {
@@ -23405,7 +26476,7 @@
                   }
               }
               let inner = marks.length ? marks[marks.length - 1] : null;
-              let noEsc = inner && this.getMark(inner.type.name).escape === false;
+              let noEsc = inner && this.marks[inner.type.name].escape === false;
               let len = marks.length - (noEsc ? 1 : 0);
               // Try to reorder 'mixable' marks, such as em and strong, which
               // in Markdown may be opened and closed in different order, so
@@ -23413,11 +26484,11 @@
               // active.
               outer: for (let i = 0; i < len; i++) {
                   let mark = marks[i];
-                  if (!this.getMark(mark.type.name).mixable)
+                  if (!this.marks[mark.type.name].mixable)
                       break;
                   for (let j = 0; j < active.length; j++) {
                       let other = active[j];
-                      if (!this.getMark(other.type.name).mixable)
+                      if (!this.marks[other.type.name].mixable)
                           break;
                       if (mark.eq(other)) {
                           if (i > j)
@@ -23498,7 +26569,7 @@
       esc(str, startOfLine = false) {
           str = str.replace(/[`*\\~\[\]_]/g, (m, i) => m == "_" && i > 0 && i + 1 < str.length && str[i - 1].match(/\w/) && str[i + 1].match(/\w/) ? m : "\\" + m);
           if (startOfLine)
-              str = str.replace(/^(\+[ ]|[\-*>])/, "\\$&").replace(/^(\s*)(#{1,6})(\s|$)/, '$1\\$2$3').replace(/^(\s*\d+)\.\s/, "$1\\. ");
+              str = str.replace(/^[\-*+>]/, "\\$&").replace(/^(\s*)(#{1,6})(\s|$)/, '$1\\$2$3').replace(/^(\s*\d+)\.\s/, "$1\\. ");
           if (this.options.escapeExtraCharacters)
               str = str.replace(this.options.escapeExtraCharacters, "\\$&");
           return str;
@@ -23523,7 +26594,7 @@
       Get the markdown string for a given opening or closing mark.
       */
       markString(mark, open, parent, index) {
-          let info = this.getMark(mark.type.name);
+          let info = this.marks[mark.type.name];
           let value = open ? info.open : info.close;
           return typeof value == "string" ? value : value(this, mark, parent, index);
       }
@@ -23538,27 +26609,1160 @@
               trailing: (text.match(/(\s+)$/) || [undefined])[0]
           };
       }
-      /**
-      @internal
-      */
-      isMarkAhead(parent, index, mark) {
-          for (;; index++) {
-              if (index >= parent.childCount)
-                  return false;
-              let next = parent.child(index);
-              if (next.type.name != this.options.hardBreakNodeName)
-                  return mark.isInSet(next.marks);
-              index++;
-          }
-      }
   }
+
+  // Proceess escaped chars and hardbreaks
+
+  var ESCAPED = [];
+
+  for (var i$1 = 0; i$1 < 256; i$1++) { ESCAPED.push(0); }
+
+  '\\!"#$%&\'()*+,./:;<=>?@[]^_`{|}~-'
+    .split('').forEach(function(ch) { ESCAPED[ch.charCodeAt(0)] = 1; });
+
+  // Regexps to match html elements
+
+  function replace$1(regex, options) {
+    regex = regex.source;
+    options = options || '';
+
+    return function self(name, val) {
+      if (!name) {
+        return new RegExp(regex, options);
+      }
+      val = val.source || val;
+      regex = regex.replace(name, val);
+      return self;
+    };
+  }
+
+
+  var attr_name     = /[a-zA-Z_:][a-zA-Z0-9:._-]*/;
+
+  var unquoted      = /[^"'=<>`\x00-\x20]+/;
+  var single_quoted = /'[^']*'/;
+  var double_quoted = /"[^"]*"/;
+
+  /*eslint no-spaced-func:0*/
+  var attr_value  = replace$1(/(?:unquoted|single_quoted|double_quoted)/)
+                      ('unquoted', unquoted)
+                      ('single_quoted', single_quoted)
+                      ('double_quoted', double_quoted)
+                      ();
+
+  var attribute   = replace$1(/(?:\s+attr_name(?:\s*=\s*attr_value)?)/)
+                      ('attr_name', attr_name)
+                      ('attr_value', attr_value)
+                      ();
+
+  var open_tag    = replace$1(/<[A-Za-z][A-Za-z0-9]*attribute*\s*\/?>/)
+                      ('attribute', attribute)
+                      ();
+
+  var close_tag   = /<\/[A-Za-z][A-Za-z0-9]*\s*>/;
+  var comment     = /<!---->|<!--(?:-?[^>-])(?:-?[^-])*-->/;
+  var processing  = /<[?].*?[?]>/;
+  var declaration = /<![A-Z]+\s+[^>]*>/;
+  var cdata       = /<!\[CDATA\[[\s\S]*?\]\]>/;
+
+  replace$1(/^(?:open_tag|close_tag|comment|processing|declaration|cdata)/)
+    ('open_tag', open_tag)
+    ('close_tag', close_tag)
+    ('comment', comment)
+    ('processing', processing)
+    ('declaration', declaration)
+    ('cdata', cdata)
+    ();
+
+  /*! markmap-common v0.15.3 | MIT License */
+  function _extends() {
+    _extends = Object.assign ? Object.assign.bind() : function (target) {
+      for (var i = 1; i < arguments.length; i++) {
+        var source = arguments[i];
+        for (var key in source) {
+          if (Object.prototype.hasOwnProperty.call(source, key)) {
+            target[key] = source[key];
+          }
+        }
+      }
+      return target;
+    };
+    return _extends.apply(this, arguments);
+  }
+
+  const testPath = "npm2url/dist/index.cjs";
+  const defaultProviders = {
+    jsdelivr: path => `https://cdn.jsdelivr.net/npm/${path}`,
+    unpkg: path => `https://unpkg.com/${path}`
+  };
+  class UrlBuilder {
+    constructor() {
+      this.providers = _extends({}, defaultProviders);
+      this.provider = "jsdelivr";
+    }
+    getFastestProvider(timeout = 5e3, path = testPath) {
+      return new Promise((resolve, reject) => {
+        Promise.all(Object.entries(this.providers).map(async ([name, factory]) => {
+          try {
+            const res = await fetch(factory(path));
+            if (!res.ok) {
+              throw res;
+            }
+            await res.text();
+            resolve(name);
+          } catch (_unused) {}
+        })).then(() => reject(new Error("All providers failed")));
+        setTimeout(reject, timeout, new Error("Timed out"));
+      });
+    }
+    async findFastestProvider(timeout) {
+      this.provider = await this.getFastestProvider(timeout);
+      return this.provider;
+    }
+    setProvider(name, factory) {
+      if (factory) {
+        this.providers[name] = factory;
+      } else {
+        delete this.providers[name];
+      }
+    }
+    getFullUrl(path, provider = this.provider) {
+      if (path.includes("://")) {
+        return path;
+      }
+      const factory = this.providers[provider];
+      if (!factory) {
+        throw new Error(`Provider ${provider} not found`);
+      }
+      return factory(path);
+    }
+  }
+  new UrlBuilder();
 
   Math.random().toString(36).slice(2, 8);
 
-  var commonjsGlobal = typeof globalThis !== 'undefined' ? globalThis : typeof window !== 'undefined' ? window : typeof global !== 'undefined' ? global : typeof self !== 'undefined' ? self : {};
+  /*! js-yaml 4.1.1 https://github.com/nodeca/js-yaml @license MIT */
+  function isNothing(subject) {
+    return (typeof subject === 'undefined') || (subject === null);
+  }
 
-  function getDefaultExportFromCjs (x) {
-  	return x && x.__esModule && Object.prototype.hasOwnProperty.call(x, 'default') ? x['default'] : x;
+
+  function isObject$2(subject) {
+    return (typeof subject === 'object') && (subject !== null);
+  }
+
+
+  function toArray(sequence) {
+    if (Array.isArray(sequence)) return sequence;
+    else if (isNothing(sequence)) return [];
+
+    return [ sequence ];
+  }
+
+
+  function extend$1(target, source) {
+    var index, length, key, sourceKeys;
+
+    if (source) {
+      sourceKeys = Object.keys(source);
+
+      for (index = 0, length = sourceKeys.length; index < length; index += 1) {
+        key = sourceKeys[index];
+        target[key] = source[key];
+      }
+    }
+
+    return target;
+  }
+
+
+  function repeat$1(string, count) {
+    var result = '', cycle;
+
+    for (cycle = 0; cycle < count; cycle += 1) {
+      result += string;
+    }
+
+    return result;
+  }
+
+
+  function isNegativeZero$1(number) {
+    return (number === 0) && (Number.NEGATIVE_INFINITY === 1 / number);
+  }
+
+
+  var isNothing_1      = isNothing;
+  var isObject_1       = isObject$2;
+  var toArray_1        = toArray;
+  var repeat_1         = repeat$1;
+  var isNegativeZero_1 = isNegativeZero$1;
+  var extend_1         = extend$1;
+
+  var common = {
+  	isNothing: isNothing_1,
+  	isObject: isObject_1,
+  	toArray: toArray_1,
+  	repeat: repeat_1,
+  	isNegativeZero: isNegativeZero_1,
+  	extend: extend_1
+  };
+
+  // YAML error class. http://stackoverflow.com/questions/8458984
+
+
+  function formatError(exception, compact) {
+    var where = '', message = exception.reason || '(unknown reason)';
+
+    if (!exception.mark) return message;
+
+    if (exception.mark.name) {
+      where += 'in "' + exception.mark.name + '" ';
+    }
+
+    where += '(' + (exception.mark.line + 1) + ':' + (exception.mark.column + 1) + ')';
+
+    if (!compact && exception.mark.snippet) {
+      where += '\n\n' + exception.mark.snippet;
+    }
+
+    return message + ' ' + where;
+  }
+
+
+  function YAMLException$1(reason, mark) {
+    // Super constructor
+    Error.call(this);
+
+    this.name = 'YAMLException';
+    this.reason = reason;
+    this.mark = mark;
+    this.message = formatError(this, false);
+
+    // Include stack trace in error object
+    if (Error.captureStackTrace) {
+      // Chrome and NodeJS
+      Error.captureStackTrace(this, this.constructor);
+    } else {
+      // FF, IE 10+ and Safari 6+. Fallback for others
+      this.stack = (new Error()).stack || '';
+    }
+  }
+
+
+  // Inherit from Error
+  YAMLException$1.prototype = Object.create(Error.prototype);
+  YAMLException$1.prototype.constructor = YAMLException$1;
+
+
+  YAMLException$1.prototype.toString = function toString(compact) {
+    return this.name + ': ' + formatError(this, compact);
+  };
+
+
+  var exception = YAMLException$1;
+
+  var TYPE_CONSTRUCTOR_OPTIONS = [
+    'kind',
+    'multi',
+    'resolve',
+    'construct',
+    'instanceOf',
+    'predicate',
+    'represent',
+    'representName',
+    'defaultStyle',
+    'styleAliases'
+  ];
+
+  var YAML_NODE_KINDS = [
+    'scalar',
+    'sequence',
+    'mapping'
+  ];
+
+  function compileStyleAliases(map) {
+    var result = {};
+
+    if (map !== null) {
+      Object.keys(map).forEach(function (style) {
+        map[style].forEach(function (alias) {
+          result[String(alias)] = style;
+        });
+      });
+    }
+
+    return result;
+  }
+
+  function Type$1(tag, options) {
+    options = options || {};
+
+    Object.keys(options).forEach(function (name) {
+      if (TYPE_CONSTRUCTOR_OPTIONS.indexOf(name) === -1) {
+        throw new exception('Unknown option "' + name + '" is met in definition of "' + tag + '" YAML type.');
+      }
+    });
+
+    // TODO: Add tag format check.
+    this.options       = options; // keep original options in case user wants to extend this type later
+    this.tag           = tag;
+    this.kind          = options['kind']          || null;
+    this.resolve       = options['resolve']       || function () { return true; };
+    this.construct     = options['construct']     || function (data) { return data; };
+    this.instanceOf    = options['instanceOf']    || null;
+    this.predicate     = options['predicate']     || null;
+    this.represent     = options['represent']     || null;
+    this.representName = options['representName'] || null;
+    this.defaultStyle  = options['defaultStyle']  || null;
+    this.multi         = options['multi']         || false;
+    this.styleAliases  = compileStyleAliases(options['styleAliases'] || null);
+
+    if (YAML_NODE_KINDS.indexOf(this.kind) === -1) {
+      throw new exception('Unknown kind "' + this.kind + '" is specified for "' + tag + '" YAML type.');
+    }
+  }
+
+  var type = Type$1;
+
+  /*eslint-disable max-len*/
+
+
+
+
+
+  function compileList(schema, name) {
+    var result = [];
+
+    schema[name].forEach(function (currentType) {
+      var newIndex = result.length;
+
+      result.forEach(function (previousType, previousIndex) {
+        if (previousType.tag === currentType.tag &&
+            previousType.kind === currentType.kind &&
+            previousType.multi === currentType.multi) {
+
+          newIndex = previousIndex;
+        }
+      });
+
+      result[newIndex] = currentType;
+    });
+
+    return result;
+  }
+
+
+  function compileMap(/* lists... */) {
+    var result = {
+          scalar: {},
+          sequence: {},
+          mapping: {},
+          fallback: {},
+          multi: {
+            scalar: [],
+            sequence: [],
+            mapping: [],
+            fallback: []
+          }
+        }, index, length;
+
+    function collectType(type) {
+      if (type.multi) {
+        result.multi[type.kind].push(type);
+        result.multi['fallback'].push(type);
+      } else {
+        result[type.kind][type.tag] = result['fallback'][type.tag] = type;
+      }
+    }
+
+    for (index = 0, length = arguments.length; index < length; index += 1) {
+      arguments[index].forEach(collectType);
+    }
+    return result;
+  }
+
+
+  function Schema$1(definition) {
+    return this.extend(definition);
+  }
+
+
+  Schema$1.prototype.extend = function extend(definition) {
+    var implicit = [];
+    var explicit = [];
+
+    if (definition instanceof type) {
+      // Schema.extend(type)
+      explicit.push(definition);
+
+    } else if (Array.isArray(definition)) {
+      // Schema.extend([ type1, type2, ... ])
+      explicit = explicit.concat(definition);
+
+    } else if (definition && (Array.isArray(definition.implicit) || Array.isArray(definition.explicit))) {
+      // Schema.extend({ explicit: [ type1, type2, ... ], implicit: [ type1, type2, ... ] })
+      if (definition.implicit) implicit = implicit.concat(definition.implicit);
+      if (definition.explicit) explicit = explicit.concat(definition.explicit);
+
+    } else {
+      throw new exception('Schema.extend argument should be a Type, [ Type ], ' +
+        'or a schema definition ({ implicit: [...], explicit: [...] })');
+    }
+
+    implicit.forEach(function (type$1) {
+      if (!(type$1 instanceof type)) {
+        throw new exception('Specified list of YAML types (or a single Type object) contains a non-Type object.');
+      }
+
+      if (type$1.loadKind && type$1.loadKind !== 'scalar') {
+        throw new exception('There is a non-scalar type in the implicit list of a schema. Implicit resolving of such types is not supported.');
+      }
+
+      if (type$1.multi) {
+        throw new exception('There is a multi type in the implicit list of a schema. Multi tags can only be listed as explicit.');
+      }
+    });
+
+    explicit.forEach(function (type$1) {
+      if (!(type$1 instanceof type)) {
+        throw new exception('Specified list of YAML types (or a single Type object) contains a non-Type object.');
+      }
+    });
+
+    var result = Object.create(Schema$1.prototype);
+
+    result.implicit = (this.implicit || []).concat(implicit);
+    result.explicit = (this.explicit || []).concat(explicit);
+
+    result.compiledImplicit = compileList(result, 'implicit');
+    result.compiledExplicit = compileList(result, 'explicit');
+    result.compiledTypeMap  = compileMap(result.compiledImplicit, result.compiledExplicit);
+
+    return result;
+  };
+
+
+  var schema = Schema$1;
+
+  var str = new type('tag:yaml.org,2002:str', {
+    kind: 'scalar',
+    construct: function (data) { return data !== null ? data : ''; }
+  });
+
+  var seq = new type('tag:yaml.org,2002:seq', {
+    kind: 'sequence',
+    construct: function (data) { return data !== null ? data : []; }
+  });
+
+  var map$1 = new type('tag:yaml.org,2002:map', {
+    kind: 'mapping',
+    construct: function (data) { return data !== null ? data : {}; }
+  });
+
+  var failsafe = new schema({
+    explicit: [
+      str,
+      seq,
+      map$1
+    ]
+  });
+
+  function resolveYamlNull(data) {
+    if (data === null) return true;
+
+    var max = data.length;
+
+    return (max === 1 && data === '~') ||
+           (max === 4 && (data === 'null' || data === 'Null' || data === 'NULL'));
+  }
+
+  function constructYamlNull() {
+    return null;
+  }
+
+  function isNull(object) {
+    return object === null;
+  }
+
+  var _null = new type('tag:yaml.org,2002:null', {
+    kind: 'scalar',
+    resolve: resolveYamlNull,
+    construct: constructYamlNull,
+    predicate: isNull,
+    represent: {
+      canonical: function () { return '~';    },
+      lowercase: function () { return 'null'; },
+      uppercase: function () { return 'NULL'; },
+      camelcase: function () { return 'Null'; },
+      empty:     function () { return '';     }
+    },
+    defaultStyle: 'lowercase'
+  });
+
+  function resolveYamlBoolean(data) {
+    if (data === null) return false;
+
+    var max = data.length;
+
+    return (max === 4 && (data === 'true' || data === 'True' || data === 'TRUE')) ||
+           (max === 5 && (data === 'false' || data === 'False' || data === 'FALSE'));
+  }
+
+  function constructYamlBoolean(data) {
+    return data === 'true' ||
+           data === 'True' ||
+           data === 'TRUE';
+  }
+
+  function isBoolean(object) {
+    return Object.prototype.toString.call(object) === '[object Boolean]';
+  }
+
+  var bool$1 = new type('tag:yaml.org,2002:bool', {
+    kind: 'scalar',
+    resolve: resolveYamlBoolean,
+    construct: constructYamlBoolean,
+    predicate: isBoolean,
+    represent: {
+      lowercase: function (object) { return object ? 'true' : 'false'; },
+      uppercase: function (object) { return object ? 'TRUE' : 'FALSE'; },
+      camelcase: function (object) { return object ? 'True' : 'False'; }
+    },
+    defaultStyle: 'lowercase'
+  });
+
+  function isHexCode(c) {
+    return ((0x30/* 0 */ <= c) && (c <= 0x39/* 9 */)) ||
+           ((0x41/* A */ <= c) && (c <= 0x46/* F */)) ||
+           ((0x61/* a */ <= c) && (c <= 0x66/* f */));
+  }
+
+  function isOctCode(c) {
+    return ((0x30/* 0 */ <= c) && (c <= 0x37/* 7 */));
+  }
+
+  function isDecCode(c) {
+    return ((0x30/* 0 */ <= c) && (c <= 0x39/* 9 */));
+  }
+
+  function resolveYamlInteger(data) {
+    if (data === null) return false;
+
+    var max = data.length,
+        index = 0,
+        hasDigits = false,
+        ch;
+
+    if (!max) return false;
+
+    ch = data[index];
+
+    // sign
+    if (ch === '-' || ch === '+') {
+      ch = data[++index];
+    }
+
+    if (ch === '0') {
+      // 0
+      if (index + 1 === max) return true;
+      ch = data[++index];
+
+      // base 2, base 8, base 16
+
+      if (ch === 'b') {
+        // base 2
+        index++;
+
+        for (; index < max; index++) {
+          ch = data[index];
+          if (ch === '_') continue;
+          if (ch !== '0' && ch !== '1') return false;
+          hasDigits = true;
+        }
+        return hasDigits && ch !== '_';
+      }
+
+
+      if (ch === 'x') {
+        // base 16
+        index++;
+
+        for (; index < max; index++) {
+          ch = data[index];
+          if (ch === '_') continue;
+          if (!isHexCode(data.charCodeAt(index))) return false;
+          hasDigits = true;
+        }
+        return hasDigits && ch !== '_';
+      }
+
+
+      if (ch === 'o') {
+        // base 8
+        index++;
+
+        for (; index < max; index++) {
+          ch = data[index];
+          if (ch === '_') continue;
+          if (!isOctCode(data.charCodeAt(index))) return false;
+          hasDigits = true;
+        }
+        return hasDigits && ch !== '_';
+      }
+    }
+
+    // base 10 (except 0)
+
+    // value should not start with `_`;
+    if (ch === '_') return false;
+
+    for (; index < max; index++) {
+      ch = data[index];
+      if (ch === '_') continue;
+      if (!isDecCode(data.charCodeAt(index))) {
+        return false;
+      }
+      hasDigits = true;
+    }
+
+    // Should have digits and should not end with `_`
+    if (!hasDigits || ch === '_') return false;
+
+    return true;
+  }
+
+  function constructYamlInteger(data) {
+    var value = data, sign = 1, ch;
+
+    if (value.indexOf('_') !== -1) {
+      value = value.replace(/_/g, '');
+    }
+
+    ch = value[0];
+
+    if (ch === '-' || ch === '+') {
+      if (ch === '-') sign = -1;
+      value = value.slice(1);
+      ch = value[0];
+    }
+
+    if (value === '0') return 0;
+
+    if (ch === '0') {
+      if (value[1] === 'b') return sign * parseInt(value.slice(2), 2);
+      if (value[1] === 'x') return sign * parseInt(value.slice(2), 16);
+      if (value[1] === 'o') return sign * parseInt(value.slice(2), 8);
+    }
+
+    return sign * parseInt(value, 10);
+  }
+
+  function isInteger$1(object) {
+    return (Object.prototype.toString.call(object)) === '[object Number]' &&
+           (object % 1 === 0 && !common.isNegativeZero(object));
+  }
+
+  var int = new type('tag:yaml.org,2002:int', {
+    kind: 'scalar',
+    resolve: resolveYamlInteger,
+    construct: constructYamlInteger,
+    predicate: isInteger$1,
+    represent: {
+      binary:      function (obj) { return obj >= 0 ? '0b' + obj.toString(2) : '-0b' + obj.toString(2).slice(1); },
+      octal:       function (obj) { return obj >= 0 ? '0o'  + obj.toString(8) : '-0o'  + obj.toString(8).slice(1); },
+      decimal:     function (obj) { return obj.toString(10); },
+      /* eslint-disable max-len */
+      hexadecimal: function (obj) { return obj >= 0 ? '0x' + obj.toString(16).toUpperCase() :  '-0x' + obj.toString(16).toUpperCase().slice(1); }
+    },
+    defaultStyle: 'decimal',
+    styleAliases: {
+      binary:      [ 2,  'bin' ],
+      octal:       [ 8,  'oct' ],
+      decimal:     [ 10, 'dec' ],
+      hexadecimal: [ 16, 'hex' ]
+    }
+  });
+
+  var YAML_FLOAT_PATTERN = new RegExp(
+    // 2.5e4, 2.5 and integers
+    '^(?:[-+]?(?:[0-9][0-9_]*)(?:\\.[0-9_]*)?(?:[eE][-+]?[0-9]+)?' +
+    // .2e4, .2
+    // special case, seems not from spec
+    '|\\.[0-9_]+(?:[eE][-+]?[0-9]+)?' +
+    // .inf
+    '|[-+]?\\.(?:inf|Inf|INF)' +
+    // .nan
+    '|\\.(?:nan|NaN|NAN))$');
+
+  function resolveYamlFloat(data) {
+    if (data === null) return false;
+
+    if (!YAML_FLOAT_PATTERN.test(data) ||
+        // Quick hack to not allow integers end with `_`
+        // Probably should update regexp & check speed
+        data[data.length - 1] === '_') {
+      return false;
+    }
+
+    return true;
+  }
+
+  function constructYamlFloat(data) {
+    var value, sign;
+
+    value  = data.replace(/_/g, '').toLowerCase();
+    sign   = value[0] === '-' ? -1 : 1;
+
+    if ('+-'.indexOf(value[0]) >= 0) {
+      value = value.slice(1);
+    }
+
+    if (value === '.inf') {
+      return (sign === 1) ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
+
+    } else if (value === '.nan') {
+      return NaN;
+    }
+    return sign * parseFloat(value, 10);
+  }
+
+
+  var SCIENTIFIC_WITHOUT_DOT = /^[-+]?[0-9]+e/;
+
+  function representYamlFloat(object, style) {
+    var res;
+
+    if (isNaN(object)) {
+      switch (style) {
+        case 'lowercase': return '.nan';
+        case 'uppercase': return '.NAN';
+        case 'camelcase': return '.NaN';
+      }
+    } else if (Number.POSITIVE_INFINITY === object) {
+      switch (style) {
+        case 'lowercase': return '.inf';
+        case 'uppercase': return '.INF';
+        case 'camelcase': return '.Inf';
+      }
+    } else if (Number.NEGATIVE_INFINITY === object) {
+      switch (style) {
+        case 'lowercase': return '-.inf';
+        case 'uppercase': return '-.INF';
+        case 'camelcase': return '-.Inf';
+      }
+    } else if (common.isNegativeZero(object)) {
+      return '-0.0';
+    }
+
+    res = object.toString(10);
+
+    // JS stringifier can build scientific format without dots: 5e-100,
+    // while YAML requres dot: 5.e-100. Fix it with simple hack
+
+    return SCIENTIFIC_WITHOUT_DOT.test(res) ? res.replace('e', '.e') : res;
+  }
+
+  function isFloat(object) {
+    return (Object.prototype.toString.call(object) === '[object Number]') &&
+           (object % 1 !== 0 || common.isNegativeZero(object));
+  }
+
+  var float = new type('tag:yaml.org,2002:float', {
+    kind: 'scalar',
+    resolve: resolveYamlFloat,
+    construct: constructYamlFloat,
+    predicate: isFloat,
+    represent: representYamlFloat,
+    defaultStyle: 'lowercase'
+  });
+
+  var json = failsafe.extend({
+    implicit: [
+      _null,
+      bool$1,
+      int,
+      float
+    ]
+  });
+
+  var core = json;
+
+  var YAML_DATE_REGEXP = new RegExp(
+    '^([0-9][0-9][0-9][0-9])'          + // [1] year
+    '-([0-9][0-9])'                    + // [2] month
+    '-([0-9][0-9])$');                   // [3] day
+
+  var YAML_TIMESTAMP_REGEXP = new RegExp(
+    '^([0-9][0-9][0-9][0-9])'          + // [1] year
+    '-([0-9][0-9]?)'                   + // [2] month
+    '-([0-9][0-9]?)'                   + // [3] day
+    '(?:[Tt]|[ \\t]+)'                 + // ...
+    '([0-9][0-9]?)'                    + // [4] hour
+    ':([0-9][0-9])'                    + // [5] minute
+    ':([0-9][0-9])'                    + // [6] second
+    '(?:\\.([0-9]*))?'                 + // [7] fraction
+    '(?:[ \\t]*(Z|([-+])([0-9][0-9]?)' + // [8] tz [9] tz_sign [10] tz_hour
+    '(?::([0-9][0-9]))?))?$');           // [11] tz_minute
+
+  function resolveYamlTimestamp(data) {
+    if (data === null) return false;
+    if (YAML_DATE_REGEXP.exec(data) !== null) return true;
+    if (YAML_TIMESTAMP_REGEXP.exec(data) !== null) return true;
+    return false;
+  }
+
+  function constructYamlTimestamp(data) {
+    var match, year, month, day, hour, minute, second, fraction = 0,
+        delta = null, tz_hour, tz_minute, date;
+
+    match = YAML_DATE_REGEXP.exec(data);
+    if (match === null) match = YAML_TIMESTAMP_REGEXP.exec(data);
+
+    if (match === null) throw new Error('Date resolve error');
+
+    // match: [1] year [2] month [3] day
+
+    year = +(match[1]);
+    month = +(match[2]) - 1; // JS month starts with 0
+    day = +(match[3]);
+
+    if (!match[4]) { // no hour
+      return new Date(Date.UTC(year, month, day));
+    }
+
+    // match: [4] hour [5] minute [6] second [7] fraction
+
+    hour = +(match[4]);
+    minute = +(match[5]);
+    second = +(match[6]);
+
+    if (match[7]) {
+      fraction = match[7].slice(0, 3);
+      while (fraction.length < 3) { // milli-seconds
+        fraction += '0';
+      }
+      fraction = +fraction;
+    }
+
+    // match: [8] tz [9] tz_sign [10] tz_hour [11] tz_minute
+
+    if (match[9]) {
+      tz_hour = +(match[10]);
+      tz_minute = +(match[11] || 0);
+      delta = (tz_hour * 60 + tz_minute) * 60000; // delta in mili-seconds
+      if (match[9] === '-') delta = -delta;
+    }
+
+    date = new Date(Date.UTC(year, month, day, hour, minute, second, fraction));
+
+    if (delta) date.setTime(date.getTime() - delta);
+
+    return date;
+  }
+
+  function representYamlTimestamp(object /*, style*/) {
+    return object.toISOString();
+  }
+
+  var timestamp = new type('tag:yaml.org,2002:timestamp', {
+    kind: 'scalar',
+    resolve: resolveYamlTimestamp,
+    construct: constructYamlTimestamp,
+    instanceOf: Date,
+    represent: representYamlTimestamp
+  });
+
+  function resolveYamlMerge(data) {
+    return data === '<<' || data === null;
+  }
+
+  var merge = new type('tag:yaml.org,2002:merge', {
+    kind: 'scalar',
+    resolve: resolveYamlMerge
+  });
+
+  /*eslint-disable no-bitwise*/
+
+
+
+
+
+  // [ 64, 65, 66 ] -> [ padding, CR, LF ]
+  var BASE64_MAP = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=\n\r';
+
+
+  function resolveYamlBinary(data) {
+    if (data === null) return false;
+
+    var code, idx, bitlen = 0, max = data.length, map = BASE64_MAP;
+
+    // Convert one by one.
+    for (idx = 0; idx < max; idx++) {
+      code = map.indexOf(data.charAt(idx));
+
+      // Skip CR/LF
+      if (code > 64) continue;
+
+      // Fail on illegal characters
+      if (code < 0) return false;
+
+      bitlen += 6;
+    }
+
+    // If there are any bits left, source was corrupted
+    return (bitlen % 8) === 0;
+  }
+
+  function constructYamlBinary(data) {
+    var idx, tailbits,
+        input = data.replace(/[\r\n=]/g, ''), // remove CR/LF & padding to simplify scan
+        max = input.length,
+        map = BASE64_MAP,
+        bits = 0,
+        result = [];
+
+    // Collect by 6*4 bits (3 bytes)
+
+    for (idx = 0; idx < max; idx++) {
+      if ((idx % 4 === 0) && idx) {
+        result.push((bits >> 16) & 0xFF);
+        result.push((bits >> 8) & 0xFF);
+        result.push(bits & 0xFF);
+      }
+
+      bits = (bits << 6) | map.indexOf(input.charAt(idx));
+    }
+
+    // Dump tail
+
+    tailbits = (max % 4) * 6;
+
+    if (tailbits === 0) {
+      result.push((bits >> 16) & 0xFF);
+      result.push((bits >> 8) & 0xFF);
+      result.push(bits & 0xFF);
+    } else if (tailbits === 18) {
+      result.push((bits >> 10) & 0xFF);
+      result.push((bits >> 2) & 0xFF);
+    } else if (tailbits === 12) {
+      result.push((bits >> 4) & 0xFF);
+    }
+
+    return new Uint8Array(result);
+  }
+
+  function representYamlBinary(object /*, style*/) {
+    var result = '', bits = 0, idx, tail,
+        max = object.length,
+        map = BASE64_MAP;
+
+    // Convert every three bytes to 4 ASCII characters.
+
+    for (idx = 0; idx < max; idx++) {
+      if ((idx % 3 === 0) && idx) {
+        result += map[(bits >> 18) & 0x3F];
+        result += map[(bits >> 12) & 0x3F];
+        result += map[(bits >> 6) & 0x3F];
+        result += map[bits & 0x3F];
+      }
+
+      bits = (bits << 8) + object[idx];
+    }
+
+    // Dump tail
+
+    tail = max % 3;
+
+    if (tail === 0) {
+      result += map[(bits >> 18) & 0x3F];
+      result += map[(bits >> 12) & 0x3F];
+      result += map[(bits >> 6) & 0x3F];
+      result += map[bits & 0x3F];
+    } else if (tail === 2) {
+      result += map[(bits >> 10) & 0x3F];
+      result += map[(bits >> 4) & 0x3F];
+      result += map[(bits << 2) & 0x3F];
+      result += map[64];
+    } else if (tail === 1) {
+      result += map[(bits >> 2) & 0x3F];
+      result += map[(bits << 4) & 0x3F];
+      result += map[64];
+      result += map[64];
+    }
+
+    return result;
+  }
+
+  function isBinary(obj) {
+    return Object.prototype.toString.call(obj) ===  '[object Uint8Array]';
+  }
+
+  var binary = new type('tag:yaml.org,2002:binary', {
+    kind: 'scalar',
+    resolve: resolveYamlBinary,
+    construct: constructYamlBinary,
+    predicate: isBinary,
+    represent: representYamlBinary
+  });
+
+  var _hasOwnProperty$3 = Object.prototype.hasOwnProperty;
+  var _toString$2       = Object.prototype.toString;
+
+  function resolveYamlOmap(data) {
+    if (data === null) return true;
+
+    var objectKeys = [], index, length, pair, pairKey, pairHasKey,
+        object = data;
+
+    for (index = 0, length = object.length; index < length; index += 1) {
+      pair = object[index];
+      pairHasKey = false;
+
+      if (_toString$2.call(pair) !== '[object Object]') return false;
+
+      for (pairKey in pair) {
+        if (_hasOwnProperty$3.call(pair, pairKey)) {
+          if (!pairHasKey) pairHasKey = true;
+          else return false;
+        }
+      }
+
+      if (!pairHasKey) return false;
+
+      if (objectKeys.indexOf(pairKey) === -1) objectKeys.push(pairKey);
+      else return false;
+    }
+
+    return true;
+  }
+
+  function constructYamlOmap(data) {
+    return data !== null ? data : [];
+  }
+
+  var omap = new type('tag:yaml.org,2002:omap', {
+    kind: 'sequence',
+    resolve: resolveYamlOmap,
+    construct: constructYamlOmap
+  });
+
+  var _toString$1 = Object.prototype.toString;
+
+  function resolveYamlPairs(data) {
+    if (data === null) return true;
+
+    var index, length, pair, keys, result,
+        object = data;
+
+    result = new Array(object.length);
+
+    for (index = 0, length = object.length; index < length; index += 1) {
+      pair = object[index];
+
+      if (_toString$1.call(pair) !== '[object Object]') return false;
+
+      keys = Object.keys(pair);
+
+      if (keys.length !== 1) return false;
+
+      result[index] = [ keys[0], pair[keys[0]] ];
+    }
+
+    return true;
+  }
+
+  function constructYamlPairs(data) {
+    if (data === null) return [];
+
+    var index, length, pair, keys, result,
+        object = data;
+
+    result = new Array(object.length);
+
+    for (index = 0, length = object.length; index < length; index += 1) {
+      pair = object[index];
+
+      keys = Object.keys(pair);
+
+      result[index] = [ keys[0], pair[keys[0]] ];
+    }
+
+    return result;
+  }
+
+  var pairs = new type('tag:yaml.org,2002:pairs', {
+    kind: 'sequence',
+    resolve: resolveYamlPairs,
+    construct: constructYamlPairs
+  });
+
+  var _hasOwnProperty$2 = Object.prototype.hasOwnProperty;
+
+  function resolveYamlSet(data) {
+    if (data === null) return true;
+
+    var key, object = data;
+
+    for (key in object) {
+      if (_hasOwnProperty$2.call(object, key)) {
+        if (object[key] !== null) return false;
+      }
+    }
+
+    return true;
+  }
+
+  function constructYamlSet(data) {
+    return data !== null ? data : {};
+  }
+
+  var set$2 = new type('tag:yaml.org,2002:set', {
+    kind: 'mapping',
+    resolve: resolveYamlSet,
+    construct: constructYamlSet
+  });
+
+  core.extend({
+    implicit: [
+      timestamp,
+      merge
+    ],
+    explicit: [
+      binary,
+      omap,
+      pairs,
+      set$2
+    ]
+  });
+
+  function simpleEscapeSequence(c) {
+    /* eslint-disable indent */
+    return (c === 0x30/* 0 */) ? '\x00' :
+          (c === 0x61/* a */) ? '\x07' :
+          (c === 0x62/* b */) ? '\x08' :
+          (c === 0x74/* t */) ? '\x09' :
+          (c === 0x09/* Tab */) ? '\x09' :
+          (c === 0x6E/* n */) ? '\x0A' :
+          (c === 0x76/* v */) ? '\x0B' :
+          (c === 0x66/* f */) ? '\x0C' :
+          (c === 0x72/* r */) ? '\x0D' :
+          (c === 0x65/* e */) ? '\x1B' :
+          (c === 0x20/* Space */) ? ' ' :
+          (c === 0x22/* " */) ? '\x22' :
+          (c === 0x2F/* / */) ? '/' :
+          (c === 0x5C/* \ */) ? '\x5C' :
+          (c === 0x4E/* N */) ? '\x85' :
+          (c === 0x5F/* _ */) ? '\xA0' :
+          (c === 0x4C/* L */) ? '\u2028' :
+          (c === 0x50/* P */) ? '\u2029' : '';
+  }
+
+  var simpleEscapeCheck = new Array(256); // integer, for fast access
+  var simpleEscapeMap = new Array(256);
+  for (var i = 0; i < 256; i++) {
+    simpleEscapeCheck[i] = simpleEscapeSequence(i) ? 1 : 0;
+    simpleEscapeMap[i] = simpleEscapeSequence(i);
   }
 
   class InternMap extends Map {
@@ -23877,7 +28081,7 @@
     querySelectorAll: function(selector) { return this._parent.querySelectorAll(selector); }
   };
 
-  function constant$2(x) {
+  function constant$1(x) {
     return function() {
       return x;
     };
@@ -23964,7 +28168,7 @@
         parents = this._parents,
         groups = this._groups;
 
-    if (typeof value !== "function") value = constant$2(value);
+    if (typeof value !== "function") value = constant$1(value);
 
     for (var m = groups.length, update = new Array(m), enter = new Array(m), exit = new Array(m), j = 0; j < m; ++j) {
       var parent = parents[j],
@@ -25013,7 +29217,7 @@
         : m1) * 255;
   }
 
-  var constant$1 = x => () => x;
+  var constant = x => () => x;
 
   function linear(a, d) {
     return function(t) {
@@ -25029,13 +29233,13 @@
 
   function gamma(y) {
     return (y = +y) === 1 ? nogamma : function(a, b) {
-      return b - a ? exponential(a, b, y) : constant$1(isNaN(a) ? b : a);
+      return b - a ? exponential(a, b, y) : constant(isNaN(a) ? b : a);
     };
   }
 
   function nogamma(a, b) {
     var d = b - a;
-    return d ? linear(a, d) : constant$1(isNaN(a) ? b : a);
+    return d ? linear(a, d) : constant(isNaN(a) ? b : a);
   }
 
   var interpolateRgb = (function rgbGamma(y) {
@@ -26222,152 +30426,6 @@
   selection.prototype.interrupt = selection_interrupt;
   selection.prototype.transition = selection_transition;
 
-  const pi = Math.PI,
-      tau = 2 * pi,
-      epsilon = 1e-6,
-      tauEpsilon = tau - epsilon;
-
-  function append(strings) {
-    this._ += strings[0];
-    for (let i = 1, n = strings.length; i < n; ++i) {
-      this._ += arguments[i] + strings[i];
-    }
-  }
-
-  function appendRound(digits) {
-    let d = Math.floor(digits);
-    if (!(d >= 0)) throw new Error(`invalid digits: ${digits}`);
-    if (d > 15) return append;
-    const k = 10 ** d;
-    return function(strings) {
-      this._ += strings[0];
-      for (let i = 1, n = strings.length; i < n; ++i) {
-        this._ += Math.round(arguments[i] * k) / k + strings[i];
-      }
-    };
-  }
-
-  class Path {
-    constructor(digits) {
-      this._x0 = this._y0 = // start of current subpath
-      this._x1 = this._y1 = null; // end of current subpath
-      this._ = "";
-      this._append = digits == null ? append : appendRound(digits);
-    }
-    moveTo(x, y) {
-      this._append`M${this._x0 = this._x1 = +x},${this._y0 = this._y1 = +y}`;
-    }
-    closePath() {
-      if (this._x1 !== null) {
-        this._x1 = this._x0, this._y1 = this._y0;
-        this._append`Z`;
-      }
-    }
-    lineTo(x, y) {
-      this._append`L${this._x1 = +x},${this._y1 = +y}`;
-    }
-    quadraticCurveTo(x1, y1, x, y) {
-      this._append`Q${+x1},${+y1},${this._x1 = +x},${this._y1 = +y}`;
-    }
-    bezierCurveTo(x1, y1, x2, y2, x, y) {
-      this._append`C${+x1},${+y1},${+x2},${+y2},${this._x1 = +x},${this._y1 = +y}`;
-    }
-    arcTo(x1, y1, x2, y2, r) {
-      x1 = +x1, y1 = +y1, x2 = +x2, y2 = +y2, r = +r;
-
-      // Is the radius negative? Error.
-      if (r < 0) throw new Error(`negative radius: ${r}`);
-
-      let x0 = this._x1,
-          y0 = this._y1,
-          x21 = x2 - x1,
-          y21 = y2 - y1,
-          x01 = x0 - x1,
-          y01 = y0 - y1,
-          l01_2 = x01 * x01 + y01 * y01;
-
-      // Is this path empty? Move to (x1,y1).
-      if (this._x1 === null) {
-        this._append`M${this._x1 = x1},${this._y1 = y1}`;
-      }
-
-      // Or, is (x1,y1) coincident with (x0,y0)? Do nothing.
-      else if (!(l01_2 > epsilon));
-
-      // Or, are (x0,y0), (x1,y1) and (x2,y2) collinear?
-      // Equivalently, is (x1,y1) coincident with (x2,y2)?
-      // Or, is the radius zero? Line to (x1,y1).
-      else if (!(Math.abs(y01 * x21 - y21 * x01) > epsilon) || !r) {
-        this._append`L${this._x1 = x1},${this._y1 = y1}`;
-      }
-
-      // Otherwise, draw an arc!
-      else {
-        let x20 = x2 - x0,
-            y20 = y2 - y0,
-            l21_2 = x21 * x21 + y21 * y21,
-            l20_2 = x20 * x20 + y20 * y20,
-            l21 = Math.sqrt(l21_2),
-            l01 = Math.sqrt(l01_2),
-            l = r * Math.tan((pi - Math.acos((l21_2 + l01_2 - l20_2) / (2 * l21 * l01))) / 2),
-            t01 = l / l01,
-            t21 = l / l21;
-
-        // If the start tangent is not coincident with (x0,y0), line to.
-        if (Math.abs(t01 - 1) > epsilon) {
-          this._append`L${x1 + t01 * x01},${y1 + t01 * y01}`;
-        }
-
-        this._append`A${r},${r},0,0,${+(y01 * x20 > x01 * y20)},${this._x1 = x1 + t21 * x21},${this._y1 = y1 + t21 * y21}`;
-      }
-    }
-    arc(x, y, r, a0, a1, ccw) {
-      x = +x, y = +y, r = +r, ccw = !!ccw;
-
-      // Is the radius negative? Error.
-      if (r < 0) throw new Error(`negative radius: ${r}`);
-
-      let dx = r * Math.cos(a0),
-          dy = r * Math.sin(a0),
-          x0 = x + dx,
-          y0 = y + dy,
-          cw = 1 ^ ccw,
-          da = ccw ? a0 - a1 : a1 - a0;
-
-      // Is this path empty? Move to (x0,y0).
-      if (this._x1 === null) {
-        this._append`M${x0},${y0}`;
-      }
-
-      // Or, is (x0,y0) not coincident with the previous point? Line to (x0,y0).
-      else if (Math.abs(this._x1 - x0) > epsilon || Math.abs(this._y1 - y0) > epsilon) {
-        this._append`L${x0},${y0}`;
-      }
-
-      // Is this arc empty? We’re done.
-      if (!r) return;
-
-      // Does the angle go the wrong way? Flip the direction.
-      if (da < 0) da = da % tau + tau;
-
-      // Is this a complete circle? Draw two arcs to complete the circle.
-      if (da > tauEpsilon) {
-        this._append`A${r},${r},0,1,${cw},${x - dx},${y - dy}A${r},${r},0,1,${cw},${this._x1 = x0},${this._y1 = y0}`;
-      }
-
-      // Is this arc non-empty? Draw an arc!
-      else if (da > epsilon) {
-        this._append`A${r},${r},0,${+(da >= pi)},${cw},${this._x1 = x + r * Math.cos(a1)},${this._y1 = y + r * Math.sin(a1)}`;
-      }
-    }
-    rect(x, y, w, h) {
-      this._append`M${this._x0 = this._x1 = +x},${this._y0 = this._y1 = +y}h${w = +w}v${+h}h${-w}Z`;
-    }
-    toString() {
-      return this._;
-    }
-  }
-
   function initRange(domain, range) {
     switch (arguments.length) {
       case 0: break;
@@ -26427,140 +30485,7 @@
     return colors;
   }
 
-  var ut = colors("1f77b4ff7f0e2ca02cd627289467bd8c564be377c27f7f7fbcbd2217becf");
-
-  function constant(x) {
-    return function constant() {
-      return x;
-    };
-  }
-
-  function withPath(shape) {
-    let digits = 3;
-
-    shape.digits = function(_) {
-      if (!arguments.length) return digits;
-      if (_ == null) {
-        digits = null;
-      } else {
-        const d = Math.floor(_);
-        if (!(d >= 0)) throw new RangeError(`invalid digits: ${_}`);
-        digits = d;
-      }
-      return shape;
-    };
-
-    return () => new Path(digits);
-  }
-
-  var slice = Array.prototype.slice;
-
-  function x(p) {
-    return p[0];
-  }
-
-  function y(p) {
-    return p[1];
-  }
-
-  class Bump {
-    constructor(context, x) {
-      this._context = context;
-      this._x = x;
-    }
-    areaStart() {
-      this._line = 0;
-    }
-    areaEnd() {
-      this._line = NaN;
-    }
-    lineStart() {
-      this._point = 0;
-    }
-    lineEnd() {
-      if (this._line || (this._line !== 0 && this._point === 1)) this._context.closePath();
-      this._line = 1 - this._line;
-    }
-    point(x, y) {
-      x = +x, y = +y;
-      switch (this._point) {
-        case 0: {
-          this._point = 1;
-          if (this._line) this._context.lineTo(x, y);
-          else this._context.moveTo(x, y);
-          break;
-        }
-        case 1: this._point = 2; // falls through
-        default: {
-          if (this._x) this._context.bezierCurveTo(this._x0 = (this._x0 + x) / 2, this._y0, this._x0, y, x, y);
-          else this._context.bezierCurveTo(this._x0, this._y0 = (this._y0 + y) / 2, x, this._y0, x, y);
-          break;
-        }
-      }
-      this._x0 = x, this._y0 = y;
-    }
-  }
-
-  function bumpX(context) {
-    return new Bump(context, true);
-  }
-
-  function linkSource(d) {
-    return d.source;
-  }
-
-  function linkTarget(d) {
-    return d.target;
-  }
-
-  function link(curve) {
-    let source = linkSource,
-        target = linkTarget,
-        x$1 = x,
-        y$1 = y,
-        context = null,
-        output = null,
-        path = withPath(link);
-
-    function link() {
-      let buffer;
-      const argv = slice.call(arguments);
-      const s = source.apply(this, argv);
-      const t = target.apply(this, argv);
-      if (context == null) output = curve(buffer = path());
-      output.lineStart();
-      argv[0] = s, output.point(+x$1.apply(this, argv), +y$1.apply(this, argv));
-      argv[0] = t, output.point(+x$1.apply(this, argv), +y$1.apply(this, argv));
-      output.lineEnd();
-      if (buffer) return output = null, buffer + "" || null;
-    }
-
-    link.source = function(_) {
-      return arguments.length ? (source = _, link) : source;
-    };
-
-    link.target = function(_) {
-      return arguments.length ? (target = _, link) : target;
-    };
-
-    link.x = function(_) {
-      return arguments.length ? (x$1 = typeof _ === "function" ? _ : constant(+_), link) : x$1;
-    };
-
-    link.y = function(_) {
-      return arguments.length ? (y$1 = typeof _ === "function" ? _ : constant(+_), link) : y$1;
-    };
-
-    link.context = function(_) {
-      return arguments.length ? (_ == null ? context = output = null : output = curve(context = _), link) : context;
-    };
-
-    return link;
-  }
-
-  function linkHorizontal() {
-    return link(bumpX);
-  }
+  var schemeCategory10 = colors("1f77b4ff7f0e2ca02cd627289467bd8c564be377c27f7f7fbcbd2217becf");
 
   function Transform(k, x, y) {
     this.k = k;
@@ -26607,129 +30532,219 @@
 
   Transform.prototype;
 
-  typeof navigator < "u" && navigator.userAgent.includes("Macintosh"); ordinal(ut);
-  function zt(e) {
-    var t = 0, i = e.children, n = i && i.length;
-    if (!n) t = 1;
-    else for (; --n >= 0; ) t += i[n].value;
-    e.value = t;
+  /*! markmap-view v0.15.3 | MIT License */
+
+  function count(node) {
+    var sum = 0,
+      children = node.children,
+      i = children && children.length;
+    if (!i) sum = 1;else while (--i >= 0) sum += children[i].value;
+    node.value = sum;
   }
-  function Ct() {
-    return this.eachAfter(zt);
+  function node_count () {
+    return this.eachAfter(count);
   }
-  function St(e) {
-    var t = this, i, n = [t], s, o, h;
-    do
-      for (i = n.reverse(), n = []; t = i.pop(); )
-        if (e(t), s = t.children, s) for (o = 0, h = s.length; o < h; ++o)
-          n.push(s[o]);
-    while (n.length);
+
+  function node_each (callback) {
+    var node = this,
+      current,
+      next = [node],
+      children,
+      i,
+      n;
+    do {
+      current = next.reverse(), next = [];
+      while (node = current.pop()) {
+        callback(node), children = node.children;
+        if (children) for (i = 0, n = children.length; i < n; ++i) {
+          next.push(children[i]);
+        }
+      }
+    } while (next.length);
     return this;
   }
-  function wt(e) {
-    for (var t = this, i = [t], n, s; t = i.pop(); )
-      if (e(t), n = t.children, n) for (s = n.length - 1; s >= 0; --s)
-        i.push(n[s]);
+
+  function node_eachBefore (callback) {
+    var node = this,
+      nodes = [node],
+      children,
+      i;
+    while (node = nodes.pop()) {
+      callback(node), children = node.children;
+      if (children) for (i = children.length - 1; i >= 0; --i) {
+        nodes.push(children[i]);
+      }
+    }
     return this;
   }
-  function Rt(e) {
-    for (var t = this, i = [t], n = [], s, o, h; t = i.pop(); )
-      if (n.push(t), s = t.children, s) for (o = 0, h = s.length; o < h; ++o)
-        i.push(s[o]);
-    for (; t = n.pop(); )
-      e(t);
+
+  function node_eachAfter (callback) {
+    var node = this,
+      nodes = [node],
+      next = [],
+      children,
+      i,
+      n;
+    while (node = nodes.pop()) {
+      next.push(node), children = node.children;
+      if (children) for (i = 0, n = children.length; i < n; ++i) {
+        nodes.push(children[i]);
+      }
+    }
+    while (node = next.pop()) {
+      callback(node);
+    }
     return this;
   }
-  function Xt(e) {
-    return this.eachAfter(function(t) {
-      for (var i = +e(t.data) || 0, n = t.children, s = n && n.length; --s >= 0; ) i += n[s].value;
-      t.value = i;
+
+  function node_sum (value) {
+    return this.eachAfter(function (node) {
+      var sum = +value(node.data) || 0,
+        children = node.children,
+        i = children && children.length;
+      while (--i >= 0) sum += children[i].value;
+      node.value = sum;
     });
   }
-  function _t$1(e) {
-    return this.eachBefore(function(t) {
-      t.children && t.children.sort(e);
+
+  function node_sort (compare) {
+    return this.eachBefore(function (node) {
+      if (node.children) {
+        node.children.sort(compare);
+      }
     });
   }
-  function Ot(e) {
-    for (var t = this, i = At(t, e), n = [t]; t !== i; )
-      t = t.parent, n.push(t);
-    for (var s = n.length; e !== i; )
-      n.splice(s, 0, e), e = e.parent;
-    return n;
+
+  function node_path (end) {
+    var start = this,
+      ancestor = leastCommonAncestor(start, end),
+      nodes = [start];
+    while (start !== ancestor) {
+      start = start.parent;
+      nodes.push(start);
+    }
+    var k = nodes.length;
+    while (end !== ancestor) {
+      nodes.splice(k, 0, end);
+      end = end.parent;
+    }
+    return nodes;
   }
-  function At(e, t) {
-    if (e === t) return e;
-    var i = e.ancestors(), n = t.ancestors(), s = null;
-    for (e = i.pop(), t = n.pop(); e === t; )
-      s = e, e = i.pop(), t = n.pop();
-    return s;
+  function leastCommonAncestor(a, b) {
+    if (a === b) return a;
+    var aNodes = a.ancestors(),
+      bNodes = b.ancestors(),
+      c = null;
+    a = aNodes.pop();
+    b = bNodes.pop();
+    while (a === b) {
+      c = a;
+      a = aNodes.pop();
+      b = bNodes.pop();
+    }
+    return c;
   }
-  function Mt() {
-    for (var e = this, t = [e]; e = e.parent; )
-      t.push(e);
-    return t;
+
+  function node_ancestors () {
+    var node = this,
+      nodes = [node];
+    while (node = node.parent) {
+      nodes.push(node);
+    }
+    return nodes;
   }
-  function Ht() {
-    var e = [];
-    return this.each(function(t) {
-      e.push(t);
-    }), e;
+
+  function node_descendants () {
+    var nodes = [];
+    this.each(function (node) {
+      nodes.push(node);
+    });
+    return nodes;
   }
-  function Tt() {
-    var e = [];
-    return this.eachBefore(function(t) {
-      t.children || e.push(t);
-    }), e;
+
+  function node_leaves () {
+    var leaves = [];
+    this.eachBefore(function (node) {
+      if (!node.children) {
+        leaves.push(node);
+      }
+    });
+    return leaves;
   }
-  function jt() {
-    var e = this, t = [];
-    return e.each(function(i) {
-      i !== e && t.push({ source: i.parent, target: i });
-    }), t;
+
+  function node_links () {
+    var root = this,
+      links = [];
+    root.each(function (node) {
+      if (node !== root) {
+        // Don’t include the root’s parent, if any.
+        links.push({
+          source: node.parent,
+          target: node
+        });
+      }
+    });
+    return links;
   }
-  function j(e, t) {
-    var i = new _(e), n = +e.value && (i.value = e.value), s, o = [i], h, a, c, l;
-    for (t == null && (t = Ft); s = o.pop(); )
-      if (n && (s.value = +s.data.value), (a = t(s.data)) && (l = a.length))
-        for (s.children = new Array(l), c = l - 1; c >= 0; --c)
-          o.push(h = s.children[c] = new _(a[c])), h.parent = s, h.depth = s.depth + 1;
-    return i.eachBefore(Bt);
+
+  function hierarchy(data, children) {
+    var root = new Node$1(data),
+      valued = +data.value && (root.value = data.value),
+      node,
+      nodes = [root],
+      child,
+      childs,
+      i,
+      n;
+    if (children == null) children = defaultChildren;
+    while (node = nodes.pop()) {
+      if (valued) node.value = +node.data.value;
+      if ((childs = children(node.data)) && (n = childs.length)) {
+        node.children = new Array(n);
+        for (i = n - 1; i >= 0; --i) {
+          nodes.push(child = node.children[i] = new Node$1(childs[i]));
+          child.parent = node;
+          child.depth = node.depth + 1;
+        }
+      }
+    }
+    return root.eachBefore(computeHeight);
   }
-  function $t() {
-    return j(this).eachBefore(Nt);
+  function node_copy() {
+    return hierarchy(this).eachBefore(copyData);
   }
-  function Ft(e) {
-    return e.children;
+  function defaultChildren(d) {
+    return d.children;
   }
-  function Nt(e) {
-    e.data = e.data.data;
+  function copyData(node) {
+    node.data = node.data.data;
   }
-  function Bt(e) {
-    var t = 0;
-    do
-      e.height = t;
-    while ((e = e.parent) && e.height < ++t);
+  function computeHeight(node) {
+    var height = 0;
+    do node.height = height; while ((node = node.parent) && node.height < ++height);
   }
-  function _(e) {
-    this.data = e, this.depth = this.height = 0, this.parent = null;
+  function Node$1(data) {
+    this.data = data;
+    this.depth = this.height = 0;
+    this.parent = null;
   }
-  _.prototype = j.prototype = {
-    constructor: _,
-    count: Ct,
-    each: St,
-    eachAfter: Rt,
-    eachBefore: wt,
-    sum: Xt,
-    sort: _t$1,
-    path: Ot,
-    ancestors: Mt,
-    descendants: Ht,
-    leaves: Tt,
-    links: jt,
-    copy: $t
+  Node$1.prototype = hierarchy.prototype = {
+    constructor: Node$1,
+    count: node_count,
+    each: node_each,
+    eachAfter: node_eachAfter,
+    eachBefore: node_eachBefore,
+    sum: node_sum,
+    sort: node_sort,
+    path: node_path,
+    ancestors: node_ancestors,
+    descendants: node_descendants,
+    leaves: node_leaves,
+    links: node_links,
+    copy: node_copy
   };
-  linkHorizontal();
+  ordinal(schemeCategory10);
+  typeof navigator !== 'undefined' && navigator.userAgent.includes('Macintosh');
 
   /**
    * Utility module to work with key-value stores.
@@ -27145,7 +31160,6 @@
   const BIT6 = 32;
   const BIT7 = 64;
   const BIT8 = 128;
-  const BIT30 = 1 << 29;
   const BITS5 = 31;
   const BITS6 = 63;
   const BITS7 = 127;
@@ -27296,15 +31310,6 @@
    * @return {Encoder}
    */
   const createEncoder = () => new Encoder();
-
-  /**
-   * @param {function(Encoder):void} f
-   */
-  const encode = (f) => {
-    const encoder = createEncoder();
-    f(encoder);
-    return toUint8Array(encoder)
-  };
 
   /**
    * The current length of the encoded data.
@@ -28641,30 +32646,6 @@
   const equalFlat = (a, b) => a === b || (size(a) === size(b) && every(a, (val, key) => (val !== undefined || hasProperty(b, key)) && equals(b[key], val)));
 
   /**
-   * Make an object immutable. This hurts performance and is usually not needed if you perform good
-   * coding practices.
-   */
-  const freeze = Object.freeze;
-
-  /**
-   * Make an object and all its children immutable.
-   * This *really* hurts performance and is usually not needed if you perform good coding practices.
-   *
-   * @template {any} T
-   * @param {T} o
-   * @return {Readonly<T>}
-   */
-  const deepFreeze = (o) => {
-    for (const key in o) {
-      const c = o[key];
-      if (typeof c === 'object' || typeof c === 'function') {
-        deepFreeze(o[key]);
-      }
-    }
-    return freeze(o)
-  };
-
-  /**
    * Common functions and function call helpers.
    *
    * @module function
@@ -28994,16 +32975,6 @@
     newBuf.set(uint8Array);
     return newBuf
   };
-
-  /**
-   * Encode anything as a UInt8Array. It's a pun on typescripts's `any` type.
-   * See encoding.writeAny for more information.
-   *
-   * @param {any} data
-   * @return {Uint8Array}
-   */
-  const encodeAny = data =>
-    encode(encoder => writeAny(encoder, data));
 
   /**
    * Working with value pairs.
@@ -30620,12 +34591,9 @@
   const iterateDeletedStructs = (transaction, ds, f) =>
     ds.clients.forEach((deletes, clientid) => {
       const structs = /** @type {Array<GC|Item>} */ (transaction.doc.store.clients.get(clientid));
-      if (structs != null) {
-        const lastStruct = structs[structs.length - 1];
-        const clockState = lastStruct.id.clock + lastStruct.length;
-        for (let i = 0, del = deletes[i]; i < deletes.length && del.clock < clockState; del = deletes[++i]) {
-          iterateStructs(transaction, structs, del.clock, del.len, f);
-        }
+      for (let i = 0; i < deletes.length; i++) {
+        const del = deletes[i];
+        iterateStructs(transaction, structs, del.clock, del.len, f);
       }
     });
 
@@ -30687,7 +34655,7 @@
         const left = dels[j - 1];
         const right = dels[i];
         if (left.clock + left.len >= right.clock) {
-          dels[j - 1] = new DeleteItem(left.clock, max(left.len, right.clock + right.len - left.clock));
+          left.len = max(left.len, right.clock + right.len - left.clock);
         } else {
           if (j < i) {
             dels[j] = right;
@@ -30982,9 +34950,8 @@
        * lost (with false as a parameter).
        */
       this.isSynced = false;
-      this.isDestroyed = false;
       /**
-       * Promise that resolves once the document has been loaded from a persistence provider.
+       * Promise that resolves once the document has been loaded from a presistence provider.
        */
       this.whenLoaded = create$2(resolve => {
         this.on('load', () => {
@@ -31201,7 +35168,6 @@
      * Emit `destroy` event and unregister all event handlers.
      */
     destroy () {
-      this.isDestroyed = true;
       from(this.subdocs).forEach(subdoc => subdoc.destroy());
       const item = this._item;
       if (item !== null) {
@@ -31662,7 +35628,7 @@
        */
       this.keyMap = new Map();
       /**
-       * Refers to the next unique key-identifier to me used.
+       * Refers to the next uniqe key-identifier to me used.
        * See writeKey method for more information.
        *
        * @type {number}
@@ -31939,7 +35905,7 @@
             // @type {string|null}
             const struct = new Item(
               createID(client, clock),
-              null, // left
+              null, // leftd
               (info & BIT8) === BIT8 ? decoder.readLeftID() : null, // origin
               null, // right
               (info & BIT7) === BIT7 ? decoder.readRightID() : null, // right origin
@@ -31963,7 +35929,7 @@
 
             const struct = new Item(
               createID(client, clock),
-              null, // left
+              null, // leftd
               origin, // origin
               null, // right
               rightOrigin, // right origin
@@ -31996,7 +35962,7 @@
    * then we start emptying the stack.
    *
    * It is not possible to have circles: i.e. struct1 (from client1) depends on struct2 (from client2)
-   * depends on struct3 (from client1). Therefore the max stack size is equal to `structReaders.length`.
+   * depends on struct3 (from client1). Therefore the max stack size is eqaul to `structReaders.length`.
    *
    * This method is implemented in a way so that we can resume computation if this update
    * causally depends on another update.
@@ -32064,14 +36030,14 @@
     const addStackToRestSS = () => {
       for (const item of stack) {
         const client = item.id.client;
-        const inapplicableItems = clientsStructRefs.get(client);
-        if (inapplicableItems) {
+        const unapplicableItems = clientsStructRefs.get(client);
+        if (unapplicableItems) {
           // decrement because we weren't able to apply previous operation
-          inapplicableItems.i--;
-          restStructs.clients.set(client, inapplicableItems.refs.slice(inapplicableItems.i));
+          unapplicableItems.i--;
+          restStructs.clients.set(client, unapplicableItems.refs.slice(unapplicableItems.i));
           clientsStructRefs.delete(client);
-          inapplicableItems.i = 0;
-          inapplicableItems.refs = [];
+          unapplicableItems.i = 0;
+          unapplicableItems.refs = [];
         } else {
           // item was the last item on clientsStructRefs and the field was already cleared. Add item to restStructs and continue
           restStructs.clients.set(client, [item]);
@@ -32155,7 +36121,7 @@
   /**
    * Read and apply a document update.
    *
-   * This function has the same effect as `applyUpdate` but accepts a decoder.
+   * This function has the same effect as `applyUpdate` but accepts an decoder.
    *
    * @param {decoding.Decoder} decoder
    * @param {Doc} ydoc
@@ -32617,7 +36583,7 @@
        * after the meant position.
        * I.e. position 1 in 'ab' is associated to character 'b'.
        *
-       * If assoc < 0, then the relative position is associated to the character
+       * If assoc < 0, then the relative position is associated to the caharacter
        * before the meant position.
        *
        * @type {number}
@@ -32632,7 +36598,7 @@
    *
    * @function
    */
-  const createRelativePositionFromJSON = json => new RelativePosition(json.type == null ? null : createID(json.type.client, json.type.clock), json.tname ?? null, json.item == null ? null : createID(json.item.client, json.item.clock), json.assoc == null ? 0 : json.assoc);
+  const createRelativePositionFromJSON = json => new RelativePosition(json.type == null ? null : createID(json.type.client, json.type.clock), json.tname || null, json.item == null ? null : createID(json.item.client, json.item.clock), json.assoc == null ? 0 : json.assoc);
 
   class AbsolutePosition {
     /**
@@ -32717,18 +36683,6 @@
   };
 
   /**
-   * @param {StructStore} store
-   * @param {ID} id
-   */
-  const getItemWithOffset = (store, id) => {
-    const item = getItem(store, id);
-    const diff = id.clock - item.id.clock;
-    return {
-      item, diff
-    }
-  };
-
-  /**
    * Transform a relative position to an absolute position.
    *
    * If you want to share the relative position with other users, you should set
@@ -32758,7 +36712,7 @@
       if (getState(store, rightID.client) <= rightID.clock) {
         return null
       }
-      const res = followUndoneDeletions ? followRedone(store, rightID) : getItemWithOffset(store, rightID);
+      const res = followUndoneDeletions ? followRedone(store, rightID) : { item: getItem(store, rightID), diff: 0 };
       const right = res.item;
       if (!(right instanceof Item)) {
         return null
@@ -33302,7 +37256,7 @@
    */
   const tryMergeDeleteSet = (ds, store) => {
     // try to merge deleted / gc'd items
-    // merge from right to left for better efficiency and so we don't miss any merge targets
+    // merge from right to left for better efficiecy and so we don't miss any merge targets
     ds.clients.forEach((deleteItems, client) => {
       const structs = /** @type {Array<GC|Item>} */ (store.clients.get(client));
       for (let di = deleteItems.length - 1; di >= 0; di--) {
@@ -33370,21 +37324,17 @@
               // sort events by path length so that top-level events are fired first.
               events
                 .sort((event1, event2) => event1.path.length - event2.path.length);
-              fs.push(() => {
-                // We don't need to check for events.length
-                // because we know it has at least one element
-                callEventHandlerListeners(type._dEH, events, transaction);
-              });
-            }
-          });
-          fs.push(() => doc.emit('afterTransaction', [transaction, doc]));
-          fs.push(() => {
-            if (transaction._needFormattingCleanup) {
-              cleanupYTextAfterTransaction(transaction);
+              // We don't need to check for events.length
+              // because we know it has at least one element
+              callEventHandlerListeners(type._dEH, events, transaction);
             }
           });
         });
+        fs.push(() => doc.emit('afterTransaction', [transaction, doc]));
         callAll(fs, []);
+        if (transaction._needFormattingCleanup) {
+          cleanupYTextAfterTransaction(transaction);
+        }
       } finally {
         // Replace deleted items with ItemDeleted / GC.
         // This is where content is actually remove from the Yjs Doc.
@@ -33535,7 +37485,7 @@
    */
   const clearUndoManagerStackItem = (tr, um, stackItem) => {
     iterateDeletedStructs(tr, stackItem.deletions, item => {
-      if (item instanceof Item && um.scope.some(type => type === tr.doc || isParentOf(/** @type {AbstractType<any>} */ (type), item))) {
+      if (item instanceof Item && um.scope.some(type => isParentOf(type, item))) {
         keepItem(item, false);
       }
     });
@@ -33577,7 +37527,7 @@
               }
               struct = item;
             }
-            if (!struct.deleted && scope.some(type => type === transaction.doc || isParentOf(/** @type {AbstractType<any>} */ (type), /** @type {Item} */ (struct)))) {
+            if (!struct.deleted && scope.some(type => isParentOf(type, /** @type {Item} */ (struct)))) {
               itemsToDelete.push(struct);
             }
           }
@@ -33585,7 +37535,7 @@
         iterateDeletedStructs(transaction, stackItem.deletions, struct => {
           if (
             struct instanceof Item &&
-            scope.some(type => type === transaction.doc || isParentOf(/** @type {AbstractType<any>} */ (type), struct)) &&
+            scope.some(type => isParentOf(type, struct)) &&
             // Never redo structs in stackItem.insertions because they were created and deleted in the same capture interval.
             !isDeleted(stackItem.insertions, struct.id)
           ) {
@@ -33614,13 +37564,12 @@
       });
       _tr = transaction;
     }, undoManager);
-    const res = undoManager.currStackItem;
-    if (res != null) {
+    if (undoManager.currStackItem != null) {
       const changedParentTypes = _tr.changedParentTypes;
-      undoManager.emit('stack-item-popped', [{ stackItem: res, type: eventType, changedParentTypes, origin: undoManager }, undoManager]);
+      undoManager.emit('stack-item-popped', [{ stackItem: undoManager.currStackItem, type: eventType, changedParentTypes, origin: undoManager }, undoManager]);
       undoManager.currStackItem = null;
     }
-    return res
+    return undoManager.currStackItem
   };
 
   /**
@@ -33655,7 +37604,7 @@
    */
   class UndoManager extends ObservableV2 {
     /**
-     * @param {Doc|AbstractType<any>|Array<AbstractType<any>>} typeScope Limits the scope of the UndoManager. If this is set to a ydoc instance, all changes on that ydoc will be undone. If set to a specific type, only changes on that type or its children will be undone. Also accepts an array of types.
+     * @param {AbstractType<any>|Array<AbstractType<any>>} typeScope Accepts either a single type, or an array of types
      * @param {UndoManagerOptions} options
      */
     constructor (typeScope, {
@@ -33664,11 +37613,11 @@
       deleteFilter = () => true,
       trackedOrigins = new Set([null]),
       ignoreRemoteMapChanges = false,
-      doc = /** @type {Doc} */ (isArray(typeScope) ? typeScope[0].doc : typeScope instanceof Doc ? typeScope : typeScope.doc)
+      doc = /** @type {Doc} */ (isArray(typeScope) ? typeScope[0].doc : typeScope.doc)
     } = {}) {
       super();
       /**
-       * @type {Array<AbstractType<any> | Doc>}
+       * @type {Array<AbstractType<any>>}
        */
       this.scope = [];
       this.doc = doc;
@@ -33708,7 +37657,7 @@
         // Only track certain transactions
         if (
           !this.captureTransaction(transaction) ||
-          !this.scope.some(type => transaction.changedParentTypes.has(/** @type {AbstractType<any>} */ (type)) || type === this.doc) ||
+          !this.scope.some(type => transaction.changedParentTypes.has(type)) ||
           (!this.trackedOrigins.has(transaction.origin) && (!transaction.origin || !this.trackedOrigins.has(transaction.origin.constructor)))
         ) {
           return
@@ -33747,7 +37696,7 @@
         }
         // make sure that deleted structs are not gc'd
         iterateDeletedStructs(transaction, transaction.deleteSet, /** @param {Item|GC} item */ item => {
-          if (item instanceof Item && this.scope.some(type => type === transaction.doc || isParentOf(/** @type {AbstractType<any>} */ (type), item))) {
+          if (item instanceof Item && this.scope.some(type => isParentOf(type, item))) {
             keepItem(item, true);
           }
         });
@@ -33768,17 +37717,13 @@
     }
 
     /**
-     * Extend the scope.
-     *
-     * @param {Array<AbstractType<any> | Doc> | AbstractType<any> | Doc} ytypes
+     * @param {Array<AbstractType<any>> | AbstractType<any>} ytypes
      */
     addToScope (ytypes) {
-      const tmpSet = new Set(this.scope);
       ytypes = isArray(ytypes) ? ytypes : [ytypes];
       ytypes.forEach(ytype => {
-        if (!tmpSet.has(ytype)) {
-          tmpSet.add(ytype);
-          if (ytype instanceof AbstractType ? ytype.doc !== this.doc : ytype !== this.doc) warn('[yjs#509] Not same Y.Doc'); // use MultiDocUndoManager instead. also see https://github.com/yjs/yjs/issues/509
+        if (this.scope.every(yt => yt !== ytype)) {
+          if (ytype.doc !== this.doc) warn('[yjs#509] Not same Y.Doc'); // use MultiDocUndoManager instead. also see https://github.com/yjs/yjs/issues/509
           this.scope.push(ytype);
         }
       });
@@ -34327,7 +38272,7 @@
        */
       this._changes = null;
       /**
-       * @type {null | Map<string, { action: 'add' | 'update' | 'delete', oldValue: any }>}
+       * @type {null | Map<string, { action: 'add' | 'update' | 'delete', oldValue: any, newValue: any }>}
        */
       this._keys = null;
       /**
@@ -34370,7 +38315,7 @@
     }
 
     /**
-     * @type {Map<string, { action: 'add' | 'update' | 'delete', oldValue: any }>}
+     * @type {Map<string, { action: 'add' | 'update' | 'delete', oldValue: any, newValue: any }>}
      */
     get keys () {
       if (this._keys === null) {
@@ -34552,8 +38497,8 @@
         let i = 0;
         let c = /** @type {AbstractType<any>} */ (child._item.parent)._start;
         while (c !== child._item && c !== null) {
-          if (!c.deleted && c.countable) {
-            i += c.length;
+          if (!c.deleted) {
+            i++;
           }
           c = c.right;
         }
@@ -34563,11 +38508,6 @@
     }
     return path
   };
-
-  /**
-   * https://docs.yjs.dev/getting-started/working-with-shared-types#caveats
-   */
-  const warnPrematureAccess = () => { warn('Invalid access: Add Yjs type to a document before reading data.'); };
 
   const maxSearchMarker = 80;
 
@@ -34700,11 +38640,11 @@
     //   }
     // }
     // if (marker) {
-    //   if (window.lengths == null) {
-    //     window.lengths = []
-    //     window.getLengths = () => window.lengths.sort((a, b) => a - b)
+    //   if (window.lengthes == null) {
+    //     window.lengthes = []
+    //     window.getLengthes = () => window.lengthes.sort((a, b) => a - b)
     //   }
-    //   window.lengths.push(marker.index - pindex)
+    //   window.lengthes.push(marker.index - pindex)
     //   console.log('distance', marker.index - pindex, 'len', p && p.parent.length)
     // }
     if (marker !== null && abs(marker.index - pindex) < /** @type {YText|YArray<any>} */ (p.parent).length / maxSearchMarker) {
@@ -34943,7 +38883,6 @@
    * @function
    */
   const typeListSlice = (type, start, end) => {
-    type.doc ?? warnPrematureAccess();
     if (start < 0) {
       start = type._length + start;
     }
@@ -34979,7 +38918,6 @@
    * @function
    */
   const typeListToArray = type => {
-    type.doc ?? warnPrematureAccess();
     const cs = [];
     let n = type._start;
     while (n !== null) {
@@ -35029,7 +38967,6 @@
   const typeListForEach = (type, f) => {
     let index = 0;
     let n = type._start;
-    type.doc ?? warnPrematureAccess();
     while (n !== null) {
       if (n.countable && !n.deleted) {
         const c = n.content.getContent();
@@ -35119,7 +39056,6 @@
    * @function
    */
   const typeListGet = (type, index) => {
-    type.doc ?? warnPrematureAccess();
     const marker = findMarker(type, index);
     let n = type._start;
     if (marker !== null) {
@@ -35254,7 +39190,7 @@
 
   /**
    * Pushing content is special as we generally want to push after the last item. So we don't have to update
-   * the search marker.
+   * the serach marker.
    *
    * @param {Transaction} transaction
    * @param {AbstractType<any>} parent
@@ -35360,8 +39296,6 @@
         case Boolean:
         case Array:
         case String:
-        case Date:
-        case BigInt:
           content = new ContentAny([value]);
           break
         case Uint8Array:
@@ -35390,7 +39324,6 @@
    * @function
    */
   const typeMapGet = (parent, key) => {
-    parent.doc ?? warnPrematureAccess();
     const val = parent._map.get(key);
     return val !== undefined && !val.deleted ? val.content.getContent()[val.length - 1] : undefined
   };
@@ -35407,7 +39340,6 @@
      * @type {Object<string,any>}
      */
     const res = {};
-    parent.doc ?? warnPrematureAccess();
     parent._map.forEach((value, key) => {
       if (!value.deleted) {
         res[key] = value.content.getContent()[value.length - 1];
@@ -35425,7 +39357,6 @@
    * @function
    */
   const typeMapHas = (parent, key) => {
-    parent.doc ?? warnPrematureAccess();
     const val = parent._map.get(key);
     return val !== undefined && !val.deleted
   };
@@ -35459,16 +39390,13 @@
   };
 
   /**
-   * @param {AbstractType<any> & { _map: Map<string, Item> }} type
+   * @param {Map<string,Item>} map
    * @return {IterableIterator<Array<any>>}
    *
    * @private
    * @function
    */
-  const createMapIterator = type => {
-    type.doc ?? warnPrematureAccess();
-    return iteratorFilter(type._map.entries(), /** @param {any} entry */ entry => !entry[1].deleted)
-  };
+  const createMapIterator = map => iteratorFilter(map.entries(), /** @param {any} entry */ entry => !entry[1].deleted);
 
   /**
    * @module YArray
@@ -35480,7 +39408,16 @@
    * @template T
    * @extends YEvent<YArray<T>>
    */
-  class YArrayEvent extends YEvent {}
+  class YArrayEvent extends YEvent {
+    /**
+     * @param {YArray<T>} yarray The changed type
+     * @param {Transaction} transaction The transaction object
+     */
+    constructor (yarray, transaction) {
+      super(yarray, transaction);
+      this._transaction = transaction;
+    }
+  }
 
   /**
    * A shared Array implementation.
@@ -35559,8 +39496,7 @@
     }
 
     get length () {
-      this.doc ?? warnPrematureAccess();
-      return this._length
+      return this._prelimContent === null ? this._length : this._prelimContent.length
     }
 
     /**
@@ -35618,9 +39554,9 @@
     }
 
     /**
-     * Prepends content to this YArray.
+     * Preppends content to this YArray.
      *
-     * @param {Array<T>} content Array of content to prepend.
+     * @param {Array<T>} content Array of content to preppend.
      */
     unshift (content) {
       this.insert(0, content);
@@ -35662,8 +39598,7 @@
     }
 
     /**
-     * Returns a portion of this YArray into a JavaScript Array selected
-     * from start to end (end not included).
+     * Transforms this YArray to a JavaScript Array.
      *
      * @param {number} [start]
      * @param {number} [end]
@@ -35835,7 +39770,6 @@
      * @return {Object<string,any>}
      */
     toJSON () {
-      this.doc ?? warnPrematureAccess();
       /**
        * @type {Object<string,MapType>}
        */
@@ -35855,7 +39789,7 @@
      * @return {number}
      */
     get size () {
-      return [...createMapIterator(this)].length
+      return [...createMapIterator(this._map)].length
     }
 
     /**
@@ -35864,7 +39798,7 @@
      * @return {IterableIterator<string>}
      */
     keys () {
-      return iteratorMap(createMapIterator(this), /** @param {any} v */ v => v[0])
+      return iteratorMap(createMapIterator(this._map), /** @param {any} v */ v => v[0])
     }
 
     /**
@@ -35873,7 +39807,7 @@
      * @return {IterableIterator<MapType>}
      */
     values () {
-      return iteratorMap(createMapIterator(this), /** @param {any} v */ v => v[1].content.getContent()[v[1].length - 1])
+      return iteratorMap(createMapIterator(this._map), /** @param {any} v */ v => v[1].content.getContent()[v[1].length - 1])
     }
 
     /**
@@ -35882,7 +39816,7 @@
      * @return {IterableIterator<[string, MapType]>}
      */
     entries () {
-      return iteratorMap(createMapIterator(this), /** @param {any} v */ v => /** @type {any} */ ([v[0], v[1].content.getContent()[v[1].length - 1]]))
+      return iteratorMap(createMapIterator(this._map), /** @param {any} v */ v => /** @type {any} */ ([v[0], v[1].content.getContent()[v[1].length - 1]]))
     }
 
     /**
@@ -35891,7 +39825,6 @@
      * @param {function(MapType,string,YMap<MapType>):void} f A function to execute on every element of this YArray.
      */
     forEach (f) {
-      this.doc ?? warnPrematureAccess();
       this._map.forEach((item, key) => {
         if (!item.deleted) {
           f(item.content.getContent()[item.length - 1], key, this);
@@ -36440,7 +40373,7 @@
   };
 
   /**
-   * This will be called by the transaction once the event handlers are called to potentially cleanup
+   * This will be called by the transction once the event handlers are called to potentially cleanup
    * formatting attributes.
    *
    * @param {Transaction} transaction
@@ -36530,7 +40463,7 @@
 
   /**
    * The Quill Delta format represents changes on a text document with
-   * formatting information. For more information visit {@link https://quilljs.com/docs/delta/|Quill Delta}
+   * formatting information. For mor information visit {@link https://quilljs.com/docs/delta/|Quill Delta}
    *
    * @example
    *   {
@@ -36838,7 +40771,6 @@
      * @type {number}
      */
     get length () {
-      this.doc ?? warnPrematureAccess();
       return this._length
     }
 
@@ -36895,7 +40827,6 @@
      * @public
      */
     toString () {
-      this.doc ?? warnPrematureAccess();
       let str = '';
       /**
        * @type {Item|null}
@@ -36923,7 +40854,7 @@
     /**
      * Apply a {@link Delta} on this shared YText type.
      *
-     * @param {Array<any>} delta The changes to apply on this element.
+     * @param {any} delta The changes to apply on this element.
      * @param {object}  opts
      * @param {boolean} [opts.sanitize] Sanitize input delta. Removes ending newlines if set to true.
      *
@@ -36969,7 +40900,6 @@
      * @public
      */
     toDelta (snapshot, prevSnapshot, computeYChange) {
-      this.doc ?? warnPrematureAccess();
       /**
        * @type{Array<any>}
        */
@@ -37307,7 +41237,6 @@
        */
       this._currentNode = /** @type {Item} */ (root._start);
       this._firstCall = true;
-      root.doc ?? warnPrematureAccess();
     }
 
     [Symbol.iterator] () {
@@ -37336,12 +41265,8 @@
           } else {
             // walk right or up in the tree
             while (n !== null) {
-              /**
-               * @type {Item | null}
-               */
-              const nxt = n.next;
-              if (nxt !== null) {
-                n = nxt;
+              if (n.right !== null) {
+                n = n.right;
                 break
               } else if (n.parent === this._root) {
                 n = null;
@@ -37423,7 +41348,6 @@
     }
 
     get length () {
-      this.doc ?? warnPrematureAccess();
       return this._prelimContent === null ? this._length : this._prelimContent.length
     }
 
@@ -37627,9 +41551,9 @@
     }
 
     /**
-     * Prepends content to this YArray.
+     * Preppends content to this YArray.
      *
-     * @param {Array<YXmlElement|YXmlText>} content Array of content to prepend.
+     * @param {Array<YXmlElement|YXmlText>} content Array of content to preppend.
      */
     unshift (content) {
       this.insert(0, content);
@@ -37646,8 +41570,7 @@
     }
 
     /**
-     * Returns a portion of this YXmlFragment into a JavaScript Array selected
-     * from start to end (end not included).
+     * Transforms this YArray to a JavaScript Array.
      *
      * @param {number} [start]
      * @param {number} [end]
@@ -37768,10 +41691,12 @@
       const el = new YXmlElement(this.nodeName);
       const attrs = this.getAttributes();
       forEach(attrs, (value, key) => {
-        el.setAttribute(key, /** @type {any} */ (value));
+        if (typeof value === 'string') {
+          el.setAttribute(key, value);
+        }
       });
       // @ts-ignore
-      el.insert(0, this.toArray().map(v => v instanceof AbstractType ? v.clone() : v));
+      el.insert(0, this.toArray().map(item => item instanceof AbstractType ? item.clone() : item));
       return el
     }
 
@@ -37942,7 +41867,7 @@
      * @param {YXmlElement|YXmlText|YXmlFragment} target The target on which the event is created.
      * @param {Set<string|null>} subs The set of changed attributes. `null` is included if the
      *                   child list changed.
-     * @param {Transaction} transaction The transaction instance with which the
+     * @param {Transaction} transaction The transaction instance with wich the
      *                                  change was created.
      */
     constructor (target, subs, transaction) {
@@ -38202,7 +42127,7 @@
      * This method is already assuming that `this.id.clock + this.length === this.id.clock`.
      * Also this method does *not* remove right from StructStore!
      * @param {AbstractStruct} right
-     * @return {boolean} whether this merged with right
+     * @return {boolean} wether this merged with right
      */
     mergeWith (right) {
       return false
@@ -38905,8 +42830,6 @@
     return new ContentJSON(cs)
   };
 
-  const isDevMode = getVariable('node_env') === 'development';
-
   class ContentAny {
     /**
      * @param {Array<any>} arr
@@ -38916,7 +42839,6 @@
        * @type {Array<any>}
        */
       this.arr = arr;
-      isDevMode && deepFreeze(arr);
     }
 
     /**
@@ -39645,7 +43567,8 @@
         if (this.left && this.left.constructor === Item) {
           this.parent = this.left.parent;
           this.parentSub = this.left.parentSub;
-        } else if (this.right && this.right.constructor === Item) {
+        }
+        if (this.right && this.right.constructor === Item) {
           this.parent = this.right.parent;
           this.parentSub = this.right.parentSub;
         }
@@ -40359,18 +44282,11 @@
 
   var simplepeer_min = {exports: {}};
 
-  var hasRequiredSimplepeer_min;
+  (function (module, exports) {
+  	(function(e){module.exports=e();})(function(){var t=Math.floor,n=Math.abs,r=Math.pow;return function(){function d(s,e,n){function t(o,i){if(!e[o]){if(!s[o]){var l="function"==typeof commonjsRequire&&commonjsRequire;if(!i&&l)return l(o,true);if(r)return r(o,true);var c=new Error("Cannot find module '"+o+"'");throw c.code="MODULE_NOT_FOUND",c}var a=e[o]={exports:{}};s[o][0].call(a.exports,function(e){var r=s[o][1][e];return t(r||e)},a,a.exports,d,s,e,n);}return e[o].exports}for(var r="function"==typeof commonjsRequire&&commonjsRequire,a=0;a<n.length;a++)t(n[a]);return t}return d}()({1:[function(e,t,n){function r(e){var t=e.length;if(0<t%4)throw new Error("Invalid string. Length must be a multiple of 4");var n=e.indexOf("=");-1===n&&(n=t);var r=n===t?0:4-n%4;return [n,r]}function a(e,t,n){return 3*(t+n)/4-n}function o(e){var t,n,o=r(e),d=o[0],s=o[1],l=new p(a(e,d,s)),c=0,f=0<s?d-4:d;for(n=0;n<f;n+=4)t=u[e.charCodeAt(n)]<<18|u[e.charCodeAt(n+1)]<<12|u[e.charCodeAt(n+2)]<<6|u[e.charCodeAt(n+3)],l[c++]=255&t>>16,l[c++]=255&t>>8,l[c++]=255&t;return 2===s&&(t=u[e.charCodeAt(n)]<<2|u[e.charCodeAt(n+1)]>>4,l[c++]=255&t),1===s&&(t=u[e.charCodeAt(n)]<<10|u[e.charCodeAt(n+1)]<<4|u[e.charCodeAt(n+2)]>>2,l[c++]=255&t>>8,l[c++]=255&t),l}function d(e){return c[63&e>>18]+c[63&e>>12]+c[63&e>>6]+c[63&e]}function s(e,t,n){for(var r,a=[],o=t;o<n;o+=3)r=(16711680&e[o]<<16)+(65280&e[o+1]<<8)+(255&e[o+2]),a.push(d(r));return a.join("")}function l(e){for(var t,n=e.length,r=n%3,a=[],o=16383,d=0,l=n-r;d<l;d+=o)a.push(s(e,d,d+o>l?l:d+o));return 1===r?(t=e[n-1],a.push(c[t>>2]+c[63&t<<4]+"==")):2===r&&(t=(e[n-2]<<8)+e[n-1],a.push(c[t>>10]+c[63&t>>4]+c[63&t<<2]+"=")),a.join("")}n.byteLength=function(e){var t=r(e),n=t[0],a=t[1];return 3*(n+a)/4-a},n.toByteArray=o,n.fromByteArray=l;for(var c=[],u=[],p="undefined"==typeof Uint8Array?Array:Uint8Array,f="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/",g=0,_=f.length;g<_;++g)c[g]=f[g],u[f.charCodeAt(g)]=g;u[45]=62,u[95]=63;},{}],2:[function(){},{}],3:[function(e,t,n){(function(){(function(){var t=String.fromCharCode,o=Math.min;function d(e){if(2147483647<e)throw new RangeError("The value \""+e+"\" is invalid for option \"size\"");var t=new Uint8Array(e);return t.__proto__=s.prototype,t}function s(e,t,n){if("number"==typeof e){if("string"==typeof t)throw new TypeError("The \"string\" argument must be of type string. Received type number");return p(e)}return l(e,t,n)}function l(e,t,n){if("string"==typeof e)return f(e,t);if(ArrayBuffer.isView(e))return g(e);if(null==e)throw TypeError("The first argument must be one of type string, Buffer, ArrayBuffer, Array, or Array-like Object. Received type "+typeof e);if(K(e,ArrayBuffer)||e&&K(e.buffer,ArrayBuffer))return _(e,t,n);if("number"==typeof e)throw new TypeError("The \"value\" argument must not be of type number. Received type number");var r=e.valueOf&&e.valueOf();if(null!=r&&r!==e)return s.from(r,t,n);var a=h(e);if(a)return a;if("undefined"!=typeof Symbol&&null!=Symbol.toPrimitive&&"function"==typeof e[Symbol.toPrimitive])return s.from(e[Symbol.toPrimitive]("string"),t,n);throw new TypeError("The first argument must be one of type string, Buffer, ArrayBuffer, Array, or Array-like Object. Received type "+typeof e)}function c(e){if("number"!=typeof e)throw new TypeError("\"size\" argument must be of type number");else if(0>e)throw new RangeError("The value \""+e+"\" is invalid for option \"size\"")}function u(e,t,n){return c(e),0>=e?d(e):void 0===t?d(e):"string"==typeof n?d(e).fill(t,n):d(e).fill(t)}function p(e){return c(e),d(0>e?0:0|m(e))}function f(e,t){if(("string"!=typeof t||""===t)&&(t="utf8"),!s.isEncoding(t))throw new TypeError("Unknown encoding: "+t);var n=0|b(e,t),r=d(n),a=r.write(e,t);return a!==n&&(r=r.slice(0,a)),r}function g(e){for(var t=0>e.length?0:0|m(e.length),n=d(t),r=0;r<t;r+=1)n[r]=255&e[r];return n}function _(e,t,n){if(0>t||e.byteLength<t)throw new RangeError("\"offset\" is outside of buffer bounds");if(e.byteLength<t+(n||0))throw new RangeError("\"length\" is outside of buffer bounds");var r;return r=void 0===t&&void 0===n?new Uint8Array(e):void 0===n?new Uint8Array(e,t):new Uint8Array(e,t,n),r.__proto__=s.prototype,r}function h(e){if(s.isBuffer(e)){var t=0|m(e.length),n=d(t);return 0===n.length?n:(e.copy(n,0,0,t),n)}return void 0===e.length?"Buffer"===e.type&&Array.isArray(e.data)?g(e.data):void 0:"number"!=typeof e.length||X(e.length)?d(0):g(e)}function m(e){if(e>=2147483647)throw new RangeError("Attempt to allocate Buffer larger than maximum size: 0x"+2147483647 .toString(16)+" bytes");return 0|e}function b(e,t){if(s.isBuffer(e))return e.length;if(ArrayBuffer.isView(e)||K(e,ArrayBuffer))return e.byteLength;if("string"!=typeof e)throw new TypeError("The \"string\" argument must be one of type string, Buffer, or ArrayBuffer. Received type "+typeof e);var n=e.length,r=2<arguments.length&&true===arguments[2];if(!r&&0===n)return 0;for(var a=false;;)switch(t){case "ascii":case "latin1":case "binary":return n;case "utf8":case "utf-8":return H(e).length;case "ucs2":case "ucs-2":case "utf16le":case "utf-16le":return 2*n;case "hex":return n>>>1;case "base64":return z(e).length;default:if(a)return r?-1:H(e).length;t=(""+t).toLowerCase(),a=true;}}function y(e,t,n){var r=false;if((void 0===t||0>t)&&(t=0),t>this.length)return "";if((void 0===n||n>this.length)&&(n=this.length),0>=n)return "";if(n>>>=0,t>>>=0,n<=t)return "";for(e||(e="utf8");;)switch(e){case "hex":return P(this,t,n);case "utf8":case "utf-8":return x(this,t,n);case "ascii":return D(this,t,n);case "latin1":case "binary":return I(this,t,n);case "base64":return A(this,t,n);case "ucs2":case "ucs-2":case "utf16le":case "utf-16le":return M(this,t,n);default:if(r)throw new TypeError("Unknown encoding: "+e);e=(e+"").toLowerCase(),r=true;}}function C(e,t,n){var r=e[t];e[t]=e[n],e[n]=r;}function R(e,t,n,r,a){if(0===e.length)return  -1;if("string"==typeof n?(r=n,n=0):2147483647<n?n=2147483647:-2147483648>n&&(n=-2147483648),n=+n,X(n)&&(n=a?0:e.length-1),0>n&&(n=e.length+n),n>=e.length){if(a)return  -1;n=e.length-1;}else if(0>n)if(a)n=0;else return  -1;if("string"==typeof t&&(t=s.from(t,r)),s.isBuffer(t))return 0===t.length?-1:E(e,t,n,r,a);if("number"==typeof t)return t&=255,"function"==typeof Uint8Array.prototype.indexOf?a?Uint8Array.prototype.indexOf.call(e,t,n):Uint8Array.prototype.lastIndexOf.call(e,t,n):E(e,[t],n,r,a);throw new TypeError("val must be string, number or Buffer")}function E(e,t,n,r,a){function o(e,t){return 1===d?e[t]:e.readUInt16BE(t*d)}var d=1,s=e.length,l=t.length;if(void 0!==r&&(r=(r+"").toLowerCase(),"ucs2"===r||"ucs-2"===r||"utf16le"===r||"utf-16le"===r)){if(2>e.length||2>t.length)return  -1;d=2,s/=2,l/=2,n/=2;}var c;if(a){var u=-1;for(c=n;c<s;c++)if(o(e,c)!==o(t,-1===u?0:c-u)) -1!==u&&(c-=c-u),u=-1;else if(-1===u&&(u=c),c-u+1===l)return u*d}else for(n+l>s&&(n=s-l),c=n;0<=c;c--){for(var p=true,f=0;f<l;f++)if(o(e,c+f)!==o(t,f)){p=false;break}if(p)return c}return  -1}function w(e,t,n,r){n=+n||0;var a=e.length-n;r?(r=+r,r>a&&(r=a)):r=a;var o=t.length;r>o/2&&(r=o/2);for(var d,s=0;s<r;++s){if(d=parseInt(t.substr(2*s,2),16),X(d))return s;e[n+s]=d;}return s}function S(e,t,n,r){return G(H(t,e.length-n),e,n,r)}function T(e,t,n,r){return G(Y(t),e,n,r)}function v(e,t,n,r){return T(e,t,n,r)}function k(e,t,n,r){return G(z(t),e,n,r)}function L(e,t,n,r){return G(V(t,e.length-n),e,n,r)}function A(e,t,n){return 0===t&&n===e.length?$.fromByteArray(e):$.fromByteArray(e.slice(t,n))}function x(e,t,n){n=o(e.length,n);for(var r=[],a=t;a<n;){var d=e[a],s=null,l=239<d?4:223<d?3:191<d?2:1;if(a+l<=n){var c,u,p,f;1===l?128>d&&(s=d):2===l?(c=e[a+1],128==(192&c)&&(f=(31&d)<<6|63&c,127<f&&(s=f))):3===l?(c=e[a+1],u=e[a+2],128==(192&c)&&128==(192&u)&&(f=(15&d)<<12|(63&c)<<6|63&u,2047<f&&(55296>f||57343<f)&&(s=f))):4===l?(c=e[a+1],u=e[a+2],p=e[a+3],128==(192&c)&&128==(192&u)&&128==(192&p)&&(f=(15&d)<<18|(63&c)<<12|(63&u)<<6|63&p,65535<f&&1114112>f&&(s=f))):void 0;}null===s?(s=65533,l=1):65535<s&&(s-=65536,r.push(55296|1023&s>>>10),s=56320|1023&s),r.push(s),a+=l;}return N(r)}function N(e){var n=e.length;if(n<=4096)return t.apply(String,e);for(var r="",a=0;a<n;)r+=t.apply(String,e.slice(a,a+=4096));return r}function D(e,n,r){var a="";r=o(e.length,r);for(var d=n;d<r;++d)a+=t(127&e[d]);return a}function I(e,n,r){var a="";r=o(e.length,r);for(var d=n;d<r;++d)a+=t(e[d]);return a}function P(e,t,n){var r=e.length;(!t||0>t)&&(t=0),(!n||0>n||n>r)&&(n=r);for(var a="",o=t;o<n;++o)a+=W(e[o]);return a}function M(e,n,r){for(var a=e.slice(n,r),o="",d=0;d<a.length;d+=2)o+=t(a[d]+256*a[d+1]);return o}function O(e,t,n){if(0!=e%1||0>e)throw new RangeError("offset is not uint");if(e+t>n)throw new RangeError("Trying to access beyond buffer length")}function F(e,t,n,r,a,o){if(!s.isBuffer(e))throw new TypeError("\"buffer\" argument must be a Buffer instance");if(t>a||t<o)throw new RangeError("\"value\" argument is out of bounds");if(n+r>e.length)throw new RangeError("Index out of range")}function B(e,t,n,r){if(n+r>e.length)throw new RangeError("Index out of range");if(0>n)throw new RangeError("Index out of range")}function U(e,t,n,r,a){return t=+t,n>>>=0,a||B(e,t,n,4),J.write(e,t,n,r,23,4),n+4}function j(e,t,n,r,a){return t=+t,n>>>=0,a||B(e,t,n,8),J.write(e,t,n,r,52,8),n+8}function q(e){if(e=e.split("=")[0],e=e.trim().replace(Q,""),2>e.length)return "";for(;0!=e.length%4;)e+="=";return e}function W(e){return 16>e?"0"+e.toString(16):e.toString(16)}function H(e,t){t=t||1/0;for(var n,r=e.length,a=null,o=[],d=0;d<r;++d){if(n=e.charCodeAt(d),55295<n&&57344>n){if(!a){if(56319<n){ -1<(t-=3)&&o.push(239,191,189);continue}else if(d+1===r){ -1<(t-=3)&&o.push(239,191,189);continue}a=n;continue}if(56320>n){ -1<(t-=3)&&o.push(239,191,189),a=n;continue}n=(a-55296<<10|n-56320)+65536;}else a&&-1<(t-=3)&&o.push(239,191,189);if(a=null,128>n){if(0>(t-=1))break;o.push(n);}else if(2048>n){if(0>(t-=2))break;o.push(192|n>>6,128|63&n);}else if(65536>n){if(0>(t-=3))break;o.push(224|n>>12,128|63&n>>6,128|63&n);}else if(1114112>n){if(0>(t-=4))break;o.push(240|n>>18,128|63&n>>12,128|63&n>>6,128|63&n);}else throw new Error("Invalid code point")}return o}function Y(e){for(var t=[],n=0;n<e.length;++n)t.push(255&e.charCodeAt(n));return t}function V(e,t){for(var n,r,a,o=[],d=0;d<e.length&&!(0>(t-=2));++d)n=e.charCodeAt(d),r=n>>8,a=n%256,o.push(a),o.push(r);return o}function z(e){return $.toByteArray(q(e))}function G(e,t,n,r){for(var a=0;a<r&&!(a+n>=t.length||a>=e.length);++a)t[a+n]=e[a];return a}function K(e,t){return e instanceof t||null!=e&&null!=e.constructor&&null!=e.constructor.name&&e.constructor.name===t.name}function X(e){return e!==e}var $=e("base64-js"),J=e("ieee754");n.Buffer=s,n.SlowBuffer=function(e){return +e!=e&&(e=0),s.alloc(+e)},n.INSPECT_MAX_BYTES=50;n.kMaxLength=2147483647,s.TYPED_ARRAY_SUPPORT=function(){try{var e=new Uint8Array(1);return e.__proto__={__proto__:Uint8Array.prototype,foo:function(){return 42}},42===e.foo()}catch(t){return  false}}(),s.TYPED_ARRAY_SUPPORT||"undefined"==typeof console||"function"!=typeof console.error||console.error("This browser lacks typed array (Uint8Array) support which is required by `buffer` v5.x. Use `buffer` v4.x if you require old browser support."),Object.defineProperty(s.prototype,"parent",{enumerable:true,get:function(){return s.isBuffer(this)?this.buffer:void 0}}),Object.defineProperty(s.prototype,"offset",{enumerable:true,get:function(){return s.isBuffer(this)?this.byteOffset:void 0}}),"undefined"!=typeof Symbol&&null!=Symbol.species&&s[Symbol.species]===s&&Object.defineProperty(s,Symbol.species,{value:null,configurable:true,enumerable:false,writable:false}),s.poolSize=8192,s.from=function(e,t,n){return l(e,t,n)},s.prototype.__proto__=Uint8Array.prototype,s.__proto__=Uint8Array,s.alloc=function(e,t,n){return u(e,t,n)},s.allocUnsafe=function(e){return p(e)},s.allocUnsafeSlow=function(e){return p(e)},s.isBuffer=function(e){return null!=e&&true===e._isBuffer&&e!==s.prototype},s.compare=function(e,t){if(K(e,Uint8Array)&&(e=s.from(e,e.offset,e.byteLength)),K(t,Uint8Array)&&(t=s.from(t,t.offset,t.byteLength)),!s.isBuffer(e)||!s.isBuffer(t))throw new TypeError("The \"buf1\", \"buf2\" arguments must be one of type Buffer or Uint8Array");if(e===t)return 0;for(var n=e.length,r=t.length,d=0,l=o(n,r);d<l;++d)if(e[d]!==t[d]){n=e[d],r=t[d];break}return n<r?-1:r<n?1:0},s.isEncoding=function(e){switch((e+"").toLowerCase()){case "hex":case "utf8":case "utf-8":case "ascii":case "latin1":case "binary":case "base64":case "ucs2":case "ucs-2":case "utf16le":case "utf-16le":return  true;default:return  false;}},s.concat=function(e,t){if(!Array.isArray(e))throw new TypeError("\"list\" argument must be an Array of Buffers");if(0===e.length)return s.alloc(0);var n;if(t===void 0)for(t=0,n=0;n<e.length;++n)t+=e[n].length;var r=s.allocUnsafe(t),a=0;for(n=0;n<e.length;++n){var o=e[n];if(K(o,Uint8Array)&&(o=s.from(o)),!s.isBuffer(o))throw new TypeError("\"list\" argument must be an Array of Buffers");o.copy(r,a),a+=o.length;}return r},s.byteLength=b,s.prototype._isBuffer=true,s.prototype.swap16=function(){var e=this.length;if(0!=e%2)throw new RangeError("Buffer size must be a multiple of 16-bits");for(var t=0;t<e;t+=2)C(this,t,t+1);return this},s.prototype.swap32=function(){var e=this.length;if(0!=e%4)throw new RangeError("Buffer size must be a multiple of 32-bits");for(var t=0;t<e;t+=4)C(this,t,t+3),C(this,t+1,t+2);return this},s.prototype.swap64=function(){var e=this.length;if(0!=e%8)throw new RangeError("Buffer size must be a multiple of 64-bits");for(var t=0;t<e;t+=8)C(this,t,t+7),C(this,t+1,t+6),C(this,t+2,t+5),C(this,t+3,t+4);return this},s.prototype.toString=function(){var e=this.length;return 0===e?"":0===arguments.length?x(this,0,e):y.apply(this,arguments)},s.prototype.toLocaleString=s.prototype.toString,s.prototype.equals=function(e){if(!s.isBuffer(e))throw new TypeError("Argument must be a Buffer");return this===e||0===s.compare(this,e)},s.prototype.inspect=function(){var e="",t=n.INSPECT_MAX_BYTES;return e=this.toString("hex",0,t).replace(/(.{2})/g,"$1 ").trim(),this.length>t&&(e+=" ... "),"<Buffer "+e+">"},s.prototype.compare=function(e,t,n,r,a){if(K(e,Uint8Array)&&(e=s.from(e,e.offset,e.byteLength)),!s.isBuffer(e))throw new TypeError("The \"target\" argument must be one of type Buffer or Uint8Array. Received type "+typeof e);if(void 0===t&&(t=0),void 0===n&&(n=e?e.length:0),void 0===r&&(r=0),void 0===a&&(a=this.length),0>t||n>e.length||0>r||a>this.length)throw new RangeError("out of range index");if(r>=a&&t>=n)return 0;if(r>=a)return  -1;if(t>=n)return 1;if(t>>>=0,n>>>=0,r>>>=0,a>>>=0,this===e)return 0;for(var d=a-r,l=n-t,c=o(d,l),u=this.slice(r,a),p=e.slice(t,n),f=0;f<c;++f)if(u[f]!==p[f]){d=u[f],l=p[f];break}return d<l?-1:l<d?1:0},s.prototype.includes=function(e,t,n){return  -1!==this.indexOf(e,t,n)},s.prototype.indexOf=function(e,t,n){return R(this,e,t,n,true)},s.prototype.lastIndexOf=function(e,t,n){return R(this,e,t,n,false)},s.prototype.write=function(e,t,n,r){if(void 0===t)r="utf8",n=this.length,t=0;else if(void 0===n&&"string"==typeof t)r=t,n=this.length,t=0;else if(isFinite(t))t>>>=0,isFinite(n)?(n>>>=0,void 0===r&&(r="utf8")):(r=n,n=void 0);else throw new Error("Buffer.write(string, encoding, offset[, length]) is no longer supported");var a=this.length-t;if((void 0===n||n>a)&&(n=a),0<e.length&&(0>n||0>t)||t>this.length)throw new RangeError("Attempt to write outside buffer bounds");r||(r="utf8");for(var o=false;;)switch(r){case "hex":return w(this,e,t,n);case "utf8":case "utf-8":return S(this,e,t,n);case "ascii":return T(this,e,t,n);case "latin1":case "binary":return v(this,e,t,n);case "base64":return k(this,e,t,n);case "ucs2":case "ucs-2":case "utf16le":case "utf-16le":return L(this,e,t,n);default:if(o)throw new TypeError("Unknown encoding: "+r);r=(""+r).toLowerCase(),o=true;}},s.prototype.toJSON=function(){return {type:"Buffer",data:Array.prototype.slice.call(this._arr||this,0)}};s.prototype.slice=function(e,t){var n=this.length;e=~~e,t=t===void 0?n:~~t,0>e?(e+=n,0>e&&(e=0)):e>n&&(e=n),0>t?(t+=n,0>t&&(t=0)):t>n&&(t=n),t<e&&(t=e);var r=this.subarray(e,t);return r.__proto__=s.prototype,r},s.prototype.readUIntLE=function(e,t,n){e>>>=0,t>>>=0,n||O(e,t,this.length);for(var r=this[e],a=1,o=0;++o<t&&(a*=256);)r+=this[e+o]*a;return r},s.prototype.readUIntBE=function(e,t,n){e>>>=0,t>>>=0,n||O(e,t,this.length);for(var r=this[e+--t],a=1;0<t&&(a*=256);)r+=this[e+--t]*a;return r},s.prototype.readUInt8=function(e,t){return e>>>=0,t||O(e,1,this.length),this[e]},s.prototype.readUInt16LE=function(e,t){return e>>>=0,t||O(e,2,this.length),this[e]|this[e+1]<<8},s.prototype.readUInt16BE=function(e,t){return e>>>=0,t||O(e,2,this.length),this[e]<<8|this[e+1]},s.prototype.readUInt32LE=function(e,t){return e>>>=0,t||O(e,4,this.length),(this[e]|this[e+1]<<8|this[e+2]<<16)+16777216*this[e+3]},s.prototype.readUInt32BE=function(e,t){return e>>>=0,t||O(e,4,this.length),16777216*this[e]+(this[e+1]<<16|this[e+2]<<8|this[e+3])},s.prototype.readIntLE=function(e,t,n){e>>>=0,t>>>=0,n||O(e,t,this.length);for(var a=this[e],o=1,d=0;++d<t&&(o*=256);)a+=this[e+d]*o;return o*=128,a>=o&&(a-=r(2,8*t)),a},s.prototype.readIntBE=function(e,t,n){e>>>=0,t>>>=0,n||O(e,t,this.length);for(var a=t,o=1,d=this[e+--a];0<a&&(o*=256);)d+=this[e+--a]*o;return o*=128,d>=o&&(d-=r(2,8*t)),d},s.prototype.readInt8=function(e,t){return e>>>=0,t||O(e,1,this.length),128&this[e]?-1*(255-this[e]+1):this[e]},s.prototype.readInt16LE=function(e,t){e>>>=0,t||O(e,2,this.length);var n=this[e]|this[e+1]<<8;return 32768&n?4294901760|n:n},s.prototype.readInt16BE=function(e,t){e>>>=0,t||O(e,2,this.length);var n=this[e+1]|this[e]<<8;return 32768&n?4294901760|n:n},s.prototype.readInt32LE=function(e,t){return e>>>=0,t||O(e,4,this.length),this[e]|this[e+1]<<8|this[e+2]<<16|this[e+3]<<24},s.prototype.readInt32BE=function(e,t){return e>>>=0,t||O(e,4,this.length),this[e]<<24|this[e+1]<<16|this[e+2]<<8|this[e+3]},s.prototype.readFloatLE=function(e,t){return e>>>=0,t||O(e,4,this.length),J.read(this,e,true,23,4)},s.prototype.readFloatBE=function(e,t){return e>>>=0,t||O(e,4,this.length),J.read(this,e,false,23,4)},s.prototype.readDoubleLE=function(e,t){return e>>>=0,t||O(e,8,this.length),J.read(this,e,true,52,8)},s.prototype.readDoubleBE=function(e,t){return e>>>=0,t||O(e,8,this.length),J.read(this,e,false,52,8)},s.prototype.writeUIntLE=function(e,t,n,a){if(e=+e,t>>>=0,n>>>=0,!a){var o=r(2,8*n)-1;F(this,e,t,n,o,0);}var d=1,s=0;for(this[t]=255&e;++s<n&&(d*=256);)this[t+s]=255&e/d;return t+n},s.prototype.writeUIntBE=function(e,t,n,a){if(e=+e,t>>>=0,n>>>=0,!a){var o=r(2,8*n)-1;F(this,e,t,n,o,0);}var d=n-1,s=1;for(this[t+d]=255&e;0<=--d&&(s*=256);)this[t+d]=255&e/s;return t+n},s.prototype.writeUInt8=function(e,t,n){return e=+e,t>>>=0,n||F(this,e,t,1,255,0),this[t]=255&e,t+1},s.prototype.writeUInt16LE=function(e,t,n){return e=+e,t>>>=0,n||F(this,e,t,2,65535,0),this[t]=255&e,this[t+1]=e>>>8,t+2},s.prototype.writeUInt16BE=function(e,t,n){return e=+e,t>>>=0,n||F(this,e,t,2,65535,0),this[t]=e>>>8,this[t+1]=255&e,t+2},s.prototype.writeUInt32LE=function(e,t,n){return e=+e,t>>>=0,n||F(this,e,t,4,4294967295,0),this[t+3]=e>>>24,this[t+2]=e>>>16,this[t+1]=e>>>8,this[t]=255&e,t+4},s.prototype.writeUInt32BE=function(e,t,n){return e=+e,t>>>=0,n||F(this,e,t,4,4294967295,0),this[t]=e>>>24,this[t+1]=e>>>16,this[t+2]=e>>>8,this[t+3]=255&e,t+4},s.prototype.writeIntLE=function(e,t,n,a){if(e=+e,t>>>=0,!a){var o=r(2,8*n-1);F(this,e,t,n,o-1,-o);}var d=0,s=1,l=0;for(this[t]=255&e;++d<n&&(s*=256);)0>e&&0===l&&0!==this[t+d-1]&&(l=1),this[t+d]=255&(e/s>>0)-l;return t+n},s.prototype.writeIntBE=function(e,t,n,a){if(e=+e,t>>>=0,!a){var o=r(2,8*n-1);F(this,e,t,n,o-1,-o);}var d=n-1,s=1,l=0;for(this[t+d]=255&e;0<=--d&&(s*=256);)0>e&&0===l&&0!==this[t+d+1]&&(l=1),this[t+d]=255&(e/s>>0)-l;return t+n},s.prototype.writeInt8=function(e,t,n){return e=+e,t>>>=0,n||F(this,e,t,1,127,-128),0>e&&(e=255+e+1),this[t]=255&e,t+1},s.prototype.writeInt16LE=function(e,t,n){return e=+e,t>>>=0,n||F(this,e,t,2,32767,-32768),this[t]=255&e,this[t+1]=e>>>8,t+2},s.prototype.writeInt16BE=function(e,t,n){return e=+e,t>>>=0,n||F(this,e,t,2,32767,-32768),this[t]=e>>>8,this[t+1]=255&e,t+2},s.prototype.writeInt32LE=function(e,t,n){return e=+e,t>>>=0,n||F(this,e,t,4,2147483647,-2147483648),this[t]=255&e,this[t+1]=e>>>8,this[t+2]=e>>>16,this[t+3]=e>>>24,t+4},s.prototype.writeInt32BE=function(e,t,n){return e=+e,t>>>=0,n||F(this,e,t,4,2147483647,-2147483648),0>e&&(e=4294967295+e+1),this[t]=e>>>24,this[t+1]=e>>>16,this[t+2]=e>>>8,this[t+3]=255&e,t+4},s.prototype.writeFloatLE=function(e,t,n){return U(this,e,t,true,n)},s.prototype.writeFloatBE=function(e,t,n){return U(this,e,t,false,n)},s.prototype.writeDoubleLE=function(e,t,n){return j(this,e,t,true,n)},s.prototype.writeDoubleBE=function(e,t,n){return j(this,e,t,false,n)},s.prototype.copy=function(e,t,n,r){if(!s.isBuffer(e))throw new TypeError("argument should be a Buffer");if(n||(n=0),r||0===r||(r=this.length),t>=e.length&&(t=e.length),t||(t=0),0<r&&r<n&&(r=n),r===n)return 0;if(0===e.length||0===this.length)return 0;if(0>t)throw new RangeError("targetStart out of bounds");if(0>n||n>=this.length)throw new RangeError("Index out of range");if(0>r)throw new RangeError("sourceEnd out of bounds");r>this.length&&(r=this.length),e.length-t<r-n&&(r=e.length-t+n);var a=r-n;if(this===e&&"function"==typeof Uint8Array.prototype.copyWithin)this.copyWithin(t,n,r);else if(this===e&&n<t&&t<r)for(var o=a-1;0<=o;--o)e[o+t]=this[o+n];else Uint8Array.prototype.set.call(e,this.subarray(n,r),t);return a},s.prototype.fill=function(e,t,n,r){if("string"==typeof e){if("string"==typeof t?(r=t,t=0,n=this.length):"string"==typeof n&&(r=n,n=this.length),void 0!==r&&"string"!=typeof r)throw new TypeError("encoding must be a string");if("string"==typeof r&&!s.isEncoding(r))throw new TypeError("Unknown encoding: "+r);if(1===e.length){var a=e.charCodeAt(0);("utf8"===r&&128>a||"latin1"===r)&&(e=a);}}else "number"==typeof e&&(e&=255);if(0>t||this.length<t||this.length<n)throw new RangeError("Out of range index");if(n<=t)return this;t>>>=0,n=n===void 0?this.length:n>>>0,e||(e=0);var o;if("number"==typeof e)for(o=t;o<n;++o)this[o]=e;else {var d=s.isBuffer(e)?e:s.from(e,r),l=d.length;if(0===l)throw new TypeError("The value \""+e+"\" is invalid for argument \"value\"");for(o=0;o<n-t;++o)this[o+t]=d[o%l];}return this};var Q=/[^+/0-9A-Za-z-_]/g;}).call(this);}).call(this,e("buffer").Buffer);},{"base64-js":1,buffer:3,ieee754:9}],4:[function(e,t,n){(function(a){(function(){function r(){let e;try{e=n.storage.getItem("debug");}catch(e){}return !e&&"undefined"!=typeof a&&"env"in a&&(e=a.env.DEBUG),e}n.formatArgs=function(e){if(e[0]=(this.useColors?"%c":"")+this.namespace+(this.useColors?" %c":" ")+e[0]+(this.useColors?"%c ":" ")+"+"+t.exports.humanize(this.diff),!this.useColors)return;const n="color: "+this.color;e.splice(1,0,n,"color: inherit");let r=0,a=0;e[0].replace(/%[a-zA-Z%]/g,e=>{"%%"===e||(r++,"%c"===e&&(a=r));}),e.splice(a,0,n);},n.save=function(e){try{e?n.storage.setItem("debug",e):n.storage.removeItem("debug");}catch(e){}},n.load=r,n.useColors=function(){return !!("undefined"!=typeof window&&window.process&&("renderer"===window.process.type||window.process.__nwjs))||!("undefined"!=typeof navigator&&navigator.userAgent&&navigator.userAgent.toLowerCase().match(/(edge|trident)\/(\d+)/))&&("undefined"!=typeof document&&document.documentElement&&document.documentElement.style&&document.documentElement.style.WebkitAppearance||"undefined"!=typeof window&&window.console&&(window.console.firebug||window.console.exception&&window.console.table)||"undefined"!=typeof navigator&&navigator.userAgent&&navigator.userAgent.toLowerCase().match(/firefox\/(\d+)/)&&31<=parseInt(RegExp.$1,10)||"undefined"!=typeof navigator&&navigator.userAgent&&navigator.userAgent.toLowerCase().match(/applewebkit\/(\d+)/))},n.storage=function(){try{return localStorage}catch(e){}}(),n.destroy=(()=>{let e=false;return ()=>{e||(e=true,console.warn("Instance method `debug.destroy()` is deprecated and no longer does anything. It will be removed in the next major version of `debug`."));}})(),n.colors=["#0000CC","#0000FF","#0033CC","#0033FF","#0066CC","#0066FF","#0099CC","#0099FF","#00CC00","#00CC33","#00CC66","#00CC99","#00CCCC","#00CCFF","#3300CC","#3300FF","#3333CC","#3333FF","#3366CC","#3366FF","#3399CC","#3399FF","#33CC00","#33CC33","#33CC66","#33CC99","#33CCCC","#33CCFF","#6600CC","#6600FF","#6633CC","#6633FF","#66CC00","#66CC33","#9900CC","#9900FF","#9933CC","#9933FF","#99CC00","#99CC33","#CC0000","#CC0033","#CC0066","#CC0099","#CC00CC","#CC00FF","#CC3300","#CC3333","#CC3366","#CC3399","#CC33CC","#CC33FF","#CC6600","#CC6633","#CC9900","#CC9933","#CCCC00","#CCCC33","#FF0000","#FF0033","#FF0066","#FF0099","#FF00CC","#FF00FF","#FF3300","#FF3333","#FF3366","#FF3399","#FF33CC","#FF33FF","#FF6600","#FF6633","#FF9900","#FF9933","#FFCC00","#FFCC33"],n.log=console.debug||console.log||(()=>{}),t.exports=e("./common")(n);const{formatters:o}=t.exports;o.j=function(e){try{return JSON.stringify(e)}catch(e){return "[UnexpectedJSONParseError]: "+e.message}};}).call(this);}).call(this,e("_process"));},{"./common":5,_process:12}],5:[function(e,t){t.exports=function(t){function r(e){function t(...e){if(!t.enabled)return;const a=t,o=+new Date,i=o-(n||o);a.diff=i,a.prev=n,a.curr=o,n=o,e[0]=r.coerce(e[0]),"string"!=typeof e[0]&&e.unshift("%O");let d=0;e[0]=e[0].replace(/%([a-zA-Z%])/g,(t,n)=>{if("%%"===t)return "%";d++;const o=r.formatters[n];if("function"==typeof o){const n=e[d];t=o.call(a,n),e.splice(d,1),d--;}return t}),r.formatArgs.call(a,e);const s=a.log||r.log;s.apply(a,e);}let n,o=null;return t.namespace=e,t.useColors=r.useColors(),t.color=r.selectColor(e),t.extend=a,t.destroy=r.destroy,Object.defineProperty(t,"enabled",{enumerable:true,configurable:false,get:()=>null===o?r.enabled(e):o,set:e=>{o=e;}}),"function"==typeof r.init&&r.init(t),t}function a(e,t){const n=r(this.namespace+("undefined"==typeof t?":":t)+e);return n.log=this.log,n}function o(e){return e.toString().substring(2,e.toString().length-2).replace(/\.\*\?$/,"*")}return r.debug=r,r.default=r,r.coerce=function(e){return e instanceof Error?e.stack||e.message:e},r.disable=function(){const e=[...r.names.map(o),...r.skips.map(o).map(e=>"-"+e)].join(",");return r.enable(""),e},r.enable=function(e){r.save(e),r.names=[],r.skips=[];let t;const n=("string"==typeof e?e:"").split(/[\s,]+/),a=n.length;for(t=0;t<a;t++)n[t]&&(e=n[t].replace(/\*/g,".*?"),"-"===e[0]?r.skips.push(new RegExp("^"+e.substr(1)+"$")):r.names.push(new RegExp("^"+e+"$")));},r.enabled=function(e){if("*"===e[e.length-1])return  true;let t,n;for(t=0,n=r.skips.length;t<n;t++)if(r.skips[t].test(e))return  false;for(t=0,n=r.names.length;t<n;t++)if(r.names[t].test(e))return  true;return  false},r.humanize=e("ms"),r.destroy=function(){console.warn("Instance method `debug.destroy()` is deprecated and no longer does anything. It will be removed in the next major version of `debug`.");},Object.keys(t).forEach(e=>{r[e]=t[e];}),r.names=[],r.skips=[],r.formatters={},r.selectColor=function(e){let t=0;for(let n=0;n<e.length;n++)t=(t<<5)-t+e.charCodeAt(n),t|=0;return r.colors[n(t)%r.colors.length]},r.enable(r.load()),r};},{ms:11}],6:[function(e,t){function n(e,t){for(const n in t)Object.defineProperty(e,n,{value:t[n],enumerable:true,configurable:true});return e}t.exports=function(e,t,r){if(!e||"string"==typeof e)throw new TypeError("Please pass an Error to err-code");r||(r={}),"object"==typeof t&&(r=t,t=""),t&&(r.code=t);try{return n(e,r)}catch(t){r.message=e.message,r.stack=e.stack;const a=function(){};a.prototype=Object.create(Object.getPrototypeOf(e));const o=n(new a,r);return o}};},{}],7:[function(e,t){function n(e){console&&console.warn&&console.warn(e);}function r(){r.init.call(this);}function a(e){if("function"!=typeof e)throw new TypeError("The \"listener\" argument must be of type Function. Received type "+typeof e)}function o(e){return void 0===e._maxListeners?r.defaultMaxListeners:e._maxListeners}function i(e,t,r,i){var d,s,l;if(a(r),s=e._events,void 0===s?(s=e._events=Object.create(null),e._eventsCount=0):(void 0!==s.newListener&&(e.emit("newListener",t,r.listener?r.listener:r),s=e._events),l=s[t]),void 0===l)l=s[t]=r,++e._eventsCount;else if("function"==typeof l?l=s[t]=i?[r,l]:[l,r]:i?l.unshift(r):l.push(r),d=o(e),0<d&&l.length>d&&!l.warned){l.warned=true;var c=new Error("Possible EventEmitter memory leak detected. "+l.length+" "+(t+" listeners added. Use emitter.setMaxListeners() to increase limit"));c.name="MaxListenersExceededWarning",c.emitter=e,c.type=t,c.count=l.length,n(c);}return e}function d(){if(!this.fired)return this.target.removeListener(this.type,this.wrapFn),this.fired=true,0===arguments.length?this.listener.call(this.target):this.listener.apply(this.target,arguments)}function s(e,t,n){var r={fired:false,wrapFn:void 0,target:e,type:t,listener:n},a=d.bind(r);return a.listener=n,r.wrapFn=a,a}function l(e,t,n){var r=e._events;if(r===void 0)return [];var a=r[t];return void 0===a?[]:"function"==typeof a?n?[a.listener||a]:[a]:n?f(a):u(a,a.length)}function c(e){var t=this._events;if(t!==void 0){var n=t[e];if("function"==typeof n)return 1;if(void 0!==n)return n.length}return 0}function u(e,t){for(var n=Array(t),r=0;r<t;++r)n[r]=e[r];return n}function p(e,t){for(;t+1<e.length;t++)e[t]=e[t+1];e.pop();}function f(e){for(var t=Array(e.length),n=0;n<t.length;++n)t[n]=e[n].listener||e[n];return t}function g(e,t,n){"function"==typeof e.on&&_(e,"error",t,n);}function _(e,t,n,r){if("function"==typeof e.on)r.once?e.once(t,n):e.on(t,n);else if("function"==typeof e.addEventListener)e.addEventListener(t,function a(o){r.once&&e.removeEventListener(t,a),n(o);});else throw new TypeError("The \"emitter\" argument must be of type EventEmitter. Received type "+typeof e)}var h,m="object"==typeof Reflect?Reflect:null,b=m&&"function"==typeof m.apply?m.apply:function(e,t,n){return Function.prototype.apply.call(e,t,n)};h=m&&"function"==typeof m.ownKeys?m.ownKeys:Object.getOwnPropertySymbols?function(e){return Object.getOwnPropertyNames(e).concat(Object.getOwnPropertySymbols(e))}:function(e){return Object.getOwnPropertyNames(e)};var y=Number.isNaN||function(e){return e!==e};t.exports=r,t.exports.once=function(e,t){return new Promise(function(n,r){function a(n){e.removeListener(t,o),r(n);}function o(){"function"==typeof e.removeListener&&e.removeListener("error",a),n([].slice.call(arguments));}_(e,t,o,{once:true}),"error"!==t&&g(e,a,{once:true});})},r.EventEmitter=r,r.prototype._events=void 0,r.prototype._eventsCount=0,r.prototype._maxListeners=void 0;var C=10;Object.defineProperty(r,"defaultMaxListeners",{enumerable:true,get:function(){return C},set:function(e){if("number"!=typeof e||0>e||y(e))throw new RangeError("The value of \"defaultMaxListeners\" is out of range. It must be a non-negative number. Received "+e+".");C=e;}}),r.init=function(){(this._events===void 0||this._events===Object.getPrototypeOf(this)._events)&&(this._events=Object.create(null),this._eventsCount=0),this._maxListeners=this._maxListeners||void 0;},r.prototype.setMaxListeners=function(e){if("number"!=typeof e||0>e||y(e))throw new RangeError("The value of \"n\" is out of range. It must be a non-negative number. Received "+e+".");return this._maxListeners=e,this},r.prototype.getMaxListeners=function(){return o(this)},r.prototype.emit=function(e){for(var t=[],n=1;n<arguments.length;n++)t.push(arguments[n]);var r="error"===e,a=this._events;if(a!==void 0)r=r&&a.error===void 0;else if(!r)return  false;if(r){var o;if(0<t.length&&(o=t[0]),o instanceof Error)throw o;var d=new Error("Unhandled error."+(o?" ("+o.message+")":""));throw d.context=o,d}var s=a[e];if(s===void 0)return  false;if("function"==typeof s)b(s,this,t);else for(var l=s.length,c=u(s,l),n=0;n<l;++n)b(c[n],this,t);return  true},r.prototype.addListener=function(e,t){return i(this,e,t,false)},r.prototype.on=r.prototype.addListener,r.prototype.prependListener=function(e,t){return i(this,e,t,true)},r.prototype.once=function(e,t){return a(t),this.on(e,s(this,e,t)),this},r.prototype.prependOnceListener=function(e,t){return a(t),this.prependListener(e,s(this,e,t)),this},r.prototype.removeListener=function(e,t){var n,r,o,d,s;if(a(t),r=this._events,void 0===r)return this;if(n=r[e],void 0===n)return this;if(n===t||n.listener===t)0==--this._eventsCount?this._events=Object.create(null):(delete r[e],r.removeListener&&this.emit("removeListener",e,n.listener||t));else if("function"!=typeof n){for(o=-1,d=n.length-1;0<=d;d--)if(n[d]===t||n[d].listener===t){s=n[d].listener,o=d;break}if(0>o)return this;0===o?n.shift():p(n,o),1===n.length&&(r[e]=n[0]),void 0!==r.removeListener&&this.emit("removeListener",e,s||t);}return this},r.prototype.off=r.prototype.removeListener,r.prototype.removeAllListeners=function(e){var t,n,r;if(n=this._events,void 0===n)return this;if(void 0===n.removeListener)return 0===arguments.length?(this._events=Object.create(null),this._eventsCount=0):void 0!==n[e]&&(0==--this._eventsCount?this._events=Object.create(null):delete n[e]),this;if(0===arguments.length){var a,o=Object.keys(n);for(r=0;r<o.length;++r)a=o[r],"removeListener"!==a&&this.removeAllListeners(a);return this.removeAllListeners("removeListener"),this._events=Object.create(null),this._eventsCount=0,this}if(t=n[e],"function"==typeof t)this.removeListener(e,t);else if(void 0!==t)for(r=t.length-1;0<=r;r--)this.removeListener(e,t[r]);return this},r.prototype.listeners=function(e){return l(this,e,true)},r.prototype.rawListeners=function(e){return l(this,e,false)},r.listenerCount=function(e,t){return "function"==typeof e.listenerCount?e.listenerCount(t):c.call(e,t)},r.prototype.listenerCount=c,r.prototype.eventNames=function(){return 0<this._eventsCount?h(this._events):[]};},{}],8:[function(e,t){t.exports=function(){if("undefined"==typeof globalThis)return null;var e={RTCPeerConnection:globalThis.RTCPeerConnection||globalThis.mozRTCPeerConnection||globalThis.webkitRTCPeerConnection,RTCSessionDescription:globalThis.RTCSessionDescription||globalThis.mozRTCSessionDescription||globalThis.webkitRTCSessionDescription,RTCIceCandidate:globalThis.RTCIceCandidate||globalThis.mozRTCIceCandidate||globalThis.webkitRTCIceCandidate};return e.RTCPeerConnection?e:null};},{}],9:[function(e,a,o){/*! ieee754. BSD-3-Clause License. Feross Aboukhadijeh <https://feross.org/opensource> */o.read=function(t,n,a,o,l){var c,u,p=8*l-o-1,f=(1<<p)-1,g=f>>1,_=-7,h=a?l-1:0,b=a?-1:1,d=t[n+h];for(h+=b,c=d&(1<<-_)-1,d>>=-_,_+=p;0<_;c=256*c+t[n+h],h+=b,_-=8);for(u=c&(1<<-_)-1,c>>=-_,_+=o;0<_;u=256*u+t[n+h],h+=b,_-=8);if(0===c)c=1-g;else {if(c===f)return u?NaN:(d?-1:1)*(1/0);u+=r(2,o),c-=g;}return (d?-1:1)*u*r(2,c-o)},o.write=function(a,o,l,u,p,f){var h,b,y,g=Math.LN2,_=Math.log,C=8*f-p-1,R=(1<<C)-1,E=R>>1,w=23===p?r(2,-24)-r(2,-77):0,S=u?0:f-1,T=u?1:-1,d=0>o||0===o&&0>1/o?1:0;for(o=n(o),isNaN(o)||o===1/0?(b=isNaN(o)?1:0,h=R):(h=t(_(o)/g),1>o*(y=r(2,-h))&&(h--,y*=2),o+=1<=h+E?w/y:w*r(2,1-E),2<=o*y&&(h++,y/=2),h+E>=R?(b=0,h=R):1<=h+E?(b=(o*y-1)*r(2,p),h+=E):(b=o*r(2,E-1)*r(2,p),h=0));8<=p;a[l+S]=255&b,S+=T,b/=256,p-=8);for(h=h<<p|b,C+=p;0<C;a[l+S]=255&h,S+=T,h/=256,C-=8);a[l+S-T]|=128*d;};},{}],10:[function(e,t){t.exports="function"==typeof Object.create?function(e,t){t&&(e.super_=t,e.prototype=Object.create(t.prototype,{constructor:{value:e,enumerable:false,writable:true,configurable:true}}));}:function(e,t){if(t){e.super_=t;var n=function(){};n.prototype=t.prototype,e.prototype=new n,e.prototype.constructor=e;}};},{}],11:[function(e,t){var r=Math.round;function a(e){if(e+="",!(100<e.length)){var t=/^(-?(?:\d+)?\.?\d+) *(milliseconds?|msecs?|ms|seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h|days?|d|weeks?|w|years?|yrs?|y)?$/i.exec(e);if(t){var r=parseFloat(t[1]),n=(t[2]||"ms").toLowerCase();return "years"===n||"year"===n||"yrs"===n||"yr"===n||"y"===n?31557600000*r:"weeks"===n||"week"===n||"w"===n?604800000*r:"days"===n||"day"===n||"d"===n?86400000*r:"hours"===n||"hour"===n||"hrs"===n||"hr"===n||"h"===n?3600000*r:"minutes"===n||"minute"===n||"mins"===n||"min"===n||"m"===n?60000*r:"seconds"===n||"second"===n||"secs"===n||"sec"===n||"s"===n?1000*r:"milliseconds"===n||"millisecond"===n||"msecs"===n||"msec"===n||"ms"===n?r:void 0}}}function o(e){var t=n(e);return 86400000<=t?r(e/86400000)+"d":3600000<=t?r(e/3600000)+"h":60000<=t?r(e/60000)+"m":1000<=t?r(e/1000)+"s":e+"ms"}function i(e){var t=n(e);return 86400000<=t?s(e,t,86400000,"day"):3600000<=t?s(e,t,3600000,"hour"):60000<=t?s(e,t,60000,"minute"):1000<=t?s(e,t,1000,"second"):e+" ms"}function s(e,t,a,n){return r(e/a)+" "+n+(t>=1.5*a?"s":"")}t.exports=function(e,t){t=t||{};var n=typeof e;if("string"==n&&0<e.length)return a(e);if("number"===n&&isFinite(e))return t.long?i(e):o(e);throw new Error("val is not a non-empty string or a valid number. val="+JSON.stringify(e))};},{}],12:[function(e,t){function n(){throw new Error("setTimeout has not been defined")}function r(){throw new Error("clearTimeout has not been defined")}function a(t){if(c===setTimeout)return setTimeout(t,0);if((c===n||!c)&&setTimeout)return c=setTimeout,setTimeout(t,0);try{return c(t,0)}catch(n){try{return c.call(null,t,0)}catch(n){return c.call(this,t,0)}}}function o(t){if(u===clearTimeout)return clearTimeout(t);if((u===r||!u)&&clearTimeout)return u=clearTimeout,clearTimeout(t);try{return u(t)}catch(n){try{return u.call(null,t)}catch(n){return u.call(this,t)}}}function i(){_&&f&&(_=false,f.length?g=f.concat(g):h=-1,g.length&&d());}function d(){if(!_){var e=a(i);_=true;for(var t=g.length;t;){for(f=g,g=[];++h<t;)f&&f[h].run();h=-1,t=g.length;}f=null,_=false,o(e);}}function s(e,t){this.fun=e,this.array=t;}function l(){}var c,u,p=t.exports={};(function(){try{c="function"==typeof setTimeout?setTimeout:n;}catch(t){c=n;}try{u="function"==typeof clearTimeout?clearTimeout:r;}catch(t){u=r;}})();var f,g=[],_=false,h=-1;p.nextTick=function(e){var t=Array(arguments.length-1);if(1<arguments.length)for(var n=1;n<arguments.length;n++)t[n-1]=arguments[n];g.push(new s(e,t)),1!==g.length||_||a(d);},s.prototype.run=function(){this.fun.apply(null,this.array);},p.title="browser",p.browser=true,p.env={},p.argv=[],p.version="",p.versions={},p.on=l,p.addListener=l,p.once=l,p.off=l,p.removeListener=l,p.removeAllListeners=l,p.emit=l,p.prependListener=l,p.prependOnceListener=l,p.listeners=function(){return []},p.binding=function(){throw new Error("process.binding is not supported")},p.cwd=function(){return "/"},p.chdir=function(){throw new Error("process.chdir is not supported")},p.umask=function(){return 0};},{}],13:[function(e,t){(function(e){(function(){/*! queue-microtask. MIT License. Feross Aboukhadijeh <https://feross.org/opensource> */let n;t.exports="function"==typeof queueMicrotask?queueMicrotask.bind("undefined"==typeof window?e:window):e=>(n||(n=Promise.resolve())).then(e).catch(e=>setTimeout(()=>{throw e},0));}).call(this);}).call(this,"undefined"==typeof commonjsGlobal?"undefined"==typeof self?"undefined"==typeof window?{}:window:self:commonjsGlobal);},{}],14:[function(e,t){(function(n,r){(function(){var a=e("safe-buffer").Buffer,o=r.crypto||r.msCrypto;t.exports=o&&o.getRandomValues?function(e,t){if(e>4294967295)throw new RangeError("requested too many random bytes");var r=a.allocUnsafe(e);if(0<e)if(65536<e)for(var i=0;i<e;i+=65536)o.getRandomValues(r.slice(i,i+65536));else o.getRandomValues(r);return "function"==typeof t?n.nextTick(function(){t(null,r);}):r}:function(){throw new Error("Secure random number generation is not supported by this browser.\nUse Chrome, Firefox or Internet Explorer 11")};}).call(this);}).call(this,e("_process"),"undefined"==typeof commonjsGlobal?"undefined"==typeof self?"undefined"==typeof window?{}:window:self:commonjsGlobal);},{_process:12,"safe-buffer":30}],15:[function(e,t){function n(e,t){e.prototype=Object.create(t.prototype),e.prototype.constructor=e,e.__proto__=t;}function r(e,t,r){function a(e,n,r){return "string"==typeof t?t:t(e,n,r)}r||(r=Error);var o=function(e){function t(t,n,r){return e.call(this,a(t,n,r))||this}return n(t,e),t}(r);o.prototype.name=r.name,o.prototype.code=e,s[e]=o;}function a(e,t){if(Array.isArray(e)){var n=e.length;return e=e.map(function(e){return e+""}),2<n?"one of ".concat(t," ").concat(e.slice(0,n-1).join(", "),", or ")+e[n-1]:2===n?"one of ".concat(t," ").concat(e[0]," or ").concat(e[1]):"of ".concat(t," ").concat(e[0])}return "of ".concat(t," ").concat(e+"")}function o(e,t,n){return e.substr(0,t.length)===t}function i(e,t,n){return (void 0===n||n>e.length)&&(n=e.length),e.substring(n-t.length,n)===t}function d(e,t,n){return "number"!=typeof n&&(n=0),!(n+t.length>e.length)&&-1!==e.indexOf(t,n)}var s={};r("ERR_INVALID_OPT_VALUE",function(e,t){return "The value \""+t+"\" is invalid for option \""+e+"\""},TypeError),r("ERR_INVALID_ARG_TYPE",function(e,t,n){var r;"string"==typeof t&&o(t,"not ")?(r="must not be",t=t.replace(/^not /,"")):r="must be";var s;if(i(e," argument"))s="The ".concat(e," ").concat(r," ").concat(a(t,"type"));else {var l=d(e,".")?"property":"argument";s="The \"".concat(e,"\" ").concat(l," ").concat(r," ").concat(a(t,"type"));}return s+=". Received type ".concat(typeof n),s},TypeError),r("ERR_STREAM_PUSH_AFTER_EOF","stream.push() after EOF"),r("ERR_METHOD_NOT_IMPLEMENTED",function(e){return "The "+e+" method is not implemented"}),r("ERR_STREAM_PREMATURE_CLOSE","Premature close"),r("ERR_STREAM_DESTROYED",function(e){return "Cannot call "+e+" after a stream was destroyed"}),r("ERR_MULTIPLE_CALLBACK","Callback called multiple times"),r("ERR_STREAM_CANNOT_PIPE","Cannot pipe, not readable"),r("ERR_STREAM_WRITE_AFTER_END","write after end"),r("ERR_STREAM_NULL_VALUES","May not write null values to stream",TypeError),r("ERR_UNKNOWN_ENCODING",function(e){return "Unknown encoding: "+e},TypeError),r("ERR_STREAM_UNSHIFT_AFTER_END_EVENT","stream.unshift() after end event"),t.exports.codes=s;},{}],16:[function(e,t){(function(n){(function(){function r(e){return this instanceof r?void(d.call(this,e),s.call(this,e),this.allowHalfOpen=true,e&&(false===e.readable&&(this.readable=false),false===e.writable&&(this.writable=false),false===e.allowHalfOpen&&(this.allowHalfOpen=false,this.once("end",a)))):new r(e)}function a(){this._writableState.ended||n.nextTick(o,this);}function o(e){e.end();}var i=Object.keys||function(e){var t=[];for(var n in e)t.push(n);return t};t.exports=r;var d=e("./_stream_readable"),s=e("./_stream_writable");e("inherits")(r,d);for(var l,c=i(s.prototype),u=0;u<c.length;u++)l=c[u],r.prototype[l]||(r.prototype[l]=s.prototype[l]);Object.defineProperty(r.prototype,"writableHighWaterMark",{enumerable:false,get:function(){return this._writableState.highWaterMark}}),Object.defineProperty(r.prototype,"writableBuffer",{enumerable:false,get:function(){return this._writableState&&this._writableState.getBuffer()}}),Object.defineProperty(r.prototype,"writableLength",{enumerable:false,get:function(){return this._writableState.length}}),Object.defineProperty(r.prototype,"destroyed",{enumerable:false,get:function(){return void 0!==this._readableState&&void 0!==this._writableState&&this._readableState.destroyed&&this._writableState.destroyed},set:function(e){ void 0===this._readableState||void 0===this._writableState||(this._readableState.destroyed=e,this._writableState.destroyed=e);}});}).call(this);}).call(this,e("_process"));},{"./_stream_readable":18,"./_stream_writable":20,_process:12,inherits:10}],17:[function(e,t){function n(e){return this instanceof n?void r.call(this,e):new n(e)}t.exports=n;var r=e("./_stream_transform");e("inherits")(n,r),n.prototype._transform=function(e,t,n){n(null,e);};},{"./_stream_transform":19,inherits:10}],18:[function(e,t){(function(n,r){(function(){function a(e){return P.from(e)}function o(e){return P.isBuffer(e)||e instanceof M}function i(e,t,n){return "function"==typeof e.prependListener?e.prependListener(t,n):void(e._events&&e._events[t]?Array.isArray(e._events[t])?e._events[t].unshift(n):e._events[t]=[n,e._events[t]]:e.on(t,n))}function d(t,n,r){A=A||e("./_stream_duplex"),t=t||{},"boolean"!=typeof r&&(r=n instanceof A),this.objectMode=!!t.objectMode,r&&(this.objectMode=this.objectMode||!!t.readableObjectMode),this.highWaterMark=H(this,t,"readableHighWaterMark",r),this.buffer=new j,this.length=0,this.pipes=null,this.pipesCount=0,this.flowing=null,this.ended=false,this.endEmitted=false,this.reading=false,this.sync=true,this.needReadable=false,this.emittedReadable=false,this.readableListening=false,this.resumeScheduled=false,this.paused=true,this.emitClose=false!==t.emitClose,this.autoDestroy=!!t.autoDestroy,this.destroyed=false,this.defaultEncoding=t.defaultEncoding||"utf8",this.awaitDrain=0,this.readingMore=false,this.decoder=null,this.encoding=null,t.encoding&&(!F&&(F=e("string_decoder/").StringDecoder),this.decoder=new F(t.encoding),this.encoding=t.encoding);}function s(t){if(A=A||e("./_stream_duplex"),!(this instanceof s))return new s(t);var n=this instanceof A;this._readableState=new d(t,this,n),this.readable=true,t&&("function"==typeof t.read&&(this._read=t.read),"function"==typeof t.destroy&&(this._destroy=t.destroy)),I.call(this);}function l(e,t,n,r,o){x("readableAddChunk",t);var i=e._readableState;if(null===t)i.reading=false,g(e,i);else {var d;if(o||(d=u(i,t)),d)X(e,d);else if(!(i.objectMode||t&&0<t.length))r||(i.reading=false,m(e,i));else if("string"==typeof t||i.objectMode||Object.getPrototypeOf(t)===P.prototype||(t=a(t)),r)i.endEmitted?X(e,new K):c(e,i,t,true);else if(i.ended)X(e,new z);else {if(i.destroyed)return  false;i.reading=false,i.decoder&&!n?(t=i.decoder.write(t),i.objectMode||0!==t.length?c(e,i,t,false):m(e,i)):c(e,i,t,false);}}return !i.ended&&(i.length<i.highWaterMark||0===i.length)}function c(e,t,n,r){t.flowing&&0===t.length&&!t.sync?(t.awaitDrain=0,e.emit("data",n)):(t.length+=t.objectMode?1:n.length,r?t.buffer.unshift(n):t.buffer.push(n),t.needReadable&&_(e)),m(e,t);}function u(e,t){var n;return o(t)||"string"==typeof t||void 0===t||e.objectMode||(n=new V("chunk",["string","Buffer","Uint8Array"],t)),n}function p(e){return 1073741824<=e?e=1073741824:(e--,e|=e>>>1,e|=e>>>2,e|=e>>>4,e|=e>>>8,e|=e>>>16,e++),e}function f(e,t){return 0>=e||0===t.length&&t.ended?0:t.objectMode?1:e===e?(e>t.highWaterMark&&(t.highWaterMark=p(e)),e<=t.length?e:t.ended?t.length:(t.needReadable=true,0)):t.flowing&&t.length?t.buffer.head.data.length:t.length}function g(e,t){if(x("onEofChunk"),!t.ended){if(t.decoder){var n=t.decoder.end();n&&n.length&&(t.buffer.push(n),t.length+=t.objectMode?1:n.length);}t.ended=true,t.sync?_(e):(t.needReadable=false,!t.emittedReadable&&(t.emittedReadable=true,h(e)));}}function _(e){var t=e._readableState;x("emitReadable",t.needReadable,t.emittedReadable),t.needReadable=false,t.emittedReadable||(x("emitReadable",t.flowing),t.emittedReadable=true,n.nextTick(h,e));}function h(e){var t=e._readableState;x("emitReadable_",t.destroyed,t.length,t.ended),!t.destroyed&&(t.length||t.ended)&&(e.emit("readable"),t.emittedReadable=false),t.needReadable=!t.flowing&&!t.ended&&t.length<=t.highWaterMark,S(e);}function m(e,t){t.readingMore||(t.readingMore=true,n.nextTick(b,e,t));}function b(e,t){for(;!t.reading&&!t.ended&&(t.length<t.highWaterMark||t.flowing&&0===t.length);){var n=t.length;if(x("maybeReadMore read 0"),e.read(0),n===t.length)break}t.readingMore=false;}function y(e){return function(){var t=e._readableState;x("pipeOnDrain",t.awaitDrain),t.awaitDrain&&t.awaitDrain--,0===t.awaitDrain&&D(e,"data")&&(t.flowing=true,S(e));}}function C(e){var t=e._readableState;t.readableListening=0<e.listenerCount("readable"),t.resumeScheduled&&!t.paused?t.flowing=true:0<e.listenerCount("data")&&e.resume();}function R(e){x("readable nexttick read 0"),e.read(0);}function E(e,t){t.resumeScheduled||(t.resumeScheduled=true,n.nextTick(w,e,t));}function w(e,t){x("resume",t.reading),t.reading||e.read(0),t.resumeScheduled=false,e.emit("resume"),S(e),t.flowing&&!t.reading&&e.read(0);}function S(e){var t=e._readableState;for(x("flow",t.flowing);t.flowing&&null!==e.read(););}function T(e,t){if(0===t.length)return null;var n;return t.objectMode?n=t.buffer.shift():!e||e>=t.length?(n=t.decoder?t.buffer.join(""):1===t.buffer.length?t.buffer.first():t.buffer.concat(t.length),t.buffer.clear()):n=t.buffer.consume(e,t.decoder),n}function v(e){var t=e._readableState;x("endReadable",t.endEmitted),t.endEmitted||(t.ended=true,n.nextTick(k,t,e));}function k(e,t){if(x("endReadableNT",e.endEmitted,e.length),!e.endEmitted&&0===e.length&&(e.endEmitted=true,t.readable=false,t.emit("end"),e.autoDestroy)){var n=t._writableState;(!n||n.autoDestroy&&n.finished)&&t.destroy();}}function L(e,t){for(var n=0,r=e.length;n<r;n++)if(e[n]===t)return n;return  -1}t.exports=s;var A;s.ReadableState=d;var x;e("events").EventEmitter;var D=function(e,t){return e.listeners(t).length},I=e("./internal/streams/stream"),P=e("buffer").Buffer,M=r.Uint8Array||function(){},O=e("util");x=O&&O.debuglog?O.debuglog("stream"):function(){};var F,B,U,j=e("./internal/streams/buffer_list"),q=e("./internal/streams/destroy"),W=e("./internal/streams/state"),H=W.getHighWaterMark,Y=e("../errors").codes,V=Y.ERR_INVALID_ARG_TYPE,z=Y.ERR_STREAM_PUSH_AFTER_EOF,G=Y.ERR_METHOD_NOT_IMPLEMENTED,K=Y.ERR_STREAM_UNSHIFT_AFTER_END_EVENT;e("inherits")(s,I);var X=q.errorOrDestroy,$=["error","close","destroy","pause","resume"];Object.defineProperty(s.prototype,"destroyed",{enumerable:false,get:function(){return void 0!==this._readableState&&this._readableState.destroyed},set:function(e){this._readableState&&(this._readableState.destroyed=e);}}),s.prototype.destroy=q.destroy,s.prototype._undestroy=q.undestroy,s.prototype._destroy=function(e,t){t(e);},s.prototype.push=function(e,t){var n,r=this._readableState;return r.objectMode?n=true:"string"==typeof e&&(t=t||r.defaultEncoding,t!==r.encoding&&(e=P.from(e,t),t=""),n=true),l(this,e,t,false,n)},s.prototype.unshift=function(e){return l(this,e,null,true,false)},s.prototype.isPaused=function(){return  false===this._readableState.flowing},s.prototype.setEncoding=function(t){F||(F=e("string_decoder/").StringDecoder);var n=new F(t);this._readableState.decoder=n,this._readableState.encoding=this._readableState.decoder.encoding;for(var r=this._readableState.buffer.head,a="";null!==r;)a+=n.write(r.data),r=r.next;return this._readableState.buffer.clear(),""!==a&&this._readableState.buffer.push(a),this._readableState.length=a.length,this};s.prototype.read=function(e){x("read",e),e=parseInt(e,10);var t=this._readableState,r=e;if(0!==e&&(t.emittedReadable=false),0===e&&t.needReadable&&((0===t.highWaterMark?0<t.length:t.length>=t.highWaterMark)||t.ended))return x("read: emitReadable",t.length,t.ended),0===t.length&&t.ended?v(this):_(this),null;if(e=f(e,t),0===e&&t.ended)return 0===t.length&&v(this),null;var a=t.needReadable;x("need readable",a),(0===t.length||t.length-e<t.highWaterMark)&&(a=true,x("length less than watermark",a)),t.ended||t.reading?(a=false,x("reading or ended",a)):a&&(x("do read"),t.reading=true,t.sync=true,0===t.length&&(t.needReadable=true),this._read(t.highWaterMark),t.sync=false,!t.reading&&(e=f(r,t)));var o;return o=0<e?T(e,t):null,null===o?(t.needReadable=t.length<=t.highWaterMark,e=0):(t.length-=e,t.awaitDrain=0),0===t.length&&(!t.ended&&(t.needReadable=true),r!==e&&t.ended&&v(this)),null!==o&&this.emit("data",o),o},s.prototype._read=function(){X(this,new G("_read()"));},s.prototype.pipe=function(e,t){function r(e,t){x("onunpipe"),e===p&&t&&false===t.hasUnpiped&&(t.hasUnpiped=true,o());}function a(){x("onend"),e.end();}function o(){x("cleanup"),e.removeListener("close",l),e.removeListener("finish",c),e.removeListener("drain",h),e.removeListener("error",s),e.removeListener("unpipe",r),p.removeListener("end",a),p.removeListener("end",u),p.removeListener("data",d),m=true,f.awaitDrain&&(!e._writableState||e._writableState.needDrain)&&h();}function d(t){x("ondata");var n=e.write(t);x("dest.write",n),false===n&&((1===f.pipesCount&&f.pipes===e||1<f.pipesCount&&-1!==L(f.pipes,e))&&!m&&(x("false write response, pause",f.awaitDrain),f.awaitDrain++),p.pause());}function s(t){x("onerror",t),u(),e.removeListener("error",s),0===D(e,"error")&&X(e,t);}function l(){e.removeListener("finish",c),u();}function c(){x("onfinish"),e.removeListener("close",l),u();}function u(){x("unpipe"),p.unpipe(e);}var p=this,f=this._readableState;switch(f.pipesCount){case 0:f.pipes=e;break;case 1:f.pipes=[f.pipes,e];break;default:f.pipes.push(e);}f.pipesCount+=1,x("pipe count=%d opts=%j",f.pipesCount,t);var g=(!t||false!==t.end)&&e!==n.stdout&&e!==n.stderr,_=g?a:u;f.endEmitted?n.nextTick(_):p.once("end",_),e.on("unpipe",r);var h=y(p);e.on("drain",h);var m=false;return p.on("data",d),i(e,"error",s),e.once("close",l),e.once("finish",c),e.emit("pipe",p),f.flowing||(x("pipe resume"),p.resume()),e},s.prototype.unpipe=function(e){var t=this._readableState,n={hasUnpiped:false};if(0===t.pipesCount)return this;if(1===t.pipesCount)return e&&e!==t.pipes?this:(e||(e=t.pipes),t.pipes=null,t.pipesCount=0,t.flowing=false,e&&e.emit("unpipe",this,n),this);if(!e){var r=t.pipes,a=t.pipesCount;t.pipes=null,t.pipesCount=0,t.flowing=false;for(var o=0;o<a;o++)r[o].emit("unpipe",this,{hasUnpiped:false});return this}var d=L(t.pipes,e);return  -1===d?this:(t.pipes.splice(d,1),t.pipesCount-=1,1===t.pipesCount&&(t.pipes=t.pipes[0]),e.emit("unpipe",this,n),this)},s.prototype.on=function(e,t){var r=I.prototype.on.call(this,e,t),a=this._readableState;return "data"===e?(a.readableListening=0<this.listenerCount("readable"),false!==a.flowing&&this.resume()):"readable"==e&&!a.endEmitted&&!a.readableListening&&(a.readableListening=a.needReadable=true,a.flowing=false,a.emittedReadable=false,x("on readable",a.length,a.reading),a.length?_(this):!a.reading&&n.nextTick(R,this)),r},s.prototype.addListener=s.prototype.on,s.prototype.removeListener=function(e,t){var r=I.prototype.removeListener.call(this,e,t);return "readable"===e&&n.nextTick(C,this),r},s.prototype.removeAllListeners=function(e){var t=I.prototype.removeAllListeners.apply(this,arguments);return ("readable"===e||void 0===e)&&n.nextTick(C,this),t},s.prototype.resume=function(){var e=this._readableState;return e.flowing||(x("resume"),e.flowing=!e.readableListening,E(this,e)),e.paused=false,this},s.prototype.pause=function(){return x("call pause flowing=%j",this._readableState.flowing),false!==this._readableState.flowing&&(x("pause"),this._readableState.flowing=false,this.emit("pause")),this._readableState.paused=true,this},s.prototype.wrap=function(e){var t=this,r=this._readableState,a=false;for(var o in e.on("end",function(){if(x("wrapped end"),r.decoder&&!r.ended){var e=r.decoder.end();e&&e.length&&t.push(e);}t.push(null);}),e.on("data",function(n){if((x("wrapped data"),r.decoder&&(n=r.decoder.write(n)),!(r.objectMode&&(null===n||void 0===n)))&&(r.objectMode||n&&n.length)){var o=t.push(n);o||(a=true,e.pause());}}),e) void 0===this[o]&&"function"==typeof e[o]&&(this[o]=function(t){return function(){return e[t].apply(e,arguments)}}(o));for(var i=0;i<$.length;i++)e.on($[i],this.emit.bind(this,$[i]));return this._read=function(t){x("wrapped _read",t),a&&(a=false,e.resume());},this},"function"==typeof Symbol&&(s.prototype[Symbol.asyncIterator]=function(){return void 0===B&&(B=e("./internal/streams/async_iterator")),B(this)}),Object.defineProperty(s.prototype,"readableHighWaterMark",{enumerable:false,get:function(){return this._readableState.highWaterMark}}),Object.defineProperty(s.prototype,"readableBuffer",{enumerable:false,get:function(){return this._readableState&&this._readableState.buffer}}),Object.defineProperty(s.prototype,"readableFlowing",{enumerable:false,get:function(){return this._readableState.flowing},set:function(e){this._readableState&&(this._readableState.flowing=e);}}),s._fromList=T,Object.defineProperty(s.prototype,"readableLength",{enumerable:false,get:function(){return this._readableState.length}}),"function"==typeof Symbol&&(s.from=function(t,n){return void 0===U&&(U=e("./internal/streams/from")),U(s,t,n)});}).call(this);}).call(this,e("_process"),"undefined"==typeof commonjsGlobal?"undefined"==typeof self?"undefined"==typeof window?{}:window:self:commonjsGlobal);},{"../errors":15,"./_stream_duplex":16,"./internal/streams/async_iterator":21,"./internal/streams/buffer_list":22,"./internal/streams/destroy":23,"./internal/streams/from":25,"./internal/streams/state":27,"./internal/streams/stream":28,_process:12,buffer:3,events:7,inherits:10,"string_decoder/":31,util:2}],19:[function(e,t){function n(e,t){var n=this._transformState;n.transforming=false;var r=n.writecb;if(null===r)return this.emit("error",new s);n.writechunk=null,n.writecb=null,null!=t&&this.push(t),r(e);var a=this._readableState;a.reading=false,(a.needReadable||a.length<a.highWaterMark)&&this._read(a.highWaterMark);}function r(e){return this instanceof r?void(u.call(this,e),this._transformState={afterTransform:n.bind(this),needTransform:false,transforming:false,writecb:null,writechunk:null,writeencoding:null},this._readableState.needReadable=true,this._readableState.sync=false,e&&("function"==typeof e.transform&&(this._transform=e.transform),"function"==typeof e.flush&&(this._flush=e.flush)),this.on("prefinish",a)):new r(e)}function a(){var e=this;"function"!=typeof this._flush||this._readableState.destroyed?o(this,null,null):this._flush(function(t,n){o(e,t,n);});}function o(e,t,n){if(t)return e.emit("error",t);if(null!=n&&e.push(n),e._writableState.length)throw new c;if(e._transformState.transforming)throw new l;return e.push(null)}t.exports=r;var i=e("../errors").codes,d=i.ERR_METHOD_NOT_IMPLEMENTED,s=i.ERR_MULTIPLE_CALLBACK,l=i.ERR_TRANSFORM_ALREADY_TRANSFORMING,c=i.ERR_TRANSFORM_WITH_LENGTH_0,u=e("./_stream_duplex");e("inherits")(r,u),r.prototype.push=function(e,t){return this._transformState.needTransform=false,u.prototype.push.call(this,e,t)},r.prototype._transform=function(e,t,n){n(new d("_transform()"));},r.prototype._write=function(e,t,n){var r=this._transformState;if(r.writecb=n,r.writechunk=e,r.writeencoding=t,!r.transforming){var a=this._readableState;(r.needTransform||a.needReadable||a.length<a.highWaterMark)&&this._read(a.highWaterMark);}},r.prototype._read=function(){var e=this._transformState;null===e.writechunk||e.transforming?e.needTransform=true:(e.transforming=true,this._transform(e.writechunk,e.writeencoding,e.afterTransform));},r.prototype._destroy=function(e,t){u.prototype._destroy.call(this,e,function(e){t(e);});};},{"../errors":15,"./_stream_duplex":16,inherits:10}],20:[function(e,t){(function(n,r){(function(){function a(e){var t=this;this.next=null,this.entry=null,this.finish=function(){v(t,e);};}function o(e){return x.from(e)}function i(e){return x.isBuffer(e)||e instanceof N}function d(){}function s(t,n,r){k=k||e("./_stream_duplex"),t=t||{},"boolean"!=typeof r&&(r=n instanceof k),this.objectMode=!!t.objectMode,r&&(this.objectMode=this.objectMode||!!t.writableObjectMode),this.highWaterMark=P(this,t,"writableHighWaterMark",r),this.finalCalled=false,this.needDrain=false,this.ending=false,this.ended=false,this.finished=false,this.destroyed=false;var o=false===t.decodeStrings;this.decodeStrings=!o,this.defaultEncoding=t.defaultEncoding||"utf8",this.length=0,this.writing=false,this.corked=0,this.sync=true,this.bufferProcessing=false,this.onwrite=function(e){m(n,e);},this.writecb=null,this.writelen=0,this.bufferedRequest=null,this.lastBufferedRequest=null,this.pendingcb=0,this.prefinished=false,this.errorEmitted=false,this.emitClose=false!==t.emitClose,this.autoDestroy=!!t.autoDestroy,this.bufferedRequestCount=0,this.corkedRequestsFree=new a(this);}function l(t){k=k||e("./_stream_duplex");var n=this instanceof k;return n||V.call(l,this)?void(this._writableState=new s(t,this,n),this.writable=true,t&&("function"==typeof t.write&&(this._write=t.write),"function"==typeof t.writev&&(this._writev=t.writev),"function"==typeof t.destroy&&(this._destroy=t.destroy),"function"==typeof t.final&&(this._final=t.final)),A.call(this)):new l(t)}function c(e,t){var r=new W;Y(e,r),n.nextTick(t,r);}function u(e,t,r,a){var o;return null===r?o=new q:"string"!=typeof r&&!t.objectMode&&(o=new O("chunk",["string","Buffer"],r)),!o||(Y(e,o),n.nextTick(a,o),false)}function p(e,t,n){return e.objectMode||false===e.decodeStrings||"string"!=typeof t||(t=x.from(t,n)),t}function f(e,t,n,r,a,o){if(!n){var i=p(t,r,a);r!==i&&(n=true,a="buffer",r=i);}var d=t.objectMode?1:r.length;t.length+=d;var s=t.length<t.highWaterMark;if(s||(t.needDrain=true),t.writing||t.corked){var l=t.lastBufferedRequest;t.lastBufferedRequest={chunk:r,encoding:a,isBuf:n,callback:o,next:null},l?l.next=t.lastBufferedRequest:t.bufferedRequest=t.lastBufferedRequest,t.bufferedRequestCount+=1;}else g(e,t,false,d,r,a,o);return s}function g(e,t,n,r,a,o,i){t.writelen=r,t.writecb=i,t.writing=true,t.sync=true,t.destroyed?t.onwrite(new j("write")):n?e._writev(a,t.onwrite):e._write(a,o,t.onwrite),t.sync=false;}function _(e,t,r,a,o){--t.pendingcb,r?(n.nextTick(o,a),n.nextTick(S,e,t),e._writableState.errorEmitted=true,Y(e,a)):(o(a),e._writableState.errorEmitted=true,Y(e,a),S(e,t));}function h(e){e.writing=false,e.writecb=null,e.length-=e.writelen,e.writelen=0;}function m(e,t){var r=e._writableState,a=r.sync,o=r.writecb;if("function"!=typeof o)throw new B;if(h(r),t)_(e,r,a,t,o);else {var i=R(r)||e.destroyed;i||r.corked||r.bufferProcessing||!r.bufferedRequest||C(e,r),a?n.nextTick(b,e,r,i,o):b(e,r,i,o);}}function b(e,t,n,r){n||y(e,t),t.pendingcb--,r(),S(e,t);}function y(e,t){0===t.length&&t.needDrain&&(t.needDrain=false,e.emit("drain"));}function C(e,t){t.bufferProcessing=true;var n=t.bufferedRequest;if(e._writev&&n&&n.next){var r=t.bufferedRequestCount,o=Array(r),i=t.corkedRequestsFree;i.entry=n;for(var d=0,s=true;n;)o[d]=n,n.isBuf||(s=false),n=n.next,d+=1;o.allBuffers=s,g(e,t,true,t.length,o,"",i.finish),t.pendingcb++,t.lastBufferedRequest=null,i.next?(t.corkedRequestsFree=i.next,i.next=null):t.corkedRequestsFree=new a(t),t.bufferedRequestCount=0;}else {for(;n;){var l=n.chunk,c=n.encoding,u=n.callback,p=t.objectMode?1:l.length;if(g(e,t,false,p,l,c,u),n=n.next,t.bufferedRequestCount--,t.writing)break}null===n&&(t.lastBufferedRequest=null);}t.bufferedRequest=n,t.bufferProcessing=false;}function R(e){return e.ending&&0===e.length&&null===e.bufferedRequest&&!e.finished&&!e.writing}function E(e,t){e._final(function(n){t.pendingcb--,n&&Y(e,n),t.prefinished=true,e.emit("prefinish"),S(e,t);});}function w(e,t){t.prefinished||t.finalCalled||("function"!=typeof e._final||t.destroyed?(t.prefinished=true,e.emit("prefinish")):(t.pendingcb++,t.finalCalled=true,n.nextTick(E,e,t)));}function S(e,t){var n=R(t);if(n&&(w(e,t),0===t.pendingcb&&(t.finished=true,e.emit("finish"),t.autoDestroy))){var r=e._readableState;(!r||r.autoDestroy&&r.endEmitted)&&e.destroy();}return n}function T(e,t,r){t.ending=true,S(e,t),r&&(t.finished?n.nextTick(r):e.once("finish",r)),t.ended=true,e.writable=false;}function v(e,t,n){var r=e.entry;for(e.entry=null;r;){var a=r.callback;t.pendingcb--,a(n),r=r.next;}t.corkedRequestsFree.next=e;}t.exports=l;var k;l.WritableState=s;var L={deprecate:e("util-deprecate")},A=e("./internal/streams/stream"),x=e("buffer").Buffer,N=r.Uint8Array||function(){},D=e("./internal/streams/destroy"),I=e("./internal/streams/state"),P=I.getHighWaterMark,M=e("../errors").codes,O=M.ERR_INVALID_ARG_TYPE,F=M.ERR_METHOD_NOT_IMPLEMENTED,B=M.ERR_MULTIPLE_CALLBACK,U=M.ERR_STREAM_CANNOT_PIPE,j=M.ERR_STREAM_DESTROYED,q=M.ERR_STREAM_NULL_VALUES,W=M.ERR_STREAM_WRITE_AFTER_END,H=M.ERR_UNKNOWN_ENCODING,Y=D.errorOrDestroy;e("inherits")(l,A),s.prototype.getBuffer=function(){for(var e=this.bufferedRequest,t=[];e;)t.push(e),e=e.next;return t},function(){try{Object.defineProperty(s.prototype,"buffer",{get:L.deprecate(function(){return this.getBuffer()},"_writableState.buffer is deprecated. Use _writableState.getBuffer instead.","DEP0003")});}catch(e){}}();var V;"function"==typeof Symbol&&Symbol.hasInstance&&"function"==typeof Function.prototype[Symbol.hasInstance]?(V=Function.prototype[Symbol.hasInstance],Object.defineProperty(l,Symbol.hasInstance,{value:function(e){return !!V.call(this,e)||!(this!==l)&&e&&e._writableState instanceof s}})):V=function(e){return e instanceof this},l.prototype.pipe=function(){Y(this,new U);},l.prototype.write=function(e,t,n){var r=this._writableState,a=false,s=!r.objectMode&&i(e);return s&&!x.isBuffer(e)&&(e=o(e)),"function"==typeof t&&(n=t,t=null),s?t="buffer":!t&&(t=r.defaultEncoding),"function"!=typeof n&&(n=d),r.ending?c(this,n):(s||u(this,r,e,n))&&(r.pendingcb++,a=f(this,r,s,e,t,n)),a},l.prototype.cork=function(){this._writableState.corked++;},l.prototype.uncork=function(){var e=this._writableState;e.corked&&(e.corked--,!e.writing&&!e.corked&&!e.bufferProcessing&&e.bufferedRequest&&C(this,e));},l.prototype.setDefaultEncoding=function(e){if("string"==typeof e&&(e=e.toLowerCase()),!(-1<["hex","utf8","utf-8","ascii","binary","base64","ucs2","ucs-2","utf16le","utf-16le","raw"].indexOf((e+"").toLowerCase())))throw new H(e);return this._writableState.defaultEncoding=e,this},Object.defineProperty(l.prototype,"writableBuffer",{enumerable:false,get:function(){return this._writableState&&this._writableState.getBuffer()}}),Object.defineProperty(l.prototype,"writableHighWaterMark",{enumerable:false,get:function(){return this._writableState.highWaterMark}}),l.prototype._write=function(e,t,n){n(new F("_write()"));},l.prototype._writev=null,l.prototype.end=function(e,t,n){var r=this._writableState;return "function"==typeof e?(n=e,e=null,t=null):"function"==typeof t&&(n=t,t=null),null!==e&&void 0!==e&&this.write(e,t),r.corked&&(r.corked=1,this.uncork()),r.ending||T(this,r,n),this},Object.defineProperty(l.prototype,"writableLength",{enumerable:false,get:function(){return this._writableState.length}}),Object.defineProperty(l.prototype,"destroyed",{enumerable:false,get:function(){return void 0!==this._writableState&&this._writableState.destroyed},set:function(e){this._writableState&&(this._writableState.destroyed=e);}}),l.prototype.destroy=D.destroy,l.prototype._undestroy=D.undestroy,l.prototype._destroy=function(e,t){t(e);};}).call(this);}).call(this,e("_process"),"undefined"==typeof commonjsGlobal?"undefined"==typeof self?"undefined"==typeof window?{}:window:self:commonjsGlobal);},{"../errors":15,"./_stream_duplex":16,"./internal/streams/destroy":23,"./internal/streams/state":27,"./internal/streams/stream":28,_process:12,buffer:3,inherits:10,"util-deprecate":32}],21:[function(e,t){(function(n){(function(){function r(e,t,n){return t in e?Object.defineProperty(e,t,{value:n,enumerable:true,configurable:true,writable:true}):e[t]=n,e}function a(e,t){return {value:e,done:t}}function o(e){var t=e[c];if(null!==t){var n=e[h].read();null!==n&&(e[g]=null,e[c]=null,e[u]=null,t(a(n,false)));}}function i(e){n.nextTick(o,e);}function d(e,t){return function(n,r){e.then(function(){return t[f]?void n(a(void 0,true)):void t[_](n,r)},r);}}var s,l=e("./end-of-stream"),c=Symbol("lastResolve"),u=Symbol("lastReject"),p=Symbol("error"),f=Symbol("ended"),g=Symbol("lastPromise"),_=Symbol("handlePromise"),h=Symbol("stream"),m=Object.getPrototypeOf(function(){}),b=Object.setPrototypeOf((s={get stream(){return this[h]},next:function(){var e=this,t=this[p];if(null!==t)return Promise.reject(t);if(this[f])return Promise.resolve(a(void 0,true));if(this[h].destroyed)return new Promise(function(t,r){n.nextTick(function(){e[p]?r(e[p]):t(a(void 0,true));});});var r,o=this[g];if(o)r=new Promise(d(o,this));else {var i=this[h].read();if(null!==i)return Promise.resolve(a(i,false));r=new Promise(this[_]);}return this[g]=r,r}},r(s,Symbol.asyncIterator,function(){return this}),r(s,"return",function(){var e=this;return new Promise(function(t,n){e[h].destroy(null,function(e){return e?void n(e):void t(a(void 0,true))});})}),s),m);t.exports=function(e){var t,n=Object.create(b,(t={},r(t,h,{value:e,writable:true}),r(t,c,{value:null,writable:true}),r(t,u,{value:null,writable:true}),r(t,p,{value:null,writable:true}),r(t,f,{value:e._readableState.endEmitted,writable:true}),r(t,_,{value:function(e,t){var r=n[h].read();r?(n[g]=null,n[c]=null,n[u]=null,e(a(r,false))):(n[c]=e,n[u]=t);},writable:true}),t));return n[g]=null,l(e,function(e){if(e&&"ERR_STREAM_PREMATURE_CLOSE"!==e.code){var t=n[u];return null!==t&&(n[g]=null,n[c]=null,n[u]=null,t(e)),void(n[p]=e)}var r=n[c];null!==r&&(n[g]=null,n[c]=null,n[u]=null,r(a(void 0,true))),n[f]=true;}),e.on("readable",i.bind(null,n)),n};}).call(this);}).call(this,e("_process"));},{"./end-of-stream":24,_process:12}],22:[function(e,t){function n(e,t){var n=Object.keys(e);if(Object.getOwnPropertySymbols){var r=Object.getOwnPropertySymbols(e);t&&(r=r.filter(function(t){return Object.getOwnPropertyDescriptor(e,t).enumerable})),n.push.apply(n,r);}return n}function r(e){for(var t,r=1;r<arguments.length;r++)t=null==arguments[r]?{}:arguments[r],r%2?n(Object(t),true).forEach(function(n){a(e,n,t[n]);}):Object.getOwnPropertyDescriptors?Object.defineProperties(e,Object.getOwnPropertyDescriptors(t)):n(Object(t)).forEach(function(n){Object.defineProperty(e,n,Object.getOwnPropertyDescriptor(t,n));});return e}function a(e,t,n){return t in e?Object.defineProperty(e,t,{value:n,enumerable:true,configurable:true,writable:true}):e[t]=n,e}function o(e,t){if(!(e instanceof t))throw new TypeError("Cannot call a class as a function")}function i(e,t){for(var n,r=0;r<t.length;r++)n=t[r],n.enumerable=n.enumerable||false,n.configurable=true,"value"in n&&(n.writable=true),Object.defineProperty(e,n.key,n);}function d(e,t,n){return t&&i(e.prototype,t),e}function s(e,t,n){u.prototype.copy.call(e,t,n);}var l=e("buffer"),u=l.Buffer,p=e("util"),f=p.inspect,g=f&&f.custom||"inspect";t.exports=function(){function e(){o(this,e),this.head=null,this.tail=null,this.length=0;}return d(e,[{key:"push",value:function(e){var t={data:e,next:null};0<this.length?this.tail.next=t:this.head=t,this.tail=t,++this.length;}},{key:"unshift",value:function(e){var t={data:e,next:this.head};0===this.length&&(this.tail=t),this.head=t,++this.length;}},{key:"shift",value:function(){if(0!==this.length){var e=this.head.data;return this.head=1===this.length?this.tail=null:this.head.next,--this.length,e}}},{key:"clear",value:function(){this.head=this.tail=null,this.length=0;}},{key:"join",value:function(e){if(0===this.length)return "";for(var t=this.head,n=""+t.data;t=t.next;)n+=e+t.data;return n}},{key:"concat",value:function(e){if(0===this.length)return u.alloc(0);for(var t=u.allocUnsafe(e>>>0),n=this.head,r=0;n;)s(n.data,t,r),r+=n.data.length,n=n.next;return t}},{key:"consume",value:function(e,t){var n;return e<this.head.data.length?(n=this.head.data.slice(0,e),this.head.data=this.head.data.slice(e)):e===this.head.data.length?n=this.shift():n=t?this._getString(e):this._getBuffer(e),n}},{key:"first",value:function(){return this.head.data}},{key:"_getString",value:function(e){var t=this.head,r=1,a=t.data;for(e-=a.length;t=t.next;){var o=t.data,i=e>o.length?o.length:e;if(a+=i===o.length?o:o.slice(0,e),e-=i,0===e){i===o.length?(++r,this.head=t.next?t.next:this.tail=null):(this.head=t,t.data=o.slice(i));break}++r;}return this.length-=r,a}},{key:"_getBuffer",value:function(e){var t=u.allocUnsafe(e),r=this.head,a=1;for(r.data.copy(t),e-=r.data.length;r=r.next;){var o=r.data,i=e>o.length?o.length:e;if(o.copy(t,t.length-e,0,i),e-=i,0===e){i===o.length?(++a,this.head=r.next?r.next:this.tail=null):(this.head=r,r.data=o.slice(i));break}++a;}return this.length-=a,t}},{key:g,value:function(e,t){return f(this,r({},t,{depth:0,customInspect:false}))}}]),e}();},{buffer:3,util:2}],23:[function(e,t){(function(e){(function(){function n(e,t){a(e,t),r(e);}function r(e){e._writableState&&!e._writableState.emitClose||e._readableState&&!e._readableState.emitClose||e.emit("close");}function a(e,t){e.emit("error",t);}t.exports={destroy:function(t,o){var i=this,d=this._readableState&&this._readableState.destroyed,s=this._writableState&&this._writableState.destroyed;return d||s?(o?o(t):t&&(this._writableState?!this._writableState.errorEmitted&&(this._writableState.errorEmitted=true,e.nextTick(a,this,t)):e.nextTick(a,this,t)),this):(this._readableState&&(this._readableState.destroyed=true),this._writableState&&(this._writableState.destroyed=true),this._destroy(t||null,function(t){!o&&t?i._writableState?i._writableState.errorEmitted?e.nextTick(r,i):(i._writableState.errorEmitted=true,e.nextTick(n,i,t)):e.nextTick(n,i,t):o?(e.nextTick(r,i),o(t)):e.nextTick(r,i);}),this)},undestroy:function(){this._readableState&&(this._readableState.destroyed=false,this._readableState.reading=false,this._readableState.ended=false,this._readableState.endEmitted=false),this._writableState&&(this._writableState.destroyed=false,this._writableState.ended=false,this._writableState.ending=false,this._writableState.finalCalled=false,this._writableState.prefinished=false,this._writableState.finished=false,this._writableState.errorEmitted=false);},errorOrDestroy:function(e,t){var n=e._readableState,r=e._writableState;n&&n.autoDestroy||r&&r.autoDestroy?e.destroy(t):e.emit("error",t);}};}).call(this);}).call(this,e("_process"));},{_process:12}],24:[function(e,t){function n(e){var t=false;return function(){if(!t){t=true;for(var n=arguments.length,r=Array(n),a=0;a<n;a++)r[a]=arguments[a];e.apply(this,r);}}}function r(){}function a(e){return e.setHeader&&"function"==typeof e.abort}function o(e,t,d){if("function"==typeof t)return o(e,null,t);t||(t={}),d=n(d||r);var s=t.readable||false!==t.readable&&e.readable,l=t.writable||false!==t.writable&&e.writable,c=function(){e.writable||p();},u=e._writableState&&e._writableState.finished,p=function(){l=false,u=true,s||d.call(e);},f=e._readableState&&e._readableState.endEmitted,g=function(){s=false,f=true,l||d.call(e);},_=function(t){d.call(e,t);},h=function(){var t;return s&&!f?(e._readableState&&e._readableState.ended||(t=new i),d.call(e,t)):l&&!u?(e._writableState&&e._writableState.ended||(t=new i),d.call(e,t)):void 0},m=function(){e.req.on("finish",p);};return a(e)?(e.on("complete",p),e.on("abort",h),e.req?m():e.on("request",m)):l&&!e._writableState&&(e.on("end",c),e.on("close",c)),e.on("end",g),e.on("finish",p),false!==t.error&&e.on("error",_),e.on("close",h),function(){e.removeListener("complete",p),e.removeListener("abort",h),e.removeListener("request",m),e.req&&e.req.removeListener("finish",p),e.removeListener("end",c),e.removeListener("close",c),e.removeListener("finish",p),e.removeListener("end",g),e.removeListener("error",_),e.removeListener("close",h);}}var i=e("../../../errors").codes.ERR_STREAM_PREMATURE_CLOSE;t.exports=o;},{"../../../errors":15}],25:[function(e,t){t.exports=function(){throw new Error("Readable.from is not available in the browser")};},{}],26:[function(e,t){function n(e){var t=false;return function(){t||(t=true,e.apply(void 0,arguments));}}function r(e){if(e)throw e}function a(e){return e.setHeader&&"function"==typeof e.abort}function o(t,r,o,i){i=n(i);var d=false;t.on("close",function(){d=true;}),l===void 0&&(l=e("./end-of-stream")),l(t,{readable:r,writable:o},function(e){return e?i(e):void(d=true,i())});var s=false;return function(e){if(!d)return s?void 0:(s=true,a(t)?t.abort():"function"==typeof t.destroy?t.destroy():void i(e||new p("pipe")))}}function i(e){e();}function d(e,t){return e.pipe(t)}function s(e){return e.length?"function"==typeof e[e.length-1]?e.pop():r:r}var l,c=e("../../../errors").codes,u=c.ERR_MISSING_ARGS,p=c.ERR_STREAM_DESTROYED;t.exports=function(){for(var e=arguments.length,t=Array(e),n=0;n<e;n++)t[n]=arguments[n];var r=s(t);if(Array.isArray(t[0])&&(t=t[0]),2>t.length)throw new u("streams");var a,l=t.map(function(e,n){var d=n<t.length-1;return o(e,d,0<n,function(e){a||(a=e),e&&l.forEach(i),d||(l.forEach(i),r(a));})});return t.reduce(d)};},{"../../../errors":15,"./end-of-stream":24}],27:[function(e,n){function r(e,t,n){return null==e.highWaterMark?t?e[n]:null:e.highWaterMark}var a=e("../../../errors").codes.ERR_INVALID_OPT_VALUE;n.exports={getHighWaterMark:function(e,n,o,i){var d=r(n,i,o);if(null!=d){if(!(isFinite(d)&&t(d)===d)||0>d){var s=i?o:"highWaterMark";throw new a(s,d)}return t(d)}return e.objectMode?16:16384}};},{"../../../errors":15}],28:[function(e,t){t.exports=e("events").EventEmitter;},{events:7}],29:[function(e,t,n){n=t.exports=e("./lib/_stream_readable.js"),n.Stream=n,n.Readable=n,n.Writable=e("./lib/_stream_writable.js"),n.Duplex=e("./lib/_stream_duplex.js"),n.Transform=e("./lib/_stream_transform.js"),n.PassThrough=e("./lib/_stream_passthrough.js"),n.finished=e("./lib/internal/streams/end-of-stream.js"),n.pipeline=e("./lib/internal/streams/pipeline.js");},{"./lib/_stream_duplex.js":16,"./lib/_stream_passthrough.js":17,"./lib/_stream_readable.js":18,"./lib/_stream_transform.js":19,"./lib/_stream_writable.js":20,"./lib/internal/streams/end-of-stream.js":24,"./lib/internal/streams/pipeline.js":26}],30:[function(e,t,n){function r(e,t){for(var n in e)t[n]=e[n];}function a(e,t,n){return i(e,t,n)}/*! safe-buffer. MIT License. Feross Aboukhadijeh <https://feross.org/opensource> */var o=e("buffer"),i=o.Buffer;i.from&&i.alloc&&i.allocUnsafe&&i.allocUnsafeSlow?t.exports=o:(r(o,n),n.Buffer=a),a.prototype=Object.create(i.prototype),r(i,a),a.from=function(e,t,n){if("number"==typeof e)throw new TypeError("Argument must not be a number");return i(e,t,n)},a.alloc=function(e,t,n){if("number"!=typeof e)throw new TypeError("Argument must be a number");var r=i(e);return void 0===t?r.fill(0):"string"==typeof n?r.fill(t,n):r.fill(t),r},a.allocUnsafe=function(e){if("number"!=typeof e)throw new TypeError("Argument must be a number");return i(e)},a.allocUnsafeSlow=function(e){if("number"!=typeof e)throw new TypeError("Argument must be a number");return o.SlowBuffer(e)};},{buffer:3}],31:[function(e,t,n){function r(e){if(!e)return "utf8";for(var t;;)switch(e){case "utf8":case "utf-8":return "utf8";case "ucs2":case "ucs-2":case "utf16le":case "utf-16le":return "utf16le";case "latin1":case "binary":return "latin1";case "base64":case "ascii":case "hex":return e;default:if(t)return;e=(""+e).toLowerCase(),t=true;}}function a(e){var t=r(e);if("string"!=typeof t&&(m.isEncoding===b||!b(e)))throw new Error("Unknown encoding: "+e);return t||e}function o(e){this.encoding=a(e);var t;switch(this.encoding){case "utf16le":this.text=u,this.end=p,t=4;break;case "utf8":this.fillLast=c,t=4;break;case "base64":this.text=f,this.end=g,t=3;break;default:return this.write=_,void(this.end=h);}this.lastNeed=0,this.lastTotal=0,this.lastChar=m.allocUnsafe(t);}function d(e){if(127>=e)return 0;return 6==e>>5?2:14==e>>4?3:30==e>>3?4:2==e>>6?-1:-2}function s(e,t,n){var r=t.length-1;if(r<n)return 0;var a=d(t[r]);return 0<=a?(0<a&&(e.lastNeed=a-1),a):--r<n||-2===a?0:(a=d(t[r]),0<=a)?(0<a&&(e.lastNeed=a-2),a):--r<n||-2===a?0:(a=d(t[r]),0<=a?(0<a&&(2===a?a=0:e.lastNeed=a-3),a):0)}function l(e,t){if(128!=(192&t[0]))return e.lastNeed=0,"\uFFFD";if(1<e.lastNeed&&1<t.length){if(128!=(192&t[1]))return e.lastNeed=1,"\uFFFD";if(2<e.lastNeed&&2<t.length&&128!=(192&t[2]))return e.lastNeed=2,"\uFFFD"}}function c(e){var t=this.lastTotal-this.lastNeed,n=l(this,e);return void 0===n?this.lastNeed<=e.length?(e.copy(this.lastChar,t,0,this.lastNeed),this.lastChar.toString(this.encoding,0,this.lastTotal)):void(e.copy(this.lastChar,t,0,e.length),this.lastNeed-=e.length):n}function u(e,t){if(0==(e.length-t)%2){var n=e.toString("utf16le",t);if(n){var r=n.charCodeAt(n.length-1);if(55296<=r&&56319>=r)return this.lastNeed=2,this.lastTotal=4,this.lastChar[0]=e[e.length-2],this.lastChar[1]=e[e.length-1],n.slice(0,-1)}return n}return this.lastNeed=1,this.lastTotal=2,this.lastChar[0]=e[e.length-1],e.toString("utf16le",t,e.length-1)}function p(e){var t=e&&e.length?this.write(e):"";if(this.lastNeed){var n=this.lastTotal-this.lastNeed;return t+this.lastChar.toString("utf16le",0,n)}return t}function f(e,t){var r=(e.length-t)%3;return 0==r?e.toString("base64",t):(this.lastNeed=3-r,this.lastTotal=3,1==r?this.lastChar[0]=e[e.length-1]:(this.lastChar[0]=e[e.length-2],this.lastChar[1]=e[e.length-1]),e.toString("base64",t,e.length-r))}function g(e){var t=e&&e.length?this.write(e):"";return this.lastNeed?t+this.lastChar.toString("base64",0,3-this.lastNeed):t}function _(e){return e.toString(this.encoding)}function h(e){return e&&e.length?this.write(e):""}var m=e("safe-buffer").Buffer,b=m.isEncoding||function(e){switch(e=""+e,e&&e.toLowerCase()){case "hex":case "utf8":case "utf-8":case "ascii":case "binary":case "base64":case "ucs2":case "ucs-2":case "utf16le":case "utf-16le":case "raw":return  true;default:return  false;}};n.StringDecoder=o,o.prototype.write=function(e){if(0===e.length)return "";var t,n;if(this.lastNeed){if(t=this.fillLast(e),void 0===t)return "";n=this.lastNeed,this.lastNeed=0;}else n=0;return n<e.length?t?t+this.text(e,n):this.text(e,n):t||""},o.prototype.end=function(e){var t=e&&e.length?this.write(e):"";return this.lastNeed?t+"\uFFFD":t},o.prototype.text=function(e,t){var n=s(this,e,t);if(!this.lastNeed)return e.toString("utf8",t);this.lastTotal=n;var r=e.length-(n-this.lastNeed);return e.copy(this.lastChar,0,r),e.toString("utf8",t,r)},o.prototype.fillLast=function(e){return this.lastNeed<=e.length?(e.copy(this.lastChar,this.lastTotal-this.lastNeed,0,this.lastNeed),this.lastChar.toString(this.encoding,0,this.lastTotal)):void(e.copy(this.lastChar,this.lastTotal-this.lastNeed,0,e.length),this.lastNeed-=e.length)};},{"safe-buffer":30}],32:[function(e,t){(function(e){(function(){function n(t){try{if(!e.localStorage)return !1}catch(e){return  false}var n=e.localStorage[t];return null!=n&&"true"===(n+"").toLowerCase()}t.exports=function(e,t){function r(){if(!a){if(n("throwDeprecation"))throw new Error(t);else n("traceDeprecation")?console.trace(t):console.warn(t);a=true;}return e.apply(this,arguments)}if(n("noDeprecation"))return e;var a=false;return r};}).call(this);}).call(this,"undefined"==typeof commonjsGlobal?"undefined"==typeof self?"undefined"==typeof window?{}:window:self:commonjsGlobal);},{}],"/":[function(e,t){function n(e){return e.replace(/a=ice-options:trickle\s\n/g,"")}function r(e){console.warn(e);}/*! simple-peer. MIT License. Feross Aboukhadijeh <https://feross.org/opensource> */const a=e("debug")("simple-peer"),o=e("get-browser-rtc"),i=e("randombytes"),d=e("readable-stream"),s=e("queue-microtask"),l=e("err-code"),{Buffer:c}=e("buffer"),u=65536;class p extends d.Duplex{constructor(e){if(e=Object.assign({allowHalfOpen:false},e),super(e),this._id=i(4).toString("hex").slice(0,7),this._debug("new peer %o",e),this.channelName=e.initiator?e.channelName||i(20).toString("hex"):null,this.initiator=e.initiator||false,this.channelConfig=e.channelConfig||p.channelConfig,this.channelNegotiated=this.channelConfig.negotiated,this.config=Object.assign({},p.config,e.config),this.offerOptions=e.offerOptions||{},this.answerOptions=e.answerOptions||{},this.sdpTransform=e.sdpTransform||(e=>e),this.streams=e.streams||(e.stream?[e.stream]:[]),this.trickle=void 0===e.trickle||e.trickle,this.allowHalfTrickle=void 0!==e.allowHalfTrickle&&e.allowHalfTrickle,this.iceCompleteTimeout=e.iceCompleteTimeout||5000,this.destroyed=false,this.destroying=false,this._connected=false,this.remoteAddress=void 0,this.remoteFamily=void 0,this.remotePort=void 0,this.localAddress=void 0,this.localFamily=void 0,this.localPort=void 0,this._wrtc=e.wrtc&&"object"==typeof e.wrtc?e.wrtc:o(),!this._wrtc)if("undefined"==typeof window)throw l(new Error("No WebRTC support: Specify `opts.wrtc` option in this environment"),"ERR_WEBRTC_SUPPORT");else throw l(new Error("No WebRTC support: Not a supported browser"),"ERR_WEBRTC_SUPPORT");this._pcReady=false,this._channelReady=false,this._iceComplete=false,this._iceCompleteTimer=null,this._channel=null,this._pendingCandidates=[],this._isNegotiating=false,this._firstNegotiation=true,this._batchedNegotiation=false,this._queuedNegotiation=false,this._sendersAwaitingStable=[],this._senderMap=new Map,this._closingInterval=null,this._remoteTracks=[],this._remoteStreams=[],this._chunk=null,this._cb=null,this._interval=null;try{this._pc=new this._wrtc.RTCPeerConnection(this.config);}catch(e){return void this.destroy(l(e,"ERR_PC_CONSTRUCTOR"))}this._isReactNativeWebrtc="number"==typeof this._pc._peerConnectionId,this._pc.oniceconnectionstatechange=()=>{this._onIceStateChange();},this._pc.onicegatheringstatechange=()=>{this._onIceStateChange();},this._pc.onconnectionstatechange=()=>{this._onConnectionStateChange();},this._pc.onsignalingstatechange=()=>{this._onSignalingStateChange();},this._pc.onicecandidate=e=>{this._onIceCandidate(e);},"object"==typeof this._pc.peerIdentity&&this._pc.peerIdentity.catch(e=>{this.destroy(l(e,"ERR_PC_PEER_IDENTITY"));}),this.initiator||this.channelNegotiated?this._setupData({channel:this._pc.createDataChannel(this.channelName,this.channelConfig)}):this._pc.ondatachannel=e=>{this._setupData(e);},this.streams&&this.streams.forEach(e=>{this.addStream(e);}),this._pc.ontrack=e=>{this._onTrack(e);},this._debug("initial negotiation"),this._needsNegotiation(),this._onFinishBound=()=>{this._onFinish();},this.once("finish",this._onFinishBound);}get bufferSize(){return this._channel&&this._channel.bufferedAmount||0}get connected(){return this._connected&&"open"===this._channel.readyState}address(){return {port:this.localPort,family:this.localFamily,address:this.localAddress}}signal(e){if(!this.destroying){if(this.destroyed)throw l(new Error("cannot signal after peer is destroyed"),"ERR_DESTROYED");if("string"==typeof e)try{e=JSON.parse(e);}catch(t){e={};}this._debug("signal()"),e.renegotiate&&this.initiator&&(this._debug("got request to renegotiate"),this._needsNegotiation()),e.transceiverRequest&&this.initiator&&(this._debug("got request for transceiver"),this.addTransceiver(e.transceiverRequest.kind,e.transceiverRequest.init)),e.candidate&&(this._pc.remoteDescription&&this._pc.remoteDescription.type?this._addIceCandidate(e.candidate):this._pendingCandidates.push(e.candidate)),e.sdp&&this._pc.setRemoteDescription(new this._wrtc.RTCSessionDescription(e)).then(()=>{this.destroyed||(this._pendingCandidates.forEach(e=>{this._addIceCandidate(e);}),this._pendingCandidates=[],"offer"===this._pc.remoteDescription.type&&this._createAnswer());}).catch(e=>{this.destroy(l(e,"ERR_SET_REMOTE_DESCRIPTION"));}),e.sdp||e.candidate||e.renegotiate||e.transceiverRequest||this.destroy(l(new Error("signal() called with invalid signal data"),"ERR_SIGNALING"));}}_addIceCandidate(e){const t=new this._wrtc.RTCIceCandidate(e);this._pc.addIceCandidate(t).catch(e=>{!t.address||t.address.endsWith(".local")?r("Ignoring unsupported ICE candidate."):this.destroy(l(e,"ERR_ADD_ICE_CANDIDATE"));});}send(e){if(!this.destroying){if(this.destroyed)throw l(new Error("cannot send after peer is destroyed"),"ERR_DESTROYED");this._channel.send(e);}}addTransceiver(e,t){if(!this.destroying){if(this.destroyed)throw l(new Error("cannot addTransceiver after peer is destroyed"),"ERR_DESTROYED");if(this._debug("addTransceiver()"),this.initiator)try{this._pc.addTransceiver(e,t),this._needsNegotiation();}catch(e){this.destroy(l(e,"ERR_ADD_TRANSCEIVER"));}else this.emit("signal",{type:"transceiverRequest",transceiverRequest:{kind:e,init:t}});}}addStream(e){if(!this.destroying){if(this.destroyed)throw l(new Error("cannot addStream after peer is destroyed"),"ERR_DESTROYED");this._debug("addStream()"),e.getTracks().forEach(t=>{this.addTrack(t,e);});}}addTrack(e,t){if(this.destroying)return;if(this.destroyed)throw l(new Error("cannot addTrack after peer is destroyed"),"ERR_DESTROYED");this._debug("addTrack()");const n=this._senderMap.get(e)||new Map;let r=n.get(t);if(!r)r=this._pc.addTrack(e,t),n.set(t,r),this._senderMap.set(e,n),this._needsNegotiation();else if(r.removed)throw l(new Error("Track has been removed. You should enable/disable tracks that you want to re-add."),"ERR_SENDER_REMOVED");else throw l(new Error("Track has already been added to that stream."),"ERR_SENDER_ALREADY_ADDED")}replaceTrack(e,t,n){if(this.destroying)return;if(this.destroyed)throw l(new Error("cannot replaceTrack after peer is destroyed"),"ERR_DESTROYED");this._debug("replaceTrack()");const r=this._senderMap.get(e),a=r?r.get(n):null;if(!a)throw l(new Error("Cannot replace track that was never added."),"ERR_TRACK_NOT_ADDED");t&&this._senderMap.set(t,r),null==a.replaceTrack?this.destroy(l(new Error("replaceTrack is not supported in this browser"),"ERR_UNSUPPORTED_REPLACETRACK")):a.replaceTrack(t);}removeTrack(e,t){if(this.destroying)return;if(this.destroyed)throw l(new Error("cannot removeTrack after peer is destroyed"),"ERR_DESTROYED");this._debug("removeSender()");const n=this._senderMap.get(e),r=n?n.get(t):null;if(!r)throw l(new Error("Cannot remove track that was never added."),"ERR_TRACK_NOT_ADDED");try{r.removed=!0,this._pc.removeTrack(r);}catch(e){"NS_ERROR_UNEXPECTED"===e.name?this._sendersAwaitingStable.push(r):this.destroy(l(e,"ERR_REMOVE_TRACK"));}this._needsNegotiation();}removeStream(e){if(!this.destroying){if(this.destroyed)throw l(new Error("cannot removeStream after peer is destroyed"),"ERR_DESTROYED");this._debug("removeSenders()"),e.getTracks().forEach(t=>{this.removeTrack(t,e);});}}_needsNegotiation(){this._debug("_needsNegotiation"),this._batchedNegotiation||(this._batchedNegotiation=true,s(()=>{this._batchedNegotiation=false,this.initiator||!this._firstNegotiation?(this._debug("starting batched negotiation"),this.negotiate()):this._debug("non-initiator initial negotiation request discarded"),this._firstNegotiation=false;}));}negotiate(){if(!this.destroying){if(this.destroyed)throw l(new Error("cannot negotiate after peer is destroyed"),"ERR_DESTROYED");this.initiator?this._isNegotiating?(this._queuedNegotiation=true,this._debug("already negotiating, queueing")):(this._debug("start negotiation"),setTimeout(()=>{this._createOffer();},0)):this._isNegotiating?(this._queuedNegotiation=true,this._debug("already negotiating, queueing")):(this._debug("requesting negotiation from initiator"),this.emit("signal",{type:"renegotiate",renegotiate:true})),this._isNegotiating=true;}}destroy(e){this._destroy(e,()=>{});}_destroy(e,t){this.destroyed||this.destroying||(this.destroying=true,this._debug("destroying (error: %s)",e&&(e.message||e)),s(()=>{if(this.destroyed=true,this.destroying=false,this._debug("destroy (error: %s)",e&&(e.message||e)),this.readable=this.writable=false,this._readableState.ended||this.push(null),this._writableState.finished||this.end(),this._connected=false,this._pcReady=false,this._channelReady=false,this._remoteTracks=null,this._remoteStreams=null,this._senderMap=null,clearInterval(this._closingInterval),this._closingInterval=null,clearInterval(this._interval),this._interval=null,this._chunk=null,this._cb=null,this._onFinishBound&&this.removeListener("finish",this._onFinishBound),this._onFinishBound=null,this._channel){try{this._channel.close();}catch(e){}this._channel.onmessage=null,this._channel.onopen=null,this._channel.onclose=null,this._channel.onerror=null;}if(this._pc){try{this._pc.close();}catch(e){}this._pc.oniceconnectionstatechange=null,this._pc.onicegatheringstatechange=null,this._pc.onsignalingstatechange=null,this._pc.onicecandidate=null,this._pc.ontrack=null,this._pc.ondatachannel=null;}this._pc=null,this._channel=null,e&&this.emit("error",e),this.emit("close"),t();}));}_setupData(e){if(!e.channel)return this.destroy(l(new Error("Data channel event is missing `channel` property"),"ERR_DATA_CHANNEL"));this._channel=e.channel,this._channel.binaryType="arraybuffer","number"==typeof this._channel.bufferedAmountLowThreshold&&(this._channel.bufferedAmountLowThreshold=u),this.channelName=this._channel.label,this._channel.onmessage=e=>{this._onChannelMessage(e);},this._channel.onbufferedamountlow=()=>{this._onChannelBufferedAmountLow();},this._channel.onopen=()=>{this._onChannelOpen();},this._channel.onclose=()=>{this._onChannelClose();},this._channel.onerror=e=>{const t=e.error instanceof Error?e.error:new Error(`Datachannel error: ${e.message} ${e.filename}:${e.lineno}:${e.colno}`);this.destroy(l(t,"ERR_DATA_CHANNEL"));};let t=false;this._closingInterval=setInterval(()=>{this._channel&&"closing"===this._channel.readyState?(t&&this._onChannelClose(),t=true):t=false;},5000);}_read(){}_write(e,t,n){if(this.destroyed)return n(l(new Error("cannot write after peer is destroyed"),"ERR_DATA_CHANNEL"));if(this._connected){try{this.send(e);}catch(e){return this.destroy(l(e,"ERR_DATA_CHANNEL"))}this._channel.bufferedAmount>u?(this._debug("start backpressure: bufferedAmount %d",this._channel.bufferedAmount),this._cb=n):n(null);}else this._debug("write before connect"),this._chunk=e,this._cb=n;}_onFinish(){if(!this.destroyed){const e=()=>{setTimeout(()=>this.destroy(),1e3);};this._connected?e():this.once("connect",e);}}_startIceCompleteTimeout(){this.destroyed||this._iceCompleteTimer||(this._debug("started iceComplete timeout"),this._iceCompleteTimer=setTimeout(()=>{this._iceComplete||(this._iceComplete=true,this._debug("iceComplete timeout completed"),this.emit("iceTimeout"),this.emit("_iceComplete"));},this.iceCompleteTimeout));}_createOffer(){this.destroyed||this._pc.createOffer(this.offerOptions).then(e=>{if(this.destroyed)return;this.trickle||this.allowHalfTrickle||(e.sdp=n(e.sdp)),e.sdp=this.sdpTransform(e.sdp);const t=()=>{if(!this.destroyed){const t=this._pc.localDescription||e;this._debug("signal"),this.emit("signal",{type:t.type,sdp:t.sdp});}};this._pc.setLocalDescription(e).then(()=>{this._debug("createOffer success"),this.destroyed||(this.trickle||this._iceComplete?t():this.once("_iceComplete",t));}).catch(e=>{this.destroy(l(e,"ERR_SET_LOCAL_DESCRIPTION"));});}).catch(e=>{this.destroy(l(e,"ERR_CREATE_OFFER"));});}_requestMissingTransceivers(){this._pc.getTransceivers&&this._pc.getTransceivers().forEach(e=>{e.mid||!e.sender.track||e.requested||(e.requested=true,this.addTransceiver(e.sender.track.kind));});}_createAnswer(){this.destroyed||this._pc.createAnswer(this.answerOptions).then(e=>{if(this.destroyed)return;this.trickle||this.allowHalfTrickle||(e.sdp=n(e.sdp)),e.sdp=this.sdpTransform(e.sdp);const t=()=>{if(!this.destroyed){const t=this._pc.localDescription||e;this._debug("signal"),this.emit("signal",{type:t.type,sdp:t.sdp}),this.initiator||this._requestMissingTransceivers();}};this._pc.setLocalDescription(e).then(()=>{this.destroyed||(this.trickle||this._iceComplete?t():this.once("_iceComplete",t));}).catch(e=>{this.destroy(l(e,"ERR_SET_LOCAL_DESCRIPTION"));});}).catch(e=>{this.destroy(l(e,"ERR_CREATE_ANSWER"));});}_onConnectionStateChange(){this.destroyed||"failed"===this._pc.connectionState&&this.destroy(l(new Error("Connection failed."),"ERR_CONNECTION_FAILURE"));}_onIceStateChange(){if(this.destroyed)return;const e=this._pc.iceConnectionState,t=this._pc.iceGatheringState;this._debug("iceStateChange (connection: %s) (gathering: %s)",e,t),this.emit("iceStateChange",e,t),("connected"===e||"completed"===e)&&(this._pcReady=true,this._maybeReady()),"failed"===e&&this.destroy(l(new Error("Ice connection failed."),"ERR_ICE_CONNECTION_FAILURE")),"closed"===e&&this.destroy(l(new Error("Ice connection closed."),"ERR_ICE_CONNECTION_CLOSED"));}getStats(e){const t=e=>("[object Array]"===Object.prototype.toString.call(e.values)&&e.values.forEach(t=>{Object.assign(e,t);}),e);0===this._pc.getStats.length||this._isReactNativeWebrtc?this._pc.getStats().then(n=>{const r=[];n.forEach(e=>{r.push(t(e));}),e(null,r);},t=>e(t)):0<this._pc.getStats.length?this._pc.getStats(n=>{if(this.destroyed)return;const r=[];n.result().forEach(e=>{const n={};e.names().forEach(t=>{n[t]=e.stat(t);}),n.id=e.id,n.type=e.type,n.timestamp=e.timestamp,r.push(t(n));}),e(null,r);},t=>e(t)):e(null,[]);}_maybeReady(){if(this._debug("maybeReady pc %s channel %s",this._pcReady,this._channelReady),this._connected||this._connecting||!this._pcReady||!this._channelReady)return;this._connecting=true;const e=()=>{this.destroyed||this.getStats((t,n)=>{if(this.destroyed)return;t&&(n=[]);const r={},a={},o={};let i=false;n.forEach(e=>{("remotecandidate"===e.type||"remote-candidate"===e.type)&&(r[e.id]=e),("localcandidate"===e.type||"local-candidate"===e.type)&&(a[e.id]=e),("candidatepair"===e.type||"candidate-pair"===e.type)&&(o[e.id]=e);});const d=e=>{i=true;let t=a[e.localCandidateId];t&&(t.ip||t.address)?(this.localAddress=t.ip||t.address,this.localPort=+t.port):t&&t.ipAddress?(this.localAddress=t.ipAddress,this.localPort=+t.portNumber):"string"==typeof e.googLocalAddress&&(t=e.googLocalAddress.split(":"),this.localAddress=t[0],this.localPort=+t[1]),this.localAddress&&(this.localFamily=this.localAddress.includes(":")?"IPv6":"IPv4");let n=r[e.remoteCandidateId];n&&(n.ip||n.address)?(this.remoteAddress=n.ip||n.address,this.remotePort=+n.port):n&&n.ipAddress?(this.remoteAddress=n.ipAddress,this.remotePort=+n.portNumber):"string"==typeof e.googRemoteAddress&&(n=e.googRemoteAddress.split(":"),this.remoteAddress=n[0],this.remotePort=+n[1]),this.remoteAddress&&(this.remoteFamily=this.remoteAddress.includes(":")?"IPv6":"IPv4"),this._debug("connect local: %s:%s remote: %s:%s",this.localAddress,this.localPort,this.remoteAddress,this.remotePort);};if(n.forEach(e=>{"transport"===e.type&&e.selectedCandidatePairId&&d(o[e.selectedCandidatePairId]),("googCandidatePair"===e.type&&"true"===e.googActiveConnection||("candidatepair"===e.type||"candidate-pair"===e.type)&&e.selected)&&d(e);}),!i&&(!Object.keys(o).length||Object.keys(a).length))return void setTimeout(e,100);if(this._connecting=false,this._connected=true,this._chunk){try{this.send(this._chunk);}catch(e){return this.destroy(l(e,"ERR_DATA_CHANNEL"))}this._chunk=null,this._debug("sent chunk from \"write before connect\"");const e=this._cb;this._cb=null,e(null);}"number"!=typeof this._channel.bufferedAmountLowThreshold&&(this._interval=setInterval(()=>this._onInterval(),150),this._interval.unref&&this._interval.unref()),this._debug("connect"),this.emit("connect");});};e();}_onInterval(){this._cb&&this._channel&&!(this._channel.bufferedAmount>u)&&this._onChannelBufferedAmountLow();}_onSignalingStateChange(){this.destroyed||("stable"===this._pc.signalingState&&(this._isNegotiating=false,this._debug("flushing sender queue",this._sendersAwaitingStable),this._sendersAwaitingStable.forEach(e=>{this._pc.removeTrack(e),this._queuedNegotiation=true;}),this._sendersAwaitingStable=[],this._queuedNegotiation?(this._debug("flushing negotiation queue"),this._queuedNegotiation=false,this._needsNegotiation()):(this._debug("negotiated"),this.emit("negotiated"))),this._debug("signalingStateChange %s",this._pc.signalingState),this.emit("signalingStateChange",this._pc.signalingState));}_onIceCandidate(e){this.destroyed||(e.candidate&&this.trickle?this.emit("signal",{type:"candidate",candidate:{candidate:e.candidate.candidate,sdpMLineIndex:e.candidate.sdpMLineIndex,sdpMid:e.candidate.sdpMid}}):!e.candidate&&!this._iceComplete&&(this._iceComplete=true,this.emit("_iceComplete")),e.candidate&&this._startIceCompleteTimeout());}_onChannelMessage(e){if(this.destroyed)return;let t=e.data;t instanceof ArrayBuffer&&(t=c.from(t)),this.push(t);}_onChannelBufferedAmountLow(){if(!this.destroyed&&this._cb){this._debug("ending backpressure: bufferedAmount %d",this._channel.bufferedAmount);const e=this._cb;this._cb=null,e(null);}}_onChannelOpen(){this._connected||this.destroyed||(this._debug("on channel open"),this._channelReady=true,this._maybeReady());}_onChannelClose(){this.destroyed||(this._debug("on channel close"),this.destroy());}_onTrack(e){this.destroyed||e.streams.forEach(t=>{this._debug("on track"),this.emit("track",e.track,t),this._remoteTracks.push({track:e.track,stream:t}),this._remoteStreams.some(e=>e.id===t.id)||(this._remoteStreams.push(t),s(()=>{this._debug("on stream"),this.emit("stream",t);}));});}_debug(){const e=[].slice.call(arguments);e[0]="["+this._id+"] "+e[0],a.apply(null,e);}}p.WEBRTC_SUPPORT=!!o(),p.config={iceServers:[{urls:["stun:stun.l.google.com:19302","stun:global.stun.twilio.com:3478"]}],sdpSemantics:"unified-plan"},p.channelConfig={},t.exports=p;},{buffer:3,debug:4,"err-code":6,"get-browser-rtc":8,"queue-microtask":13,randombytes:14,"readable-stream":29}]},{},[])("/")}); 
+  } (simplepeer_min));
 
-  function requireSimplepeer_min () {
-  	if (hasRequiredSimplepeer_min) return simplepeer_min.exports;
-  	hasRequiredSimplepeer_min = 1;
-  	(function (module, exports) {
-  		(function(e){module.exports=e();})(function(){var t=Math.floor,n=Math.abs,r=Math.pow;return function(){function d(s,e,n){function t(o,i){if(!e[o]){if(!s[o]){var l="function"==typeof commonjsRequire&&commonjsRequire;if(!i&&l)return l(o,true);if(r)return r(o,true);var c=new Error("Cannot find module '"+o+"'");throw c.code="MODULE_NOT_FOUND",c}var a=e[o]={exports:{}};s[o][0].call(a.exports,function(e){var r=s[o][1][e];return t(r||e)},a,a.exports,d,s,e,n);}return e[o].exports}for(var r="function"==typeof commonjsRequire&&commonjsRequire,a=0;a<n.length;a++)t(n[a]);return t}return d}()({1:[function(e,t,n){function r(e){var t=e.length;if(0<t%4)throw new Error("Invalid string. Length must be a multiple of 4");var n=e.indexOf("=");-1===n&&(n=t);var r=n===t?0:4-n%4;return [n,r]}function a(e,t,n){return 3*(t+n)/4-n}function o(e){var t,n,o=r(e),d=o[0],s=o[1],l=new p(a(e,d,s)),c=0,f=0<s?d-4:d;for(n=0;n<f;n+=4)t=u[e.charCodeAt(n)]<<18|u[e.charCodeAt(n+1)]<<12|u[e.charCodeAt(n+2)]<<6|u[e.charCodeAt(n+3)],l[c++]=255&t>>16,l[c++]=255&t>>8,l[c++]=255&t;return 2===s&&(t=u[e.charCodeAt(n)]<<2|u[e.charCodeAt(n+1)]>>4,l[c++]=255&t),1===s&&(t=u[e.charCodeAt(n)]<<10|u[e.charCodeAt(n+1)]<<4|u[e.charCodeAt(n+2)]>>2,l[c++]=255&t>>8,l[c++]=255&t),l}function d(e){return c[63&e>>18]+c[63&e>>12]+c[63&e>>6]+c[63&e]}function s(e,t,n){for(var r,a=[],o=t;o<n;o+=3)r=(16711680&e[o]<<16)+(65280&e[o+1]<<8)+(255&e[o+2]),a.push(d(r));return a.join("")}function l(e){for(var t,n=e.length,r=n%3,a=[],o=16383,d=0,l=n-r;d<l;d+=o)a.push(s(e,d,d+o>l?l:d+o));return 1===r?(t=e[n-1],a.push(c[t>>2]+c[63&t<<4]+"==")):2===r&&(t=(e[n-2]<<8)+e[n-1],a.push(c[t>>10]+c[63&t>>4]+c[63&t<<2]+"=")),a.join("")}n.byteLength=function(e){var t=r(e),n=t[0],a=t[1];return 3*(n+a)/4-a},n.toByteArray=o,n.fromByteArray=l;for(var c=[],u=[],p="undefined"==typeof Uint8Array?Array:Uint8Array,f="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/",g=0,_=f.length;g<_;++g)c[g]=f[g],u[f.charCodeAt(g)]=g;u[45]=62,u[95]=63;},{}],2:[function(){},{}],3:[function(e,t,n){(function(){(function(){var t=String.fromCharCode,o=Math.min;function d(e){if(2147483647<e)throw new RangeError("The value \""+e+"\" is invalid for option \"size\"");var t=new Uint8Array(e);return t.__proto__=s.prototype,t}function s(e,t,n){if("number"==typeof e){if("string"==typeof t)throw new TypeError("The \"string\" argument must be of type string. Received type number");return p(e)}return l(e,t,n)}function l(e,t,n){if("string"==typeof e)return f(e,t);if(ArrayBuffer.isView(e))return g(e);if(null==e)throw TypeError("The first argument must be one of type string, Buffer, ArrayBuffer, Array, or Array-like Object. Received type "+typeof e);if(K(e,ArrayBuffer)||e&&K(e.buffer,ArrayBuffer))return _(e,t,n);if("number"==typeof e)throw new TypeError("The \"value\" argument must not be of type number. Received type number");var r=e.valueOf&&e.valueOf();if(null!=r&&r!==e)return s.from(r,t,n);var a=h(e);if(a)return a;if("undefined"!=typeof Symbol&&null!=Symbol.toPrimitive&&"function"==typeof e[Symbol.toPrimitive])return s.from(e[Symbol.toPrimitive]("string"),t,n);throw new TypeError("The first argument must be one of type string, Buffer, ArrayBuffer, Array, or Array-like Object. Received type "+typeof e)}function c(e){if("number"!=typeof e)throw new TypeError("\"size\" argument must be of type number");else if(0>e)throw new RangeError("The value \""+e+"\" is invalid for option \"size\"")}function u(e,t,n){return c(e),0>=e?d(e):void 0===t?d(e):"string"==typeof n?d(e).fill(t,n):d(e).fill(t)}function p(e){return c(e),d(0>e?0:0|m(e))}function f(e,t){if(("string"!=typeof t||""===t)&&(t="utf8"),!s.isEncoding(t))throw new TypeError("Unknown encoding: "+t);var n=0|b(e,t),r=d(n),a=r.write(e,t);return a!==n&&(r=r.slice(0,a)),r}function g(e){for(var t=0>e.length?0:0|m(e.length),n=d(t),r=0;r<t;r+=1)n[r]=255&e[r];return n}function _(e,t,n){if(0>t||e.byteLength<t)throw new RangeError("\"offset\" is outside of buffer bounds");if(e.byteLength<t+(n||0))throw new RangeError("\"length\" is outside of buffer bounds");var r;return r=void 0===t&&void 0===n?new Uint8Array(e):void 0===n?new Uint8Array(e,t):new Uint8Array(e,t,n),r.__proto__=s.prototype,r}function h(e){if(s.isBuffer(e)){var t=0|m(e.length),n=d(t);return 0===n.length?n:(e.copy(n,0,0,t),n)}return void 0===e.length?"Buffer"===e.type&&Array.isArray(e.data)?g(e.data):void 0:"number"!=typeof e.length||X(e.length)?d(0):g(e)}function m(e){if(e>=2147483647)throw new RangeError("Attempt to allocate Buffer larger than maximum size: 0x"+2147483647 .toString(16)+" bytes");return 0|e}function b(e,t){if(s.isBuffer(e))return e.length;if(ArrayBuffer.isView(e)||K(e,ArrayBuffer))return e.byteLength;if("string"!=typeof e)throw new TypeError("The \"string\" argument must be one of type string, Buffer, or ArrayBuffer. Received type "+typeof e);var n=e.length,r=2<arguments.length&&true===arguments[2];if(!r&&0===n)return 0;for(var a=false;;)switch(t){case "ascii":case "latin1":case "binary":return n;case "utf8":case "utf-8":return H(e).length;case "ucs2":case "ucs-2":case "utf16le":case "utf-16le":return 2*n;case "hex":return n>>>1;case "base64":return z(e).length;default:if(a)return r?-1:H(e).length;t=(""+t).toLowerCase(),a=true;}}function y(e,t,n){var r=false;if((void 0===t||0>t)&&(t=0),t>this.length)return "";if((void 0===n||n>this.length)&&(n=this.length),0>=n)return "";if(n>>>=0,t>>>=0,n<=t)return "";for(e||(e="utf8");;)switch(e){case "hex":return P(this,t,n);case "utf8":case "utf-8":return x(this,t,n);case "ascii":return D(this,t,n);case "latin1":case "binary":return I(this,t,n);case "base64":return A(this,t,n);case "ucs2":case "ucs-2":case "utf16le":case "utf-16le":return M(this,t,n);default:if(r)throw new TypeError("Unknown encoding: "+e);e=(e+"").toLowerCase(),r=true;}}function C(e,t,n){var r=e[t];e[t]=e[n],e[n]=r;}function R(e,t,n,r,a){if(0===e.length)return  -1;if("string"==typeof n?(r=n,n=0):2147483647<n?n=2147483647:-2147483648>n&&(n=-2147483648),n=+n,X(n)&&(n=a?0:e.length-1),0>n&&(n=e.length+n),n>=e.length){if(a)return  -1;n=e.length-1;}else if(0>n)if(a)n=0;else return  -1;if("string"==typeof t&&(t=s.from(t,r)),s.isBuffer(t))return 0===t.length?-1:E(e,t,n,r,a);if("number"==typeof t)return t&=255,"function"==typeof Uint8Array.prototype.indexOf?a?Uint8Array.prototype.indexOf.call(e,t,n):Uint8Array.prototype.lastIndexOf.call(e,t,n):E(e,[t],n,r,a);throw new TypeError("val must be string, number or Buffer")}function E(e,t,n,r,a){function o(e,t){return 1===d?e[t]:e.readUInt16BE(t*d)}var d=1,s=e.length,l=t.length;if(void 0!==r&&(r=(r+"").toLowerCase(),"ucs2"===r||"ucs-2"===r||"utf16le"===r||"utf-16le"===r)){if(2>e.length||2>t.length)return  -1;d=2,s/=2,l/=2,n/=2;}var c;if(a){var u=-1;for(c=n;c<s;c++)if(o(e,c)!==o(t,-1===u?0:c-u)) -1!==u&&(c-=c-u),u=-1;else if(-1===u&&(u=c),c-u+1===l)return u*d}else for(n+l>s&&(n=s-l),c=n;0<=c;c--){for(var p=true,f=0;f<l;f++)if(o(e,c+f)!==o(t,f)){p=false;break}if(p)return c}return  -1}function w(e,t,n,r){n=+n||0;var a=e.length-n;r?(r=+r,r>a&&(r=a)):r=a;var o=t.length;r>o/2&&(r=o/2);for(var d,s=0;s<r;++s){if(d=parseInt(t.substr(2*s,2),16),X(d))return s;e[n+s]=d;}return s}function S(e,t,n,r){return G(H(t,e.length-n),e,n,r)}function T(e,t,n,r){return G(Y(t),e,n,r)}function v(e,t,n,r){return T(e,t,n,r)}function k(e,t,n,r){return G(z(t),e,n,r)}function L(e,t,n,r){return G(V(t,e.length-n),e,n,r)}function A(e,t,n){return 0===t&&n===e.length?$.fromByteArray(e):$.fromByteArray(e.slice(t,n))}function x(e,t,n){n=o(e.length,n);for(var r=[],a=t;a<n;){var d=e[a],s=null,l=239<d?4:223<d?3:191<d?2:1;if(a+l<=n){var c,u,p,f;1===l?128>d&&(s=d):2===l?(c=e[a+1],128==(192&c)&&(f=(31&d)<<6|63&c,127<f&&(s=f))):3===l?(c=e[a+1],u=e[a+2],128==(192&c)&&128==(192&u)&&(f=(15&d)<<12|(63&c)<<6|63&u,2047<f&&(55296>f||57343<f)&&(s=f))):4===l?(c=e[a+1],u=e[a+2],p=e[a+3],128==(192&c)&&128==(192&u)&&128==(192&p)&&(f=(15&d)<<18|(63&c)<<12|(63&u)<<6|63&p,65535<f&&1114112>f&&(s=f))):void 0;}null===s?(s=65533,l=1):65535<s&&(s-=65536,r.push(55296|1023&s>>>10),s=56320|1023&s),r.push(s),a+=l;}return N(r)}function N(e){var n=e.length;if(n<=4096)return t.apply(String,e);for(var r="",a=0;a<n;)r+=t.apply(String,e.slice(a,a+=4096));return r}function D(e,n,r){var a="";r=o(e.length,r);for(var d=n;d<r;++d)a+=t(127&e[d]);return a}function I(e,n,r){var a="";r=o(e.length,r);for(var d=n;d<r;++d)a+=t(e[d]);return a}function P(e,t,n){var r=e.length;(!t||0>t)&&(t=0),(!n||0>n||n>r)&&(n=r);for(var a="",o=t;o<n;++o)a+=W(e[o]);return a}function M(e,n,r){for(var a=e.slice(n,r),o="",d=0;d<a.length;d+=2)o+=t(a[d]+256*a[d+1]);return o}function O(e,t,n){if(0!=e%1||0>e)throw new RangeError("offset is not uint");if(e+t>n)throw new RangeError("Trying to access beyond buffer length")}function F(e,t,n,r,a,o){if(!s.isBuffer(e))throw new TypeError("\"buffer\" argument must be a Buffer instance");if(t>a||t<o)throw new RangeError("\"value\" argument is out of bounds");if(n+r>e.length)throw new RangeError("Index out of range")}function B(e,t,n,r){if(n+r>e.length)throw new RangeError("Index out of range");if(0>n)throw new RangeError("Index out of range")}function U(e,t,n,r,a){return t=+t,n>>>=0,a||B(e,t,n,4),J.write(e,t,n,r,23,4),n+4}function j(e,t,n,r,a){return t=+t,n>>>=0,a||B(e,t,n,8),J.write(e,t,n,r,52,8),n+8}function q(e){if(e=e.split("=")[0],e=e.trim().replace(Q,""),2>e.length)return "";for(;0!=e.length%4;)e+="=";return e}function W(e){return 16>e?"0"+e.toString(16):e.toString(16)}function H(e,t){t=t||1/0;for(var n,r=e.length,a=null,o=[],d=0;d<r;++d){if(n=e.charCodeAt(d),55295<n&&57344>n){if(!a){if(56319<n){ -1<(t-=3)&&o.push(239,191,189);continue}else if(d+1===r){ -1<(t-=3)&&o.push(239,191,189);continue}a=n;continue}if(56320>n){ -1<(t-=3)&&o.push(239,191,189),a=n;continue}n=(a-55296<<10|n-56320)+65536;}else a&&-1<(t-=3)&&o.push(239,191,189);if(a=null,128>n){if(0>(t-=1))break;o.push(n);}else if(2048>n){if(0>(t-=2))break;o.push(192|n>>6,128|63&n);}else if(65536>n){if(0>(t-=3))break;o.push(224|n>>12,128|63&n>>6,128|63&n);}else if(1114112>n){if(0>(t-=4))break;o.push(240|n>>18,128|63&n>>12,128|63&n>>6,128|63&n);}else throw new Error("Invalid code point")}return o}function Y(e){for(var t=[],n=0;n<e.length;++n)t.push(255&e.charCodeAt(n));return t}function V(e,t){for(var n,r,a,o=[],d=0;d<e.length&&!(0>(t-=2));++d)n=e.charCodeAt(d),r=n>>8,a=n%256,o.push(a),o.push(r);return o}function z(e){return $.toByteArray(q(e))}function G(e,t,n,r){for(var a=0;a<r&&!(a+n>=t.length||a>=e.length);++a)t[a+n]=e[a];return a}function K(e,t){return e instanceof t||null!=e&&null!=e.constructor&&null!=e.constructor.name&&e.constructor.name===t.name}function X(e){return e!==e}var $=e("base64-js"),J=e("ieee754");n.Buffer=s,n.SlowBuffer=function(e){return +e!=e&&(e=0),s.alloc(+e)},n.INSPECT_MAX_BYTES=50;n.kMaxLength=2147483647,s.TYPED_ARRAY_SUPPORT=function(){try{var e=new Uint8Array(1);return e.__proto__={__proto__:Uint8Array.prototype,foo:function(){return 42}},42===e.foo()}catch(t){return  false}}(),s.TYPED_ARRAY_SUPPORT||"undefined"==typeof console||"function"!=typeof console.error||console.error("This browser lacks typed array (Uint8Array) support which is required by `buffer` v5.x. Use `buffer` v4.x if you require old browser support."),Object.defineProperty(s.prototype,"parent",{enumerable:true,get:function(){return s.isBuffer(this)?this.buffer:void 0}}),Object.defineProperty(s.prototype,"offset",{enumerable:true,get:function(){return s.isBuffer(this)?this.byteOffset:void 0}}),"undefined"!=typeof Symbol&&null!=Symbol.species&&s[Symbol.species]===s&&Object.defineProperty(s,Symbol.species,{value:null,configurable:true,enumerable:false,writable:false}),s.poolSize=8192,s.from=function(e,t,n){return l(e,t,n)},s.prototype.__proto__=Uint8Array.prototype,s.__proto__=Uint8Array,s.alloc=function(e,t,n){return u(e,t,n)},s.allocUnsafe=function(e){return p(e)},s.allocUnsafeSlow=function(e){return p(e)},s.isBuffer=function(e){return null!=e&&true===e._isBuffer&&e!==s.prototype},s.compare=function(e,t){if(K(e,Uint8Array)&&(e=s.from(e,e.offset,e.byteLength)),K(t,Uint8Array)&&(t=s.from(t,t.offset,t.byteLength)),!s.isBuffer(e)||!s.isBuffer(t))throw new TypeError("The \"buf1\", \"buf2\" arguments must be one of type Buffer or Uint8Array");if(e===t)return 0;for(var n=e.length,r=t.length,d=0,l=o(n,r);d<l;++d)if(e[d]!==t[d]){n=e[d],r=t[d];break}return n<r?-1:r<n?1:0},s.isEncoding=function(e){switch((e+"").toLowerCase()){case "hex":case "utf8":case "utf-8":case "ascii":case "latin1":case "binary":case "base64":case "ucs2":case "ucs-2":case "utf16le":case "utf-16le":return  true;default:return  false;}},s.concat=function(e,t){if(!Array.isArray(e))throw new TypeError("\"list\" argument must be an Array of Buffers");if(0===e.length)return s.alloc(0);var n;if(t===void 0)for(t=0,n=0;n<e.length;++n)t+=e[n].length;var r=s.allocUnsafe(t),a=0;for(n=0;n<e.length;++n){var o=e[n];if(K(o,Uint8Array)&&(o=s.from(o)),!s.isBuffer(o))throw new TypeError("\"list\" argument must be an Array of Buffers");o.copy(r,a),a+=o.length;}return r},s.byteLength=b,s.prototype._isBuffer=true,s.prototype.swap16=function(){var e=this.length;if(0!=e%2)throw new RangeError("Buffer size must be a multiple of 16-bits");for(var t=0;t<e;t+=2)C(this,t,t+1);return this},s.prototype.swap32=function(){var e=this.length;if(0!=e%4)throw new RangeError("Buffer size must be a multiple of 32-bits");for(var t=0;t<e;t+=4)C(this,t,t+3),C(this,t+1,t+2);return this},s.prototype.swap64=function(){var e=this.length;if(0!=e%8)throw new RangeError("Buffer size must be a multiple of 64-bits");for(var t=0;t<e;t+=8)C(this,t,t+7),C(this,t+1,t+6),C(this,t+2,t+5),C(this,t+3,t+4);return this},s.prototype.toString=function(){var e=this.length;return 0===e?"":0===arguments.length?x(this,0,e):y.apply(this,arguments)},s.prototype.toLocaleString=s.prototype.toString,s.prototype.equals=function(e){if(!s.isBuffer(e))throw new TypeError("Argument must be a Buffer");return this===e||0===s.compare(this,e)},s.prototype.inspect=function(){var e="",t=n.INSPECT_MAX_BYTES;return e=this.toString("hex",0,t).replace(/(.{2})/g,"$1 ").trim(),this.length>t&&(e+=" ... "),"<Buffer "+e+">"},s.prototype.compare=function(e,t,n,r,a){if(K(e,Uint8Array)&&(e=s.from(e,e.offset,e.byteLength)),!s.isBuffer(e))throw new TypeError("The \"target\" argument must be one of type Buffer or Uint8Array. Received type "+typeof e);if(void 0===t&&(t=0),void 0===n&&(n=e?e.length:0),void 0===r&&(r=0),void 0===a&&(a=this.length),0>t||n>e.length||0>r||a>this.length)throw new RangeError("out of range index");if(r>=a&&t>=n)return 0;if(r>=a)return  -1;if(t>=n)return 1;if(t>>>=0,n>>>=0,r>>>=0,a>>>=0,this===e)return 0;for(var d=a-r,l=n-t,c=o(d,l),u=this.slice(r,a),p=e.slice(t,n),f=0;f<c;++f)if(u[f]!==p[f]){d=u[f],l=p[f];break}return d<l?-1:l<d?1:0},s.prototype.includes=function(e,t,n){return  -1!==this.indexOf(e,t,n)},s.prototype.indexOf=function(e,t,n){return R(this,e,t,n,true)},s.prototype.lastIndexOf=function(e,t,n){return R(this,e,t,n,false)},s.prototype.write=function(e,t,n,r){if(void 0===t)r="utf8",n=this.length,t=0;else if(void 0===n&&"string"==typeof t)r=t,n=this.length,t=0;else if(isFinite(t))t>>>=0,isFinite(n)?(n>>>=0,void 0===r&&(r="utf8")):(r=n,n=void 0);else throw new Error("Buffer.write(string, encoding, offset[, length]) is no longer supported");var a=this.length-t;if((void 0===n||n>a)&&(n=a),0<e.length&&(0>n||0>t)||t>this.length)throw new RangeError("Attempt to write outside buffer bounds");r||(r="utf8");for(var o=false;;)switch(r){case "hex":return w(this,e,t,n);case "utf8":case "utf-8":return S(this,e,t,n);case "ascii":return T(this,e,t,n);case "latin1":case "binary":return v(this,e,t,n);case "base64":return k(this,e,t,n);case "ucs2":case "ucs-2":case "utf16le":case "utf-16le":return L(this,e,t,n);default:if(o)throw new TypeError("Unknown encoding: "+r);r=(""+r).toLowerCase(),o=true;}},s.prototype.toJSON=function(){return {type:"Buffer",data:Array.prototype.slice.call(this._arr||this,0)}};s.prototype.slice=function(e,t){var n=this.length;e=~~e,t=t===void 0?n:~~t,0>e?(e+=n,0>e&&(e=0)):e>n&&(e=n),0>t?(t+=n,0>t&&(t=0)):t>n&&(t=n),t<e&&(t=e);var r=this.subarray(e,t);return r.__proto__=s.prototype,r},s.prototype.readUIntLE=function(e,t,n){e>>>=0,t>>>=0,n||O(e,t,this.length);for(var r=this[e],a=1,o=0;++o<t&&(a*=256);)r+=this[e+o]*a;return r},s.prototype.readUIntBE=function(e,t,n){e>>>=0,t>>>=0,n||O(e,t,this.length);for(var r=this[e+--t],a=1;0<t&&(a*=256);)r+=this[e+--t]*a;return r},s.prototype.readUInt8=function(e,t){return e>>>=0,t||O(e,1,this.length),this[e]},s.prototype.readUInt16LE=function(e,t){return e>>>=0,t||O(e,2,this.length),this[e]|this[e+1]<<8},s.prototype.readUInt16BE=function(e,t){return e>>>=0,t||O(e,2,this.length),this[e]<<8|this[e+1]},s.prototype.readUInt32LE=function(e,t){return e>>>=0,t||O(e,4,this.length),(this[e]|this[e+1]<<8|this[e+2]<<16)+16777216*this[e+3]},s.prototype.readUInt32BE=function(e,t){return e>>>=0,t||O(e,4,this.length),16777216*this[e]+(this[e+1]<<16|this[e+2]<<8|this[e+3])},s.prototype.readIntLE=function(e,t,n){e>>>=0,t>>>=0,n||O(e,t,this.length);for(var a=this[e],o=1,d=0;++d<t&&(o*=256);)a+=this[e+d]*o;return o*=128,a>=o&&(a-=r(2,8*t)),a},s.prototype.readIntBE=function(e,t,n){e>>>=0,t>>>=0,n||O(e,t,this.length);for(var a=t,o=1,d=this[e+--a];0<a&&(o*=256);)d+=this[e+--a]*o;return o*=128,d>=o&&(d-=r(2,8*t)),d},s.prototype.readInt8=function(e,t){return e>>>=0,t||O(e,1,this.length),128&this[e]?-1*(255-this[e]+1):this[e]},s.prototype.readInt16LE=function(e,t){e>>>=0,t||O(e,2,this.length);var n=this[e]|this[e+1]<<8;return 32768&n?4294901760|n:n},s.prototype.readInt16BE=function(e,t){e>>>=0,t||O(e,2,this.length);var n=this[e+1]|this[e]<<8;return 32768&n?4294901760|n:n},s.prototype.readInt32LE=function(e,t){return e>>>=0,t||O(e,4,this.length),this[e]|this[e+1]<<8|this[e+2]<<16|this[e+3]<<24},s.prototype.readInt32BE=function(e,t){return e>>>=0,t||O(e,4,this.length),this[e]<<24|this[e+1]<<16|this[e+2]<<8|this[e+3]},s.prototype.readFloatLE=function(e,t){return e>>>=0,t||O(e,4,this.length),J.read(this,e,true,23,4)},s.prototype.readFloatBE=function(e,t){return e>>>=0,t||O(e,4,this.length),J.read(this,e,false,23,4)},s.prototype.readDoubleLE=function(e,t){return e>>>=0,t||O(e,8,this.length),J.read(this,e,true,52,8)},s.prototype.readDoubleBE=function(e,t){return e>>>=0,t||O(e,8,this.length),J.read(this,e,false,52,8)},s.prototype.writeUIntLE=function(e,t,n,a){if(e=+e,t>>>=0,n>>>=0,!a){var o=r(2,8*n)-1;F(this,e,t,n,o,0);}var d=1,s=0;for(this[t]=255&e;++s<n&&(d*=256);)this[t+s]=255&e/d;return t+n},s.prototype.writeUIntBE=function(e,t,n,a){if(e=+e,t>>>=0,n>>>=0,!a){var o=r(2,8*n)-1;F(this,e,t,n,o,0);}var d=n-1,s=1;for(this[t+d]=255&e;0<=--d&&(s*=256);)this[t+d]=255&e/s;return t+n},s.prototype.writeUInt8=function(e,t,n){return e=+e,t>>>=0,n||F(this,e,t,1,255,0),this[t]=255&e,t+1},s.prototype.writeUInt16LE=function(e,t,n){return e=+e,t>>>=0,n||F(this,e,t,2,65535,0),this[t]=255&e,this[t+1]=e>>>8,t+2},s.prototype.writeUInt16BE=function(e,t,n){return e=+e,t>>>=0,n||F(this,e,t,2,65535,0),this[t]=e>>>8,this[t+1]=255&e,t+2},s.prototype.writeUInt32LE=function(e,t,n){return e=+e,t>>>=0,n||F(this,e,t,4,4294967295,0),this[t+3]=e>>>24,this[t+2]=e>>>16,this[t+1]=e>>>8,this[t]=255&e,t+4},s.prototype.writeUInt32BE=function(e,t,n){return e=+e,t>>>=0,n||F(this,e,t,4,4294967295,0),this[t]=e>>>24,this[t+1]=e>>>16,this[t+2]=e>>>8,this[t+3]=255&e,t+4},s.prototype.writeIntLE=function(e,t,n,a){if(e=+e,t>>>=0,!a){var o=r(2,8*n-1);F(this,e,t,n,o-1,-o);}var d=0,s=1,l=0;for(this[t]=255&e;++d<n&&(s*=256);)0>e&&0===l&&0!==this[t+d-1]&&(l=1),this[t+d]=255&(e/s>>0)-l;return t+n},s.prototype.writeIntBE=function(e,t,n,a){if(e=+e,t>>>=0,!a){var o=r(2,8*n-1);F(this,e,t,n,o-1,-o);}var d=n-1,s=1,l=0;for(this[t+d]=255&e;0<=--d&&(s*=256);)0>e&&0===l&&0!==this[t+d+1]&&(l=1),this[t+d]=255&(e/s>>0)-l;return t+n},s.prototype.writeInt8=function(e,t,n){return e=+e,t>>>=0,n||F(this,e,t,1,127,-128),0>e&&(e=255+e+1),this[t]=255&e,t+1},s.prototype.writeInt16LE=function(e,t,n){return e=+e,t>>>=0,n||F(this,e,t,2,32767,-32768),this[t]=255&e,this[t+1]=e>>>8,t+2},s.prototype.writeInt16BE=function(e,t,n){return e=+e,t>>>=0,n||F(this,e,t,2,32767,-32768),this[t]=e>>>8,this[t+1]=255&e,t+2},s.prototype.writeInt32LE=function(e,t,n){return e=+e,t>>>=0,n||F(this,e,t,4,2147483647,-2147483648),this[t]=255&e,this[t+1]=e>>>8,this[t+2]=e>>>16,this[t+3]=e>>>24,t+4},s.prototype.writeInt32BE=function(e,t,n){return e=+e,t>>>=0,n||F(this,e,t,4,2147483647,-2147483648),0>e&&(e=4294967295+e+1),this[t]=e>>>24,this[t+1]=e>>>16,this[t+2]=e>>>8,this[t+3]=255&e,t+4},s.prototype.writeFloatLE=function(e,t,n){return U(this,e,t,true,n)},s.prototype.writeFloatBE=function(e,t,n){return U(this,e,t,false,n)},s.prototype.writeDoubleLE=function(e,t,n){return j(this,e,t,true,n)},s.prototype.writeDoubleBE=function(e,t,n){return j(this,e,t,false,n)},s.prototype.copy=function(e,t,n,r){if(!s.isBuffer(e))throw new TypeError("argument should be a Buffer");if(n||(n=0),r||0===r||(r=this.length),t>=e.length&&(t=e.length),t||(t=0),0<r&&r<n&&(r=n),r===n)return 0;if(0===e.length||0===this.length)return 0;if(0>t)throw new RangeError("targetStart out of bounds");if(0>n||n>=this.length)throw new RangeError("Index out of range");if(0>r)throw new RangeError("sourceEnd out of bounds");r>this.length&&(r=this.length),e.length-t<r-n&&(r=e.length-t+n);var a=r-n;if(this===e&&"function"==typeof Uint8Array.prototype.copyWithin)this.copyWithin(t,n,r);else if(this===e&&n<t&&t<r)for(var o=a-1;0<=o;--o)e[o+t]=this[o+n];else Uint8Array.prototype.set.call(e,this.subarray(n,r),t);return a},s.prototype.fill=function(e,t,n,r){if("string"==typeof e){if("string"==typeof t?(r=t,t=0,n=this.length):"string"==typeof n&&(r=n,n=this.length),void 0!==r&&"string"!=typeof r)throw new TypeError("encoding must be a string");if("string"==typeof r&&!s.isEncoding(r))throw new TypeError("Unknown encoding: "+r);if(1===e.length){var a=e.charCodeAt(0);("utf8"===r&&128>a||"latin1"===r)&&(e=a);}}else "number"==typeof e&&(e&=255);if(0>t||this.length<t||this.length<n)throw new RangeError("Out of range index");if(n<=t)return this;t>>>=0,n=n===void 0?this.length:n>>>0,e||(e=0);var o;if("number"==typeof e)for(o=t;o<n;++o)this[o]=e;else {var d=s.isBuffer(e)?e:s.from(e,r),l=d.length;if(0===l)throw new TypeError("The value \""+e+"\" is invalid for argument \"value\"");for(o=0;o<n-t;++o)this[o+t]=d[o%l];}return this};var Q=/[^+/0-9A-Za-z-_]/g;}).call(this);}).call(this,e("buffer").Buffer);},{"base64-js":1,buffer:3,ieee754:9}],4:[function(e,t,n){(function(a){(function(){function r(){let e;try{e=n.storage.getItem("debug");}catch(e){}return !e&&"undefined"!=typeof a&&"env"in a&&(e=a.env.DEBUG),e}n.formatArgs=function(e){if(e[0]=(this.useColors?"%c":"")+this.namespace+(this.useColors?" %c":" ")+e[0]+(this.useColors?"%c ":" ")+"+"+t.exports.humanize(this.diff),!this.useColors)return;const n="color: "+this.color;e.splice(1,0,n,"color: inherit");let r=0,a=0;e[0].replace(/%[a-zA-Z%]/g,e=>{"%%"===e||(r++,"%c"===e&&(a=r));}),e.splice(a,0,n);},n.save=function(e){try{e?n.storage.setItem("debug",e):n.storage.removeItem("debug");}catch(e){}},n.load=r,n.useColors=function(){return !!("undefined"!=typeof window&&window.process&&("renderer"===window.process.type||window.process.__nwjs))||!("undefined"!=typeof navigator&&navigator.userAgent&&navigator.userAgent.toLowerCase().match(/(edge|trident)\/(\d+)/))&&("undefined"!=typeof document&&document.documentElement&&document.documentElement.style&&document.documentElement.style.WebkitAppearance||"undefined"!=typeof window&&window.console&&(window.console.firebug||window.console.exception&&window.console.table)||"undefined"!=typeof navigator&&navigator.userAgent&&navigator.userAgent.toLowerCase().match(/firefox\/(\d+)/)&&31<=parseInt(RegExp.$1,10)||"undefined"!=typeof navigator&&navigator.userAgent&&navigator.userAgent.toLowerCase().match(/applewebkit\/(\d+)/))},n.storage=function(){try{return localStorage}catch(e){}}(),n.destroy=(()=>{let e=false;return ()=>{e||(e=true,console.warn("Instance method `debug.destroy()` is deprecated and no longer does anything. It will be removed in the next major version of `debug`."));}})(),n.colors=["#0000CC","#0000FF","#0033CC","#0033FF","#0066CC","#0066FF","#0099CC","#0099FF","#00CC00","#00CC33","#00CC66","#00CC99","#00CCCC","#00CCFF","#3300CC","#3300FF","#3333CC","#3333FF","#3366CC","#3366FF","#3399CC","#3399FF","#33CC00","#33CC33","#33CC66","#33CC99","#33CCCC","#33CCFF","#6600CC","#6600FF","#6633CC","#6633FF","#66CC00","#66CC33","#9900CC","#9900FF","#9933CC","#9933FF","#99CC00","#99CC33","#CC0000","#CC0033","#CC0066","#CC0099","#CC00CC","#CC00FF","#CC3300","#CC3333","#CC3366","#CC3399","#CC33CC","#CC33FF","#CC6600","#CC6633","#CC9900","#CC9933","#CCCC00","#CCCC33","#FF0000","#FF0033","#FF0066","#FF0099","#FF00CC","#FF00FF","#FF3300","#FF3333","#FF3366","#FF3399","#FF33CC","#FF33FF","#FF6600","#FF6633","#FF9900","#FF9933","#FFCC00","#FFCC33"],n.log=console.debug||console.log||(()=>{}),t.exports=e("./common")(n);const{formatters:o}=t.exports;o.j=function(e){try{return JSON.stringify(e)}catch(e){return "[UnexpectedJSONParseError]: "+e.message}};}).call(this);}).call(this,e("_process"));},{"./common":5,_process:12}],5:[function(e,t){t.exports=function(t){function r(e){function t(...e){if(!t.enabled)return;const a=t,o=+new Date,i=o-(n||o);a.diff=i,a.prev=n,a.curr=o,n=o,e[0]=r.coerce(e[0]),"string"!=typeof e[0]&&e.unshift("%O");let d=0;e[0]=e[0].replace(/%([a-zA-Z%])/g,(t,n)=>{if("%%"===t)return "%";d++;const o=r.formatters[n];if("function"==typeof o){const n=e[d];t=o.call(a,n),e.splice(d,1),d--;}return t}),r.formatArgs.call(a,e);const s=a.log||r.log;s.apply(a,e);}let n,o=null;return t.namespace=e,t.useColors=r.useColors(),t.color=r.selectColor(e),t.extend=a,t.destroy=r.destroy,Object.defineProperty(t,"enabled",{enumerable:true,configurable:false,get:()=>null===o?r.enabled(e):o,set:e=>{o=e;}}),"function"==typeof r.init&&r.init(t),t}function a(e,t){const n=r(this.namespace+("undefined"==typeof t?":":t)+e);return n.log=this.log,n}function o(e){return e.toString().substring(2,e.toString().length-2).replace(/\.\*\?$/,"*")}return r.debug=r,r.default=r,r.coerce=function(e){return e instanceof Error?e.stack||e.message:e},r.disable=function(){const e=[...r.names.map(o),...r.skips.map(o).map(e=>"-"+e)].join(",");return r.enable(""),e},r.enable=function(e){r.save(e),r.names=[],r.skips=[];let t;const n=("string"==typeof e?e:"").split(/[\s,]+/),a=n.length;for(t=0;t<a;t++)n[t]&&(e=n[t].replace(/\*/g,".*?"),"-"===e[0]?r.skips.push(new RegExp("^"+e.substr(1)+"$")):r.names.push(new RegExp("^"+e+"$")));},r.enabled=function(e){if("*"===e[e.length-1])return  true;let t,n;for(t=0,n=r.skips.length;t<n;t++)if(r.skips[t].test(e))return  false;for(t=0,n=r.names.length;t<n;t++)if(r.names[t].test(e))return  true;return  false},r.humanize=e("ms"),r.destroy=function(){console.warn("Instance method `debug.destroy()` is deprecated and no longer does anything. It will be removed in the next major version of `debug`.");},Object.keys(t).forEach(e=>{r[e]=t[e];}),r.names=[],r.skips=[],r.formatters={},r.selectColor=function(e){let t=0;for(let n=0;n<e.length;n++)t=(t<<5)-t+e.charCodeAt(n),t|=0;return r.colors[n(t)%r.colors.length]},r.enable(r.load()),r};},{ms:11}],6:[function(e,t){function n(e,t){for(const n in t)Object.defineProperty(e,n,{value:t[n],enumerable:true,configurable:true});return e}t.exports=function(e,t,r){if(!e||"string"==typeof e)throw new TypeError("Please pass an Error to err-code");r||(r={}),"object"==typeof t&&(r=t,t=""),t&&(r.code=t);try{return n(e,r)}catch(t){r.message=e.message,r.stack=e.stack;const a=function(){};a.prototype=Object.create(Object.getPrototypeOf(e));const o=n(new a,r);return o}};},{}],7:[function(e,t){function n(e){console&&console.warn&&console.warn(e);}function r(){r.init.call(this);}function a(e){if("function"!=typeof e)throw new TypeError("The \"listener\" argument must be of type Function. Received type "+typeof e)}function o(e){return void 0===e._maxListeners?r.defaultMaxListeners:e._maxListeners}function i(e,t,r,i){var d,s,l;if(a(r),s=e._events,void 0===s?(s=e._events=Object.create(null),e._eventsCount=0):(void 0!==s.newListener&&(e.emit("newListener",t,r.listener?r.listener:r),s=e._events),l=s[t]),void 0===l)l=s[t]=r,++e._eventsCount;else if("function"==typeof l?l=s[t]=i?[r,l]:[l,r]:i?l.unshift(r):l.push(r),d=o(e),0<d&&l.length>d&&!l.warned){l.warned=true;var c=new Error("Possible EventEmitter memory leak detected. "+l.length+" "+(t+" listeners added. Use emitter.setMaxListeners() to increase limit"));c.name="MaxListenersExceededWarning",c.emitter=e,c.type=t,c.count=l.length,n(c);}return e}function d(){if(!this.fired)return this.target.removeListener(this.type,this.wrapFn),this.fired=true,0===arguments.length?this.listener.call(this.target):this.listener.apply(this.target,arguments)}function s(e,t,n){var r={fired:false,wrapFn:void 0,target:e,type:t,listener:n},a=d.bind(r);return a.listener=n,r.wrapFn=a,a}function l(e,t,n){var r=e._events;if(r===void 0)return [];var a=r[t];return void 0===a?[]:"function"==typeof a?n?[a.listener||a]:[a]:n?f(a):u(a,a.length)}function c(e){var t=this._events;if(t!==void 0){var n=t[e];if("function"==typeof n)return 1;if(void 0!==n)return n.length}return 0}function u(e,t){for(var n=Array(t),r=0;r<t;++r)n[r]=e[r];return n}function p(e,t){for(;t+1<e.length;t++)e[t]=e[t+1];e.pop();}function f(e){for(var t=Array(e.length),n=0;n<t.length;++n)t[n]=e[n].listener||e[n];return t}function g(e,t,n){"function"==typeof e.on&&_(e,"error",t,n);}function _(e,t,n,r){if("function"==typeof e.on)r.once?e.once(t,n):e.on(t,n);else if("function"==typeof e.addEventListener)e.addEventListener(t,function a(o){r.once&&e.removeEventListener(t,a),n(o);});else throw new TypeError("The \"emitter\" argument must be of type EventEmitter. Received type "+typeof e)}var h,m="object"==typeof Reflect?Reflect:null,b=m&&"function"==typeof m.apply?m.apply:function(e,t,n){return Function.prototype.apply.call(e,t,n)};h=m&&"function"==typeof m.ownKeys?m.ownKeys:Object.getOwnPropertySymbols?function(e){return Object.getOwnPropertyNames(e).concat(Object.getOwnPropertySymbols(e))}:function(e){return Object.getOwnPropertyNames(e)};var y=Number.isNaN||function(e){return e!==e};t.exports=r,t.exports.once=function(e,t){return new Promise(function(n,r){function a(n){e.removeListener(t,o),r(n);}function o(){"function"==typeof e.removeListener&&e.removeListener("error",a),n([].slice.call(arguments));}_(e,t,o,{once:true}),"error"!==t&&g(e,a,{once:true});})},r.EventEmitter=r,r.prototype._events=void 0,r.prototype._eventsCount=0,r.prototype._maxListeners=void 0;var C=10;Object.defineProperty(r,"defaultMaxListeners",{enumerable:true,get:function(){return C},set:function(e){if("number"!=typeof e||0>e||y(e))throw new RangeError("The value of \"defaultMaxListeners\" is out of range. It must be a non-negative number. Received "+e+".");C=e;}}),r.init=function(){(this._events===void 0||this._events===Object.getPrototypeOf(this)._events)&&(this._events=Object.create(null),this._eventsCount=0),this._maxListeners=this._maxListeners||void 0;},r.prototype.setMaxListeners=function(e){if("number"!=typeof e||0>e||y(e))throw new RangeError("The value of \"n\" is out of range. It must be a non-negative number. Received "+e+".");return this._maxListeners=e,this},r.prototype.getMaxListeners=function(){return o(this)},r.prototype.emit=function(e){for(var t=[],n=1;n<arguments.length;n++)t.push(arguments[n]);var r="error"===e,a=this._events;if(a!==void 0)r=r&&a.error===void 0;else if(!r)return  false;if(r){var o;if(0<t.length&&(o=t[0]),o instanceof Error)throw o;var d=new Error("Unhandled error."+(o?" ("+o.message+")":""));throw d.context=o,d}var s=a[e];if(s===void 0)return  false;if("function"==typeof s)b(s,this,t);else for(var l=s.length,c=u(s,l),n=0;n<l;++n)b(c[n],this,t);return  true},r.prototype.addListener=function(e,t){return i(this,e,t,false)},r.prototype.on=r.prototype.addListener,r.prototype.prependListener=function(e,t){return i(this,e,t,true)},r.prototype.once=function(e,t){return a(t),this.on(e,s(this,e,t)),this},r.prototype.prependOnceListener=function(e,t){return a(t),this.prependListener(e,s(this,e,t)),this},r.prototype.removeListener=function(e,t){var n,r,o,d,s;if(a(t),r=this._events,void 0===r)return this;if(n=r[e],void 0===n)return this;if(n===t||n.listener===t)0==--this._eventsCount?this._events=Object.create(null):(delete r[e],r.removeListener&&this.emit("removeListener",e,n.listener||t));else if("function"!=typeof n){for(o=-1,d=n.length-1;0<=d;d--)if(n[d]===t||n[d].listener===t){s=n[d].listener,o=d;break}if(0>o)return this;0===o?n.shift():p(n,o),1===n.length&&(r[e]=n[0]),void 0!==r.removeListener&&this.emit("removeListener",e,s||t);}return this},r.prototype.off=r.prototype.removeListener,r.prototype.removeAllListeners=function(e){var t,n,r;if(n=this._events,void 0===n)return this;if(void 0===n.removeListener)return 0===arguments.length?(this._events=Object.create(null),this._eventsCount=0):void 0!==n[e]&&(0==--this._eventsCount?this._events=Object.create(null):delete n[e]),this;if(0===arguments.length){var a,o=Object.keys(n);for(r=0;r<o.length;++r)a=o[r],"removeListener"!==a&&this.removeAllListeners(a);return this.removeAllListeners("removeListener"),this._events=Object.create(null),this._eventsCount=0,this}if(t=n[e],"function"==typeof t)this.removeListener(e,t);else if(void 0!==t)for(r=t.length-1;0<=r;r--)this.removeListener(e,t[r]);return this},r.prototype.listeners=function(e){return l(this,e,true)},r.prototype.rawListeners=function(e){return l(this,e,false)},r.listenerCount=function(e,t){return "function"==typeof e.listenerCount?e.listenerCount(t):c.call(e,t)},r.prototype.listenerCount=c,r.prototype.eventNames=function(){return 0<this._eventsCount?h(this._events):[]};},{}],8:[function(e,t){t.exports=function(){if("undefined"==typeof globalThis)return null;var e={RTCPeerConnection:globalThis.RTCPeerConnection||globalThis.mozRTCPeerConnection||globalThis.webkitRTCPeerConnection,RTCSessionDescription:globalThis.RTCSessionDescription||globalThis.mozRTCSessionDescription||globalThis.webkitRTCSessionDescription,RTCIceCandidate:globalThis.RTCIceCandidate||globalThis.mozRTCIceCandidate||globalThis.webkitRTCIceCandidate};return e.RTCPeerConnection?e:null};},{}],9:[function(e,a,o){/*! ieee754. BSD-3-Clause License. Feross Aboukhadijeh <https://feross.org/opensource> */o.read=function(t,n,a,o,l){var c,u,p=8*l-o-1,f=(1<<p)-1,g=f>>1,_=-7,h=a?l-1:0,b=a?-1:1,d=t[n+h];for(h+=b,c=d&(1<<-_)-1,d>>=-_,_+=p;0<_;c=256*c+t[n+h],h+=b,_-=8);for(u=c&(1<<-_)-1,c>>=-_,_+=o;0<_;u=256*u+t[n+h],h+=b,_-=8);if(0===c)c=1-g;else {if(c===f)return u?NaN:(d?-1:1)*(1/0);u+=r(2,o),c-=g;}return (d?-1:1)*u*r(2,c-o)},o.write=function(a,o,l,u,p,f){var h,b,y,g=Math.LN2,_=Math.log,C=8*f-p-1,R=(1<<C)-1,E=R>>1,w=23===p?r(2,-24)-r(2,-77):0,S=u?0:f-1,T=u?1:-1,d=0>o||0===o&&0>1/o?1:0;for(o=n(o),isNaN(o)||o===1/0?(b=isNaN(o)?1:0,h=R):(h=t(_(o)/g),1>o*(y=r(2,-h))&&(h--,y*=2),o+=1<=h+E?w/y:w*r(2,1-E),2<=o*y&&(h++,y/=2),h+E>=R?(b=0,h=R):1<=h+E?(b=(o*y-1)*r(2,p),h+=E):(b=o*r(2,E-1)*r(2,p),h=0));8<=p;a[l+S]=255&b,S+=T,b/=256,p-=8);for(h=h<<p|b,C+=p;0<C;a[l+S]=255&h,S+=T,h/=256,C-=8);a[l+S-T]|=128*d;};},{}],10:[function(e,t){t.exports="function"==typeof Object.create?function(e,t){t&&(e.super_=t,e.prototype=Object.create(t.prototype,{constructor:{value:e,enumerable:false,writable:true,configurable:true}}));}:function(e,t){if(t){e.super_=t;var n=function(){};n.prototype=t.prototype,e.prototype=new n,e.prototype.constructor=e;}};},{}],11:[function(e,t){var r=Math.round;function a(e){if(e+="",!(100<e.length)){var t=/^(-?(?:\d+)?\.?\d+) *(milliseconds?|msecs?|ms|seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h|days?|d|weeks?|w|years?|yrs?|y)?$/i.exec(e);if(t){var r=parseFloat(t[1]),n=(t[2]||"ms").toLowerCase();return "years"===n||"year"===n||"yrs"===n||"yr"===n||"y"===n?31557600000*r:"weeks"===n||"week"===n||"w"===n?604800000*r:"days"===n||"day"===n||"d"===n?86400000*r:"hours"===n||"hour"===n||"hrs"===n||"hr"===n||"h"===n?3600000*r:"minutes"===n||"minute"===n||"mins"===n||"min"===n||"m"===n?60000*r:"seconds"===n||"second"===n||"secs"===n||"sec"===n||"s"===n?1000*r:"milliseconds"===n||"millisecond"===n||"msecs"===n||"msec"===n||"ms"===n?r:void 0}}}function o(e){var t=n(e);return 86400000<=t?r(e/86400000)+"d":3600000<=t?r(e/3600000)+"h":60000<=t?r(e/60000)+"m":1000<=t?r(e/1000)+"s":e+"ms"}function i(e){var t=n(e);return 86400000<=t?s(e,t,86400000,"day"):3600000<=t?s(e,t,3600000,"hour"):60000<=t?s(e,t,60000,"minute"):1000<=t?s(e,t,1000,"second"):e+" ms"}function s(e,t,a,n){return r(e/a)+" "+n+(t>=1.5*a?"s":"")}t.exports=function(e,t){t=t||{};var n=typeof e;if("string"==n&&0<e.length)return a(e);if("number"===n&&isFinite(e))return t.long?i(e):o(e);throw new Error("val is not a non-empty string or a valid number. val="+JSON.stringify(e))};},{}],12:[function(e,t){function n(){throw new Error("setTimeout has not been defined")}function r(){throw new Error("clearTimeout has not been defined")}function a(t){if(c===setTimeout)return setTimeout(t,0);if((c===n||!c)&&setTimeout)return c=setTimeout,setTimeout(t,0);try{return c(t,0)}catch(n){try{return c.call(null,t,0)}catch(n){return c.call(this,t,0)}}}function o(t){if(u===clearTimeout)return clearTimeout(t);if((u===r||!u)&&clearTimeout)return u=clearTimeout,clearTimeout(t);try{return u(t)}catch(n){try{return u.call(null,t)}catch(n){return u.call(this,t)}}}function i(){_&&f&&(_=false,f.length?g=f.concat(g):h=-1,g.length&&d());}function d(){if(!_){var e=a(i);_=true;for(var t=g.length;t;){for(f=g,g=[];++h<t;)f&&f[h].run();h=-1,t=g.length;}f=null,_=false,o(e);}}function s(e,t){this.fun=e,this.array=t;}function l(){}var c,u,p=t.exports={};(function(){try{c="function"==typeof setTimeout?setTimeout:n;}catch(t){c=n;}try{u="function"==typeof clearTimeout?clearTimeout:r;}catch(t){u=r;}})();var f,g=[],_=false,h=-1;p.nextTick=function(e){var t=Array(arguments.length-1);if(1<arguments.length)for(var n=1;n<arguments.length;n++)t[n-1]=arguments[n];g.push(new s(e,t)),1!==g.length||_||a(d);},s.prototype.run=function(){this.fun.apply(null,this.array);},p.title="browser",p.browser=true,p.env={},p.argv=[],p.version="",p.versions={},p.on=l,p.addListener=l,p.once=l,p.off=l,p.removeListener=l,p.removeAllListeners=l,p.emit=l,p.prependListener=l,p.prependOnceListener=l,p.listeners=function(){return []},p.binding=function(){throw new Error("process.binding is not supported")},p.cwd=function(){return "/"},p.chdir=function(){throw new Error("process.chdir is not supported")},p.umask=function(){return 0};},{}],13:[function(e,t){(function(e){(function(){/*! queue-microtask. MIT License. Feross Aboukhadijeh <https://feross.org/opensource> */let n;t.exports="function"==typeof queueMicrotask?queueMicrotask.bind("undefined"==typeof window?e:window):e=>(n||(n=Promise.resolve())).then(e).catch(e=>setTimeout(()=>{throw e},0));}).call(this);}).call(this,"undefined"==typeof commonjsGlobal?"undefined"==typeof self?"undefined"==typeof window?{}:window:self:commonjsGlobal);},{}],14:[function(e,t){(function(n,r){(function(){var a=e("safe-buffer").Buffer,o=r.crypto||r.msCrypto;t.exports=o&&o.getRandomValues?function(e,t){if(e>4294967295)throw new RangeError("requested too many random bytes");var r=a.allocUnsafe(e);if(0<e)if(65536<e)for(var i=0;i<e;i+=65536)o.getRandomValues(r.slice(i,i+65536));else o.getRandomValues(r);return "function"==typeof t?n.nextTick(function(){t(null,r);}):r}:function(){throw new Error("Secure random number generation is not supported by this browser.\nUse Chrome, Firefox or Internet Explorer 11")};}).call(this);}).call(this,e("_process"),"undefined"==typeof commonjsGlobal?"undefined"==typeof self?"undefined"==typeof window?{}:window:self:commonjsGlobal);},{_process:12,"safe-buffer":30}],15:[function(e,t){function n(e,t){e.prototype=Object.create(t.prototype),e.prototype.constructor=e,e.__proto__=t;}function r(e,t,r){function a(e,n,r){return "string"==typeof t?t:t(e,n,r)}r||(r=Error);var o=function(e){function t(t,n,r){return e.call(this,a(t,n,r))||this}return n(t,e),t}(r);o.prototype.name=r.name,o.prototype.code=e,s[e]=o;}function a(e,t){if(Array.isArray(e)){var n=e.length;return e=e.map(function(e){return e+""}),2<n?"one of ".concat(t," ").concat(e.slice(0,n-1).join(", "),", or ")+e[n-1]:2===n?"one of ".concat(t," ").concat(e[0]," or ").concat(e[1]):"of ".concat(t," ").concat(e[0])}return "of ".concat(t," ").concat(e+"")}function o(e,t,n){return e.substr(0,t.length)===t}function i(e,t,n){return (void 0===n||n>e.length)&&(n=e.length),e.substring(n-t.length,n)===t}function d(e,t,n){return "number"!=typeof n&&(n=0),!(n+t.length>e.length)&&-1!==e.indexOf(t,n)}var s={};r("ERR_INVALID_OPT_VALUE",function(e,t){return "The value \""+t+"\" is invalid for option \""+e+"\""},TypeError),r("ERR_INVALID_ARG_TYPE",function(e,t,n){var r;"string"==typeof t&&o(t,"not ")?(r="must not be",t=t.replace(/^not /,"")):r="must be";var s;if(i(e," argument"))s="The ".concat(e," ").concat(r," ").concat(a(t,"type"));else {var l=d(e,".")?"property":"argument";s="The \"".concat(e,"\" ").concat(l," ").concat(r," ").concat(a(t,"type"));}return s+=". Received type ".concat(typeof n),s},TypeError),r("ERR_STREAM_PUSH_AFTER_EOF","stream.push() after EOF"),r("ERR_METHOD_NOT_IMPLEMENTED",function(e){return "The "+e+" method is not implemented"}),r("ERR_STREAM_PREMATURE_CLOSE","Premature close"),r("ERR_STREAM_DESTROYED",function(e){return "Cannot call "+e+" after a stream was destroyed"}),r("ERR_MULTIPLE_CALLBACK","Callback called multiple times"),r("ERR_STREAM_CANNOT_PIPE","Cannot pipe, not readable"),r("ERR_STREAM_WRITE_AFTER_END","write after end"),r("ERR_STREAM_NULL_VALUES","May not write null values to stream",TypeError),r("ERR_UNKNOWN_ENCODING",function(e){return "Unknown encoding: "+e},TypeError),r("ERR_STREAM_UNSHIFT_AFTER_END_EVENT","stream.unshift() after end event"),t.exports.codes=s;},{}],16:[function(e,t){(function(n){(function(){function r(e){return this instanceof r?void(d.call(this,e),s.call(this,e),this.allowHalfOpen=true,e&&(false===e.readable&&(this.readable=false),false===e.writable&&(this.writable=false),false===e.allowHalfOpen&&(this.allowHalfOpen=false,this.once("end",a)))):new r(e)}function a(){this._writableState.ended||n.nextTick(o,this);}function o(e){e.end();}var i=Object.keys||function(e){var t=[];for(var n in e)t.push(n);return t};t.exports=r;var d=e("./_stream_readable"),s=e("./_stream_writable");e("inherits")(r,d);for(var l,c=i(s.prototype),u=0;u<c.length;u++)l=c[u],r.prototype[l]||(r.prototype[l]=s.prototype[l]);Object.defineProperty(r.prototype,"writableHighWaterMark",{enumerable:false,get:function(){return this._writableState.highWaterMark}}),Object.defineProperty(r.prototype,"writableBuffer",{enumerable:false,get:function(){return this._writableState&&this._writableState.getBuffer()}}),Object.defineProperty(r.prototype,"writableLength",{enumerable:false,get:function(){return this._writableState.length}}),Object.defineProperty(r.prototype,"destroyed",{enumerable:false,get:function(){return void 0!==this._readableState&&void 0!==this._writableState&&this._readableState.destroyed&&this._writableState.destroyed},set:function(e){ void 0===this._readableState||void 0===this._writableState||(this._readableState.destroyed=e,this._writableState.destroyed=e);}});}).call(this);}).call(this,e("_process"));},{"./_stream_readable":18,"./_stream_writable":20,_process:12,inherits:10}],17:[function(e,t){function n(e){return this instanceof n?void r.call(this,e):new n(e)}t.exports=n;var r=e("./_stream_transform");e("inherits")(n,r),n.prototype._transform=function(e,t,n){n(null,e);};},{"./_stream_transform":19,inherits:10}],18:[function(e,t){(function(n,r){(function(){function a(e){return P.from(e)}function o(e){return P.isBuffer(e)||e instanceof M}function i(e,t,n){return "function"==typeof e.prependListener?e.prependListener(t,n):void(e._events&&e._events[t]?Array.isArray(e._events[t])?e._events[t].unshift(n):e._events[t]=[n,e._events[t]]:e.on(t,n))}function d(t,n,r){A=A||e("./_stream_duplex"),t=t||{},"boolean"!=typeof r&&(r=n instanceof A),this.objectMode=!!t.objectMode,r&&(this.objectMode=this.objectMode||!!t.readableObjectMode),this.highWaterMark=H(this,t,"readableHighWaterMark",r),this.buffer=new j,this.length=0,this.pipes=null,this.pipesCount=0,this.flowing=null,this.ended=false,this.endEmitted=false,this.reading=false,this.sync=true,this.needReadable=false,this.emittedReadable=false,this.readableListening=false,this.resumeScheduled=false,this.paused=true,this.emitClose=false!==t.emitClose,this.autoDestroy=!!t.autoDestroy,this.destroyed=false,this.defaultEncoding=t.defaultEncoding||"utf8",this.awaitDrain=0,this.readingMore=false,this.decoder=null,this.encoding=null,t.encoding&&(!F&&(F=e("string_decoder/").StringDecoder),this.decoder=new F(t.encoding),this.encoding=t.encoding);}function s(t){if(A=A||e("./_stream_duplex"),!(this instanceof s))return new s(t);var n=this instanceof A;this._readableState=new d(t,this,n),this.readable=true,t&&("function"==typeof t.read&&(this._read=t.read),"function"==typeof t.destroy&&(this._destroy=t.destroy)),I.call(this);}function l(e,t,n,r,o){x("readableAddChunk",t);var i=e._readableState;if(null===t)i.reading=false,g(e,i);else {var d;if(o||(d=u(i,t)),d)X(e,d);else if(!(i.objectMode||t&&0<t.length))r||(i.reading=false,m(e,i));else if("string"==typeof t||i.objectMode||Object.getPrototypeOf(t)===P.prototype||(t=a(t)),r)i.endEmitted?X(e,new K):c(e,i,t,true);else if(i.ended)X(e,new z);else {if(i.destroyed)return  false;i.reading=false,i.decoder&&!n?(t=i.decoder.write(t),i.objectMode||0!==t.length?c(e,i,t,false):m(e,i)):c(e,i,t,false);}}return !i.ended&&(i.length<i.highWaterMark||0===i.length)}function c(e,t,n,r){t.flowing&&0===t.length&&!t.sync?(t.awaitDrain=0,e.emit("data",n)):(t.length+=t.objectMode?1:n.length,r?t.buffer.unshift(n):t.buffer.push(n),t.needReadable&&_(e)),m(e,t);}function u(e,t){var n;return o(t)||"string"==typeof t||void 0===t||e.objectMode||(n=new V("chunk",["string","Buffer","Uint8Array"],t)),n}function p(e){return 1073741824<=e?e=1073741824:(e--,e|=e>>>1,e|=e>>>2,e|=e>>>4,e|=e>>>8,e|=e>>>16,e++),e}function f(e,t){return 0>=e||0===t.length&&t.ended?0:t.objectMode?1:e===e?(e>t.highWaterMark&&(t.highWaterMark=p(e)),e<=t.length?e:t.ended?t.length:(t.needReadable=true,0)):t.flowing&&t.length?t.buffer.head.data.length:t.length}function g(e,t){if(x("onEofChunk"),!t.ended){if(t.decoder){var n=t.decoder.end();n&&n.length&&(t.buffer.push(n),t.length+=t.objectMode?1:n.length);}t.ended=true,t.sync?_(e):(t.needReadable=false,!t.emittedReadable&&(t.emittedReadable=true,h(e)));}}function _(e){var t=e._readableState;x("emitReadable",t.needReadable,t.emittedReadable),t.needReadable=false,t.emittedReadable||(x("emitReadable",t.flowing),t.emittedReadable=true,n.nextTick(h,e));}function h(e){var t=e._readableState;x("emitReadable_",t.destroyed,t.length,t.ended),!t.destroyed&&(t.length||t.ended)&&(e.emit("readable"),t.emittedReadable=false),t.needReadable=!t.flowing&&!t.ended&&t.length<=t.highWaterMark,S(e);}function m(e,t){t.readingMore||(t.readingMore=true,n.nextTick(b,e,t));}function b(e,t){for(;!t.reading&&!t.ended&&(t.length<t.highWaterMark||t.flowing&&0===t.length);){var n=t.length;if(x("maybeReadMore read 0"),e.read(0),n===t.length)break}t.readingMore=false;}function y(e){return function(){var t=e._readableState;x("pipeOnDrain",t.awaitDrain),t.awaitDrain&&t.awaitDrain--,0===t.awaitDrain&&D(e,"data")&&(t.flowing=true,S(e));}}function C(e){var t=e._readableState;t.readableListening=0<e.listenerCount("readable"),t.resumeScheduled&&!t.paused?t.flowing=true:0<e.listenerCount("data")&&e.resume();}function R(e){x("readable nexttick read 0"),e.read(0);}function E(e,t){t.resumeScheduled||(t.resumeScheduled=true,n.nextTick(w,e,t));}function w(e,t){x("resume",t.reading),t.reading||e.read(0),t.resumeScheduled=false,e.emit("resume"),S(e),t.flowing&&!t.reading&&e.read(0);}function S(e){var t=e._readableState;for(x("flow",t.flowing);t.flowing&&null!==e.read(););}function T(e,t){if(0===t.length)return null;var n;return t.objectMode?n=t.buffer.shift():!e||e>=t.length?(n=t.decoder?t.buffer.join(""):1===t.buffer.length?t.buffer.first():t.buffer.concat(t.length),t.buffer.clear()):n=t.buffer.consume(e,t.decoder),n}function v(e){var t=e._readableState;x("endReadable",t.endEmitted),t.endEmitted||(t.ended=true,n.nextTick(k,t,e));}function k(e,t){if(x("endReadableNT",e.endEmitted,e.length),!e.endEmitted&&0===e.length&&(e.endEmitted=true,t.readable=false,t.emit("end"),e.autoDestroy)){var n=t._writableState;(!n||n.autoDestroy&&n.finished)&&t.destroy();}}function L(e,t){for(var n=0,r=e.length;n<r;n++)if(e[n]===t)return n;return  -1}t.exports=s;var A;s.ReadableState=d;var x;e("events").EventEmitter;var D=function(e,t){return e.listeners(t).length},I=e("./internal/streams/stream"),P=e("buffer").Buffer,M=r.Uint8Array||function(){},O=e("util");x=O&&O.debuglog?O.debuglog("stream"):function(){};var F,B,U,j=e("./internal/streams/buffer_list"),q=e("./internal/streams/destroy"),W=e("./internal/streams/state"),H=W.getHighWaterMark,Y=e("../errors").codes,V=Y.ERR_INVALID_ARG_TYPE,z=Y.ERR_STREAM_PUSH_AFTER_EOF,G=Y.ERR_METHOD_NOT_IMPLEMENTED,K=Y.ERR_STREAM_UNSHIFT_AFTER_END_EVENT;e("inherits")(s,I);var X=q.errorOrDestroy,$=["error","close","destroy","pause","resume"];Object.defineProperty(s.prototype,"destroyed",{enumerable:false,get:function(){return void 0!==this._readableState&&this._readableState.destroyed},set:function(e){this._readableState&&(this._readableState.destroyed=e);}}),s.prototype.destroy=q.destroy,s.prototype._undestroy=q.undestroy,s.prototype._destroy=function(e,t){t(e);},s.prototype.push=function(e,t){var n,r=this._readableState;return r.objectMode?n=true:"string"==typeof e&&(t=t||r.defaultEncoding,t!==r.encoding&&(e=P.from(e,t),t=""),n=true),l(this,e,t,false,n)},s.prototype.unshift=function(e){return l(this,e,null,true,false)},s.prototype.isPaused=function(){return  false===this._readableState.flowing},s.prototype.setEncoding=function(t){F||(F=e("string_decoder/").StringDecoder);var n=new F(t);this._readableState.decoder=n,this._readableState.encoding=this._readableState.decoder.encoding;for(var r=this._readableState.buffer.head,a="";null!==r;)a+=n.write(r.data),r=r.next;return this._readableState.buffer.clear(),""!==a&&this._readableState.buffer.push(a),this._readableState.length=a.length,this};s.prototype.read=function(e){x("read",e),e=parseInt(e,10);var t=this._readableState,r=e;if(0!==e&&(t.emittedReadable=false),0===e&&t.needReadable&&((0===t.highWaterMark?0<t.length:t.length>=t.highWaterMark)||t.ended))return x("read: emitReadable",t.length,t.ended),0===t.length&&t.ended?v(this):_(this),null;if(e=f(e,t),0===e&&t.ended)return 0===t.length&&v(this),null;var a=t.needReadable;x("need readable",a),(0===t.length||t.length-e<t.highWaterMark)&&(a=true,x("length less than watermark",a)),t.ended||t.reading?(a=false,x("reading or ended",a)):a&&(x("do read"),t.reading=true,t.sync=true,0===t.length&&(t.needReadable=true),this._read(t.highWaterMark),t.sync=false,!t.reading&&(e=f(r,t)));var o;return o=0<e?T(e,t):null,null===o?(t.needReadable=t.length<=t.highWaterMark,e=0):(t.length-=e,t.awaitDrain=0),0===t.length&&(!t.ended&&(t.needReadable=true),r!==e&&t.ended&&v(this)),null!==o&&this.emit("data",o),o},s.prototype._read=function(){X(this,new G("_read()"));},s.prototype.pipe=function(e,t){function r(e,t){x("onunpipe"),e===p&&t&&false===t.hasUnpiped&&(t.hasUnpiped=true,o());}function a(){x("onend"),e.end();}function o(){x("cleanup"),e.removeListener("close",l),e.removeListener("finish",c),e.removeListener("drain",h),e.removeListener("error",s),e.removeListener("unpipe",r),p.removeListener("end",a),p.removeListener("end",u),p.removeListener("data",d),m=true,f.awaitDrain&&(!e._writableState||e._writableState.needDrain)&&h();}function d(t){x("ondata");var n=e.write(t);x("dest.write",n),false===n&&((1===f.pipesCount&&f.pipes===e||1<f.pipesCount&&-1!==L(f.pipes,e))&&!m&&(x("false write response, pause",f.awaitDrain),f.awaitDrain++),p.pause());}function s(t){x("onerror",t),u(),e.removeListener("error",s),0===D(e,"error")&&X(e,t);}function l(){e.removeListener("finish",c),u();}function c(){x("onfinish"),e.removeListener("close",l),u();}function u(){x("unpipe"),p.unpipe(e);}var p=this,f=this._readableState;switch(f.pipesCount){case 0:f.pipes=e;break;case 1:f.pipes=[f.pipes,e];break;default:f.pipes.push(e);}f.pipesCount+=1,x("pipe count=%d opts=%j",f.pipesCount,t);var g=(!t||false!==t.end)&&e!==n.stdout&&e!==n.stderr,_=g?a:u;f.endEmitted?n.nextTick(_):p.once("end",_),e.on("unpipe",r);var h=y(p);e.on("drain",h);var m=false;return p.on("data",d),i(e,"error",s),e.once("close",l),e.once("finish",c),e.emit("pipe",p),f.flowing||(x("pipe resume"),p.resume()),e},s.prototype.unpipe=function(e){var t=this._readableState,n={hasUnpiped:false};if(0===t.pipesCount)return this;if(1===t.pipesCount)return e&&e!==t.pipes?this:(e||(e=t.pipes),t.pipes=null,t.pipesCount=0,t.flowing=false,e&&e.emit("unpipe",this,n),this);if(!e){var r=t.pipes,a=t.pipesCount;t.pipes=null,t.pipesCount=0,t.flowing=false;for(var o=0;o<a;o++)r[o].emit("unpipe",this,{hasUnpiped:false});return this}var d=L(t.pipes,e);return  -1===d?this:(t.pipes.splice(d,1),t.pipesCount-=1,1===t.pipesCount&&(t.pipes=t.pipes[0]),e.emit("unpipe",this,n),this)},s.prototype.on=function(e,t){var r=I.prototype.on.call(this,e,t),a=this._readableState;return "data"===e?(a.readableListening=0<this.listenerCount("readable"),false!==a.flowing&&this.resume()):"readable"==e&&!a.endEmitted&&!a.readableListening&&(a.readableListening=a.needReadable=true,a.flowing=false,a.emittedReadable=false,x("on readable",a.length,a.reading),a.length?_(this):!a.reading&&n.nextTick(R,this)),r},s.prototype.addListener=s.prototype.on,s.prototype.removeListener=function(e,t){var r=I.prototype.removeListener.call(this,e,t);return "readable"===e&&n.nextTick(C,this),r},s.prototype.removeAllListeners=function(e){var t=I.prototype.removeAllListeners.apply(this,arguments);return ("readable"===e||void 0===e)&&n.nextTick(C,this),t},s.prototype.resume=function(){var e=this._readableState;return e.flowing||(x("resume"),e.flowing=!e.readableListening,E(this,e)),e.paused=false,this},s.prototype.pause=function(){return x("call pause flowing=%j",this._readableState.flowing),false!==this._readableState.flowing&&(x("pause"),this._readableState.flowing=false,this.emit("pause")),this._readableState.paused=true,this},s.prototype.wrap=function(e){var t=this,r=this._readableState,a=false;for(var o in e.on("end",function(){if(x("wrapped end"),r.decoder&&!r.ended){var e=r.decoder.end();e&&e.length&&t.push(e);}t.push(null);}),e.on("data",function(n){if((x("wrapped data"),r.decoder&&(n=r.decoder.write(n)),!(r.objectMode&&(null===n||void 0===n)))&&(r.objectMode||n&&n.length)){var o=t.push(n);o||(a=true,e.pause());}}),e) void 0===this[o]&&"function"==typeof e[o]&&(this[o]=function(t){return function(){return e[t].apply(e,arguments)}}(o));for(var i=0;i<$.length;i++)e.on($[i],this.emit.bind(this,$[i]));return this._read=function(t){x("wrapped _read",t),a&&(a=false,e.resume());},this},"function"==typeof Symbol&&(s.prototype[Symbol.asyncIterator]=function(){return void 0===B&&(B=e("./internal/streams/async_iterator")),B(this)}),Object.defineProperty(s.prototype,"readableHighWaterMark",{enumerable:false,get:function(){return this._readableState.highWaterMark}}),Object.defineProperty(s.prototype,"readableBuffer",{enumerable:false,get:function(){return this._readableState&&this._readableState.buffer}}),Object.defineProperty(s.prototype,"readableFlowing",{enumerable:false,get:function(){return this._readableState.flowing},set:function(e){this._readableState&&(this._readableState.flowing=e);}}),s._fromList=T,Object.defineProperty(s.prototype,"readableLength",{enumerable:false,get:function(){return this._readableState.length}}),"function"==typeof Symbol&&(s.from=function(t,n){return void 0===U&&(U=e("./internal/streams/from")),U(s,t,n)});}).call(this);}).call(this,e("_process"),"undefined"==typeof commonjsGlobal?"undefined"==typeof self?"undefined"==typeof window?{}:window:self:commonjsGlobal);},{"../errors":15,"./_stream_duplex":16,"./internal/streams/async_iterator":21,"./internal/streams/buffer_list":22,"./internal/streams/destroy":23,"./internal/streams/from":25,"./internal/streams/state":27,"./internal/streams/stream":28,_process:12,buffer:3,events:7,inherits:10,"string_decoder/":31,util:2}],19:[function(e,t){function n(e,t){var n=this._transformState;n.transforming=false;var r=n.writecb;if(null===r)return this.emit("error",new s);n.writechunk=null,n.writecb=null,null!=t&&this.push(t),r(e);var a=this._readableState;a.reading=false,(a.needReadable||a.length<a.highWaterMark)&&this._read(a.highWaterMark);}function r(e){return this instanceof r?void(u.call(this,e),this._transformState={afterTransform:n.bind(this),needTransform:false,transforming:false,writecb:null,writechunk:null,writeencoding:null},this._readableState.needReadable=true,this._readableState.sync=false,e&&("function"==typeof e.transform&&(this._transform=e.transform),"function"==typeof e.flush&&(this._flush=e.flush)),this.on("prefinish",a)):new r(e)}function a(){var e=this;"function"!=typeof this._flush||this._readableState.destroyed?o(this,null,null):this._flush(function(t,n){o(e,t,n);});}function o(e,t,n){if(t)return e.emit("error",t);if(null!=n&&e.push(n),e._writableState.length)throw new c;if(e._transformState.transforming)throw new l;return e.push(null)}t.exports=r;var i=e("../errors").codes,d=i.ERR_METHOD_NOT_IMPLEMENTED,s=i.ERR_MULTIPLE_CALLBACK,l=i.ERR_TRANSFORM_ALREADY_TRANSFORMING,c=i.ERR_TRANSFORM_WITH_LENGTH_0,u=e("./_stream_duplex");e("inherits")(r,u),r.prototype.push=function(e,t){return this._transformState.needTransform=false,u.prototype.push.call(this,e,t)},r.prototype._transform=function(e,t,n){n(new d("_transform()"));},r.prototype._write=function(e,t,n){var r=this._transformState;if(r.writecb=n,r.writechunk=e,r.writeencoding=t,!r.transforming){var a=this._readableState;(r.needTransform||a.needReadable||a.length<a.highWaterMark)&&this._read(a.highWaterMark);}},r.prototype._read=function(){var e=this._transformState;null===e.writechunk||e.transforming?e.needTransform=true:(e.transforming=true,this._transform(e.writechunk,e.writeencoding,e.afterTransform));},r.prototype._destroy=function(e,t){u.prototype._destroy.call(this,e,function(e){t(e);});};},{"../errors":15,"./_stream_duplex":16,inherits:10}],20:[function(e,t){(function(n,r){(function(){function a(e){var t=this;this.next=null,this.entry=null,this.finish=function(){v(t,e);};}function o(e){return x.from(e)}function i(e){return x.isBuffer(e)||e instanceof N}function d(){}function s(t,n,r){k=k||e("./_stream_duplex"),t=t||{},"boolean"!=typeof r&&(r=n instanceof k),this.objectMode=!!t.objectMode,r&&(this.objectMode=this.objectMode||!!t.writableObjectMode),this.highWaterMark=P(this,t,"writableHighWaterMark",r),this.finalCalled=false,this.needDrain=false,this.ending=false,this.ended=false,this.finished=false,this.destroyed=false;var o=false===t.decodeStrings;this.decodeStrings=!o,this.defaultEncoding=t.defaultEncoding||"utf8",this.length=0,this.writing=false,this.corked=0,this.sync=true,this.bufferProcessing=false,this.onwrite=function(e){m(n,e);},this.writecb=null,this.writelen=0,this.bufferedRequest=null,this.lastBufferedRequest=null,this.pendingcb=0,this.prefinished=false,this.errorEmitted=false,this.emitClose=false!==t.emitClose,this.autoDestroy=!!t.autoDestroy,this.bufferedRequestCount=0,this.corkedRequestsFree=new a(this);}function l(t){k=k||e("./_stream_duplex");var n=this instanceof k;return n||V.call(l,this)?void(this._writableState=new s(t,this,n),this.writable=true,t&&("function"==typeof t.write&&(this._write=t.write),"function"==typeof t.writev&&(this._writev=t.writev),"function"==typeof t.destroy&&(this._destroy=t.destroy),"function"==typeof t.final&&(this._final=t.final)),A.call(this)):new l(t)}function c(e,t){var r=new W;Y(e,r),n.nextTick(t,r);}function u(e,t,r,a){var o;return null===r?o=new q:"string"!=typeof r&&!t.objectMode&&(o=new O("chunk",["string","Buffer"],r)),!o||(Y(e,o),n.nextTick(a,o),false)}function p(e,t,n){return e.objectMode||false===e.decodeStrings||"string"!=typeof t||(t=x.from(t,n)),t}function f(e,t,n,r,a,o){if(!n){var i=p(t,r,a);r!==i&&(n=true,a="buffer",r=i);}var d=t.objectMode?1:r.length;t.length+=d;var s=t.length<t.highWaterMark;if(s||(t.needDrain=true),t.writing||t.corked){var l=t.lastBufferedRequest;t.lastBufferedRequest={chunk:r,encoding:a,isBuf:n,callback:o,next:null},l?l.next=t.lastBufferedRequest:t.bufferedRequest=t.lastBufferedRequest,t.bufferedRequestCount+=1;}else g(e,t,false,d,r,a,o);return s}function g(e,t,n,r,a,o,i){t.writelen=r,t.writecb=i,t.writing=true,t.sync=true,t.destroyed?t.onwrite(new j("write")):n?e._writev(a,t.onwrite):e._write(a,o,t.onwrite),t.sync=false;}function _(e,t,r,a,o){--t.pendingcb,r?(n.nextTick(o,a),n.nextTick(S,e,t),e._writableState.errorEmitted=true,Y(e,a)):(o(a),e._writableState.errorEmitted=true,Y(e,a),S(e,t));}function h(e){e.writing=false,e.writecb=null,e.length-=e.writelen,e.writelen=0;}function m(e,t){var r=e._writableState,a=r.sync,o=r.writecb;if("function"!=typeof o)throw new B;if(h(r),t)_(e,r,a,t,o);else {var i=R(r)||e.destroyed;i||r.corked||r.bufferProcessing||!r.bufferedRequest||C(e,r),a?n.nextTick(b,e,r,i,o):b(e,r,i,o);}}function b(e,t,n,r){n||y(e,t),t.pendingcb--,r(),S(e,t);}function y(e,t){0===t.length&&t.needDrain&&(t.needDrain=false,e.emit("drain"));}function C(e,t){t.bufferProcessing=true;var n=t.bufferedRequest;if(e._writev&&n&&n.next){var r=t.bufferedRequestCount,o=Array(r),i=t.corkedRequestsFree;i.entry=n;for(var d=0,s=true;n;)o[d]=n,n.isBuf||(s=false),n=n.next,d+=1;o.allBuffers=s,g(e,t,true,t.length,o,"",i.finish),t.pendingcb++,t.lastBufferedRequest=null,i.next?(t.corkedRequestsFree=i.next,i.next=null):t.corkedRequestsFree=new a(t),t.bufferedRequestCount=0;}else {for(;n;){var l=n.chunk,c=n.encoding,u=n.callback,p=t.objectMode?1:l.length;if(g(e,t,false,p,l,c,u),n=n.next,t.bufferedRequestCount--,t.writing)break}null===n&&(t.lastBufferedRequest=null);}t.bufferedRequest=n,t.bufferProcessing=false;}function R(e){return e.ending&&0===e.length&&null===e.bufferedRequest&&!e.finished&&!e.writing}function E(e,t){e._final(function(n){t.pendingcb--,n&&Y(e,n),t.prefinished=true,e.emit("prefinish"),S(e,t);});}function w(e,t){t.prefinished||t.finalCalled||("function"!=typeof e._final||t.destroyed?(t.prefinished=true,e.emit("prefinish")):(t.pendingcb++,t.finalCalled=true,n.nextTick(E,e,t)));}function S(e,t){var n=R(t);if(n&&(w(e,t),0===t.pendingcb&&(t.finished=true,e.emit("finish"),t.autoDestroy))){var r=e._readableState;(!r||r.autoDestroy&&r.endEmitted)&&e.destroy();}return n}function T(e,t,r){t.ending=true,S(e,t),r&&(t.finished?n.nextTick(r):e.once("finish",r)),t.ended=true,e.writable=false;}function v(e,t,n){var r=e.entry;for(e.entry=null;r;){var a=r.callback;t.pendingcb--,a(n),r=r.next;}t.corkedRequestsFree.next=e;}t.exports=l;var k;l.WritableState=s;var L={deprecate:e("util-deprecate")},A=e("./internal/streams/stream"),x=e("buffer").Buffer,N=r.Uint8Array||function(){},D=e("./internal/streams/destroy"),I=e("./internal/streams/state"),P=I.getHighWaterMark,M=e("../errors").codes,O=M.ERR_INVALID_ARG_TYPE,F=M.ERR_METHOD_NOT_IMPLEMENTED,B=M.ERR_MULTIPLE_CALLBACK,U=M.ERR_STREAM_CANNOT_PIPE,j=M.ERR_STREAM_DESTROYED,q=M.ERR_STREAM_NULL_VALUES,W=M.ERR_STREAM_WRITE_AFTER_END,H=M.ERR_UNKNOWN_ENCODING,Y=D.errorOrDestroy;e("inherits")(l,A),s.prototype.getBuffer=function(){for(var e=this.bufferedRequest,t=[];e;)t.push(e),e=e.next;return t},function(){try{Object.defineProperty(s.prototype,"buffer",{get:L.deprecate(function(){return this.getBuffer()},"_writableState.buffer is deprecated. Use _writableState.getBuffer instead.","DEP0003")});}catch(e){}}();var V;"function"==typeof Symbol&&Symbol.hasInstance&&"function"==typeof Function.prototype[Symbol.hasInstance]?(V=Function.prototype[Symbol.hasInstance],Object.defineProperty(l,Symbol.hasInstance,{value:function(e){return !!V.call(this,e)||!(this!==l)&&e&&e._writableState instanceof s}})):V=function(e){return e instanceof this},l.prototype.pipe=function(){Y(this,new U);},l.prototype.write=function(e,t,n){var r=this._writableState,a=false,s=!r.objectMode&&i(e);return s&&!x.isBuffer(e)&&(e=o(e)),"function"==typeof t&&(n=t,t=null),s?t="buffer":!t&&(t=r.defaultEncoding),"function"!=typeof n&&(n=d),r.ending?c(this,n):(s||u(this,r,e,n))&&(r.pendingcb++,a=f(this,r,s,e,t,n)),a},l.prototype.cork=function(){this._writableState.corked++;},l.prototype.uncork=function(){var e=this._writableState;e.corked&&(e.corked--,!e.writing&&!e.corked&&!e.bufferProcessing&&e.bufferedRequest&&C(this,e));},l.prototype.setDefaultEncoding=function(e){if("string"==typeof e&&(e=e.toLowerCase()),!(-1<["hex","utf8","utf-8","ascii","binary","base64","ucs2","ucs-2","utf16le","utf-16le","raw"].indexOf((e+"").toLowerCase())))throw new H(e);return this._writableState.defaultEncoding=e,this},Object.defineProperty(l.prototype,"writableBuffer",{enumerable:false,get:function(){return this._writableState&&this._writableState.getBuffer()}}),Object.defineProperty(l.prototype,"writableHighWaterMark",{enumerable:false,get:function(){return this._writableState.highWaterMark}}),l.prototype._write=function(e,t,n){n(new F("_write()"));},l.prototype._writev=null,l.prototype.end=function(e,t,n){var r=this._writableState;return "function"==typeof e?(n=e,e=null,t=null):"function"==typeof t&&(n=t,t=null),null!==e&&void 0!==e&&this.write(e,t),r.corked&&(r.corked=1,this.uncork()),r.ending||T(this,r,n),this},Object.defineProperty(l.prototype,"writableLength",{enumerable:false,get:function(){return this._writableState.length}}),Object.defineProperty(l.prototype,"destroyed",{enumerable:false,get:function(){return void 0!==this._writableState&&this._writableState.destroyed},set:function(e){this._writableState&&(this._writableState.destroyed=e);}}),l.prototype.destroy=D.destroy,l.prototype._undestroy=D.undestroy,l.prototype._destroy=function(e,t){t(e);};}).call(this);}).call(this,e("_process"),"undefined"==typeof commonjsGlobal?"undefined"==typeof self?"undefined"==typeof window?{}:window:self:commonjsGlobal);},{"../errors":15,"./_stream_duplex":16,"./internal/streams/destroy":23,"./internal/streams/state":27,"./internal/streams/stream":28,_process:12,buffer:3,inherits:10,"util-deprecate":32}],21:[function(e,t){(function(n){(function(){function r(e,t,n){return t in e?Object.defineProperty(e,t,{value:n,enumerable:true,configurable:true,writable:true}):e[t]=n,e}function a(e,t){return {value:e,done:t}}function o(e){var t=e[c];if(null!==t){var n=e[h].read();null!==n&&(e[g]=null,e[c]=null,e[u]=null,t(a(n,false)));}}function i(e){n.nextTick(o,e);}function d(e,t){return function(n,r){e.then(function(){return t[f]?void n(a(void 0,true)):void t[_](n,r)},r);}}var s,l=e("./end-of-stream"),c=Symbol("lastResolve"),u=Symbol("lastReject"),p=Symbol("error"),f=Symbol("ended"),g=Symbol("lastPromise"),_=Symbol("handlePromise"),h=Symbol("stream"),m=Object.getPrototypeOf(function(){}),b=Object.setPrototypeOf((s={get stream(){return this[h]},next:function(){var e=this,t=this[p];if(null!==t)return Promise.reject(t);if(this[f])return Promise.resolve(a(void 0,true));if(this[h].destroyed)return new Promise(function(t,r){n.nextTick(function(){e[p]?r(e[p]):t(a(void 0,true));});});var r,o=this[g];if(o)r=new Promise(d(o,this));else {var i=this[h].read();if(null!==i)return Promise.resolve(a(i,false));r=new Promise(this[_]);}return this[g]=r,r}},r(s,Symbol.asyncIterator,function(){return this}),r(s,"return",function(){var e=this;return new Promise(function(t,n){e[h].destroy(null,function(e){return e?void n(e):void t(a(void 0,true))});})}),s),m);t.exports=function(e){var t,n=Object.create(b,(t={},r(t,h,{value:e,writable:true}),r(t,c,{value:null,writable:true}),r(t,u,{value:null,writable:true}),r(t,p,{value:null,writable:true}),r(t,f,{value:e._readableState.endEmitted,writable:true}),r(t,_,{value:function(e,t){var r=n[h].read();r?(n[g]=null,n[c]=null,n[u]=null,e(a(r,false))):(n[c]=e,n[u]=t);},writable:true}),t));return n[g]=null,l(e,function(e){if(e&&"ERR_STREAM_PREMATURE_CLOSE"!==e.code){var t=n[u];return null!==t&&(n[g]=null,n[c]=null,n[u]=null,t(e)),void(n[p]=e)}var r=n[c];null!==r&&(n[g]=null,n[c]=null,n[u]=null,r(a(void 0,true))),n[f]=true;}),e.on("readable",i.bind(null,n)),n};}).call(this);}).call(this,e("_process"));},{"./end-of-stream":24,_process:12}],22:[function(e,t){function n(e,t){var n=Object.keys(e);if(Object.getOwnPropertySymbols){var r=Object.getOwnPropertySymbols(e);t&&(r=r.filter(function(t){return Object.getOwnPropertyDescriptor(e,t).enumerable})),n.push.apply(n,r);}return n}function r(e){for(var t,r=1;r<arguments.length;r++)t=null==arguments[r]?{}:arguments[r],r%2?n(Object(t),true).forEach(function(n){a(e,n,t[n]);}):Object.getOwnPropertyDescriptors?Object.defineProperties(e,Object.getOwnPropertyDescriptors(t)):n(Object(t)).forEach(function(n){Object.defineProperty(e,n,Object.getOwnPropertyDescriptor(t,n));});return e}function a(e,t,n){return t in e?Object.defineProperty(e,t,{value:n,enumerable:true,configurable:true,writable:true}):e[t]=n,e}function o(e,t){if(!(e instanceof t))throw new TypeError("Cannot call a class as a function")}function i(e,t){for(var n,r=0;r<t.length;r++)n=t[r],n.enumerable=n.enumerable||false,n.configurable=true,"value"in n&&(n.writable=true),Object.defineProperty(e,n.key,n);}function d(e,t,n){return t&&i(e.prototype,t),e}function s(e,t,n){u.prototype.copy.call(e,t,n);}var l=e("buffer"),u=l.Buffer,p=e("util"),f=p.inspect,g=f&&f.custom||"inspect";t.exports=function(){function e(){o(this,e),this.head=null,this.tail=null,this.length=0;}return d(e,[{key:"push",value:function(e){var t={data:e,next:null};0<this.length?this.tail.next=t:this.head=t,this.tail=t,++this.length;}},{key:"unshift",value:function(e){var t={data:e,next:this.head};0===this.length&&(this.tail=t),this.head=t,++this.length;}},{key:"shift",value:function(){if(0!==this.length){var e=this.head.data;return this.head=1===this.length?this.tail=null:this.head.next,--this.length,e}}},{key:"clear",value:function(){this.head=this.tail=null,this.length=0;}},{key:"join",value:function(e){if(0===this.length)return "";for(var t=this.head,n=""+t.data;t=t.next;)n+=e+t.data;return n}},{key:"concat",value:function(e){if(0===this.length)return u.alloc(0);for(var t=u.allocUnsafe(e>>>0),n=this.head,r=0;n;)s(n.data,t,r),r+=n.data.length,n=n.next;return t}},{key:"consume",value:function(e,t){var n;return e<this.head.data.length?(n=this.head.data.slice(0,e),this.head.data=this.head.data.slice(e)):e===this.head.data.length?n=this.shift():n=t?this._getString(e):this._getBuffer(e),n}},{key:"first",value:function(){return this.head.data}},{key:"_getString",value:function(e){var t=this.head,r=1,a=t.data;for(e-=a.length;t=t.next;){var o=t.data,i=e>o.length?o.length:e;if(a+=i===o.length?o:o.slice(0,e),e-=i,0===e){i===o.length?(++r,this.head=t.next?t.next:this.tail=null):(this.head=t,t.data=o.slice(i));break}++r;}return this.length-=r,a}},{key:"_getBuffer",value:function(e){var t=u.allocUnsafe(e),r=this.head,a=1;for(r.data.copy(t),e-=r.data.length;r=r.next;){var o=r.data,i=e>o.length?o.length:e;if(o.copy(t,t.length-e,0,i),e-=i,0===e){i===o.length?(++a,this.head=r.next?r.next:this.tail=null):(this.head=r,r.data=o.slice(i));break}++a;}return this.length-=a,t}},{key:g,value:function(e,t){return f(this,r({},t,{depth:0,customInspect:false}))}}]),e}();},{buffer:3,util:2}],23:[function(e,t){(function(e){(function(){function n(e,t){a(e,t),r(e);}function r(e){e._writableState&&!e._writableState.emitClose||e._readableState&&!e._readableState.emitClose||e.emit("close");}function a(e,t){e.emit("error",t);}t.exports={destroy:function(t,o){var i=this,d=this._readableState&&this._readableState.destroyed,s=this._writableState&&this._writableState.destroyed;return d||s?(o?o(t):t&&(this._writableState?!this._writableState.errorEmitted&&(this._writableState.errorEmitted=true,e.nextTick(a,this,t)):e.nextTick(a,this,t)),this):(this._readableState&&(this._readableState.destroyed=true),this._writableState&&(this._writableState.destroyed=true),this._destroy(t||null,function(t){!o&&t?i._writableState?i._writableState.errorEmitted?e.nextTick(r,i):(i._writableState.errorEmitted=true,e.nextTick(n,i,t)):e.nextTick(n,i,t):o?(e.nextTick(r,i),o(t)):e.nextTick(r,i);}),this)},undestroy:function(){this._readableState&&(this._readableState.destroyed=false,this._readableState.reading=false,this._readableState.ended=false,this._readableState.endEmitted=false),this._writableState&&(this._writableState.destroyed=false,this._writableState.ended=false,this._writableState.ending=false,this._writableState.finalCalled=false,this._writableState.prefinished=false,this._writableState.finished=false,this._writableState.errorEmitted=false);},errorOrDestroy:function(e,t){var n=e._readableState,r=e._writableState;n&&n.autoDestroy||r&&r.autoDestroy?e.destroy(t):e.emit("error",t);}};}).call(this);}).call(this,e("_process"));},{_process:12}],24:[function(e,t){function n(e){var t=false;return function(){if(!t){t=true;for(var n=arguments.length,r=Array(n),a=0;a<n;a++)r[a]=arguments[a];e.apply(this,r);}}}function r(){}function a(e){return e.setHeader&&"function"==typeof e.abort}function o(e,t,d){if("function"==typeof t)return o(e,null,t);t||(t={}),d=n(d||r);var s=t.readable||false!==t.readable&&e.readable,l=t.writable||false!==t.writable&&e.writable,c=function(){e.writable||p();},u=e._writableState&&e._writableState.finished,p=function(){l=false,u=true,s||d.call(e);},f=e._readableState&&e._readableState.endEmitted,g=function(){s=false,f=true,l||d.call(e);},_=function(t){d.call(e,t);},h=function(){var t;return s&&!f?(e._readableState&&e._readableState.ended||(t=new i),d.call(e,t)):l&&!u?(e._writableState&&e._writableState.ended||(t=new i),d.call(e,t)):void 0},m=function(){e.req.on("finish",p);};return a(e)?(e.on("complete",p),e.on("abort",h),e.req?m():e.on("request",m)):l&&!e._writableState&&(e.on("end",c),e.on("close",c)),e.on("end",g),e.on("finish",p),false!==t.error&&e.on("error",_),e.on("close",h),function(){e.removeListener("complete",p),e.removeListener("abort",h),e.removeListener("request",m),e.req&&e.req.removeListener("finish",p),e.removeListener("end",c),e.removeListener("close",c),e.removeListener("finish",p),e.removeListener("end",g),e.removeListener("error",_),e.removeListener("close",h);}}var i=e("../../../errors").codes.ERR_STREAM_PREMATURE_CLOSE;t.exports=o;},{"../../../errors":15}],25:[function(e,t){t.exports=function(){throw new Error("Readable.from is not available in the browser")};},{}],26:[function(e,t){function n(e){var t=false;return function(){t||(t=true,e.apply(void 0,arguments));}}function r(e){if(e)throw e}function a(e){return e.setHeader&&"function"==typeof e.abort}function o(t,r,o,i){i=n(i);var d=false;t.on("close",function(){d=true;}),l===void 0&&(l=e("./end-of-stream")),l(t,{readable:r,writable:o},function(e){return e?i(e):void(d=true,i())});var s=false;return function(e){if(!d)return s?void 0:(s=true,a(t)?t.abort():"function"==typeof t.destroy?t.destroy():void i(e||new p("pipe")))}}function i(e){e();}function d(e,t){return e.pipe(t)}function s(e){return e.length?"function"==typeof e[e.length-1]?e.pop():r:r}var l,c=e("../../../errors").codes,u=c.ERR_MISSING_ARGS,p=c.ERR_STREAM_DESTROYED;t.exports=function(){for(var e=arguments.length,t=Array(e),n=0;n<e;n++)t[n]=arguments[n];var r=s(t);if(Array.isArray(t[0])&&(t=t[0]),2>t.length)throw new u("streams");var a,l=t.map(function(e,n){var d=n<t.length-1;return o(e,d,0<n,function(e){a||(a=e),e&&l.forEach(i),d||(l.forEach(i),r(a));})});return t.reduce(d)};},{"../../../errors":15,"./end-of-stream":24}],27:[function(e,n){function r(e,t,n){return null==e.highWaterMark?t?e[n]:null:e.highWaterMark}var a=e("../../../errors").codes.ERR_INVALID_OPT_VALUE;n.exports={getHighWaterMark:function(e,n,o,i){var d=r(n,i,o);if(null!=d){if(!(isFinite(d)&&t(d)===d)||0>d){var s=i?o:"highWaterMark";throw new a(s,d)}return t(d)}return e.objectMode?16:16384}};},{"../../../errors":15}],28:[function(e,t){t.exports=e("events").EventEmitter;},{events:7}],29:[function(e,t,n){n=t.exports=e("./lib/_stream_readable.js"),n.Stream=n,n.Readable=n,n.Writable=e("./lib/_stream_writable.js"),n.Duplex=e("./lib/_stream_duplex.js"),n.Transform=e("./lib/_stream_transform.js"),n.PassThrough=e("./lib/_stream_passthrough.js"),n.finished=e("./lib/internal/streams/end-of-stream.js"),n.pipeline=e("./lib/internal/streams/pipeline.js");},{"./lib/_stream_duplex.js":16,"./lib/_stream_passthrough.js":17,"./lib/_stream_readable.js":18,"./lib/_stream_transform.js":19,"./lib/_stream_writable.js":20,"./lib/internal/streams/end-of-stream.js":24,"./lib/internal/streams/pipeline.js":26}],30:[function(e,t,n){function r(e,t){for(var n in e)t[n]=e[n];}function a(e,t,n){return i(e,t,n)}/*! safe-buffer. MIT License. Feross Aboukhadijeh <https://feross.org/opensource> */var o=e("buffer"),i=o.Buffer;i.from&&i.alloc&&i.allocUnsafe&&i.allocUnsafeSlow?t.exports=o:(r(o,n),n.Buffer=a),a.prototype=Object.create(i.prototype),r(i,a),a.from=function(e,t,n){if("number"==typeof e)throw new TypeError("Argument must not be a number");return i(e,t,n)},a.alloc=function(e,t,n){if("number"!=typeof e)throw new TypeError("Argument must be a number");var r=i(e);return void 0===t?r.fill(0):"string"==typeof n?r.fill(t,n):r.fill(t),r},a.allocUnsafe=function(e){if("number"!=typeof e)throw new TypeError("Argument must be a number");return i(e)},a.allocUnsafeSlow=function(e){if("number"!=typeof e)throw new TypeError("Argument must be a number");return o.SlowBuffer(e)};},{buffer:3}],31:[function(e,t,n){function r(e){if(!e)return "utf8";for(var t;;)switch(e){case "utf8":case "utf-8":return "utf8";case "ucs2":case "ucs-2":case "utf16le":case "utf-16le":return "utf16le";case "latin1":case "binary":return "latin1";case "base64":case "ascii":case "hex":return e;default:if(t)return;e=(""+e).toLowerCase(),t=true;}}function a(e){var t=r(e);if("string"!=typeof t&&(m.isEncoding===b||!b(e)))throw new Error("Unknown encoding: "+e);return t||e}function o(e){this.encoding=a(e);var t;switch(this.encoding){case "utf16le":this.text=u,this.end=p,t=4;break;case "utf8":this.fillLast=c,t=4;break;case "base64":this.text=f,this.end=g,t=3;break;default:return this.write=_,void(this.end=h);}this.lastNeed=0,this.lastTotal=0,this.lastChar=m.allocUnsafe(t);}function d(e){if(127>=e)return 0;return 6==e>>5?2:14==e>>4?3:30==e>>3?4:2==e>>6?-1:-2}function s(e,t,n){var r=t.length-1;if(r<n)return 0;var a=d(t[r]);return 0<=a?(0<a&&(e.lastNeed=a-1),a):--r<n||-2===a?0:(a=d(t[r]),0<=a)?(0<a&&(e.lastNeed=a-2),a):--r<n||-2===a?0:(a=d(t[r]),0<=a?(0<a&&(2===a?a=0:e.lastNeed=a-3),a):0)}function l(e,t){if(128!=(192&t[0]))return e.lastNeed=0,"\uFFFD";if(1<e.lastNeed&&1<t.length){if(128!=(192&t[1]))return e.lastNeed=1,"\uFFFD";if(2<e.lastNeed&&2<t.length&&128!=(192&t[2]))return e.lastNeed=2,"\uFFFD"}}function c(e){var t=this.lastTotal-this.lastNeed,n=l(this,e);return void 0===n?this.lastNeed<=e.length?(e.copy(this.lastChar,t,0,this.lastNeed),this.lastChar.toString(this.encoding,0,this.lastTotal)):void(e.copy(this.lastChar,t,0,e.length),this.lastNeed-=e.length):n}function u(e,t){if(0==(e.length-t)%2){var n=e.toString("utf16le",t);if(n){var r=n.charCodeAt(n.length-1);if(55296<=r&&56319>=r)return this.lastNeed=2,this.lastTotal=4,this.lastChar[0]=e[e.length-2],this.lastChar[1]=e[e.length-1],n.slice(0,-1)}return n}return this.lastNeed=1,this.lastTotal=2,this.lastChar[0]=e[e.length-1],e.toString("utf16le",t,e.length-1)}function p(e){var t=e&&e.length?this.write(e):"";if(this.lastNeed){var n=this.lastTotal-this.lastNeed;return t+this.lastChar.toString("utf16le",0,n)}return t}function f(e,t){var r=(e.length-t)%3;return 0==r?e.toString("base64",t):(this.lastNeed=3-r,this.lastTotal=3,1==r?this.lastChar[0]=e[e.length-1]:(this.lastChar[0]=e[e.length-2],this.lastChar[1]=e[e.length-1]),e.toString("base64",t,e.length-r))}function g(e){var t=e&&e.length?this.write(e):"";return this.lastNeed?t+this.lastChar.toString("base64",0,3-this.lastNeed):t}function _(e){return e.toString(this.encoding)}function h(e){return e&&e.length?this.write(e):""}var m=e("safe-buffer").Buffer,b=m.isEncoding||function(e){switch(e=""+e,e&&e.toLowerCase()){case "hex":case "utf8":case "utf-8":case "ascii":case "binary":case "base64":case "ucs2":case "ucs-2":case "utf16le":case "utf-16le":case "raw":return  true;default:return  false;}};n.StringDecoder=o,o.prototype.write=function(e){if(0===e.length)return "";var t,n;if(this.lastNeed){if(t=this.fillLast(e),void 0===t)return "";n=this.lastNeed,this.lastNeed=0;}else n=0;return n<e.length?t?t+this.text(e,n):this.text(e,n):t||""},o.prototype.end=function(e){var t=e&&e.length?this.write(e):"";return this.lastNeed?t+"\uFFFD":t},o.prototype.text=function(e,t){var n=s(this,e,t);if(!this.lastNeed)return e.toString("utf8",t);this.lastTotal=n;var r=e.length-(n-this.lastNeed);return e.copy(this.lastChar,0,r),e.toString("utf8",t,r)},o.prototype.fillLast=function(e){return this.lastNeed<=e.length?(e.copy(this.lastChar,this.lastTotal-this.lastNeed,0,this.lastNeed),this.lastChar.toString(this.encoding,0,this.lastTotal)):void(e.copy(this.lastChar,this.lastTotal-this.lastNeed,0,e.length),this.lastNeed-=e.length)};},{"safe-buffer":30}],32:[function(e,t){(function(e){(function(){function n(t){try{if(!e.localStorage)return !1}catch(e){return  false}var n=e.localStorage[t];return null!=n&&"true"===(n+"").toLowerCase()}t.exports=function(e,t){function r(){if(!a){if(n("throwDeprecation"))throw new Error(t);else n("traceDeprecation")?console.trace(t):console.warn(t);a=true;}return e.apply(this,arguments)}if(n("noDeprecation"))return e;var a=false;return r};}).call(this);}).call(this,"undefined"==typeof commonjsGlobal?"undefined"==typeof self?"undefined"==typeof window?{}:window:self:commonjsGlobal);},{}],"/":[function(e,t){function n(e){return e.replace(/a=ice-options:trickle\s\n/g,"")}function r(e){console.warn(e);}/*! simple-peer. MIT License. Feross Aboukhadijeh <https://feross.org/opensource> */const a=e("debug")("simple-peer"),o=e("get-browser-rtc"),i=e("randombytes"),d=e("readable-stream"),s=e("queue-microtask"),l=e("err-code"),{Buffer:c}=e("buffer"),u=65536;class p extends d.Duplex{constructor(e){if(e=Object.assign({allowHalfOpen:false},e),super(e),this._id=i(4).toString("hex").slice(0,7),this._debug("new peer %o",e),this.channelName=e.initiator?e.channelName||i(20).toString("hex"):null,this.initiator=e.initiator||false,this.channelConfig=e.channelConfig||p.channelConfig,this.channelNegotiated=this.channelConfig.negotiated,this.config=Object.assign({},p.config,e.config),this.offerOptions=e.offerOptions||{},this.answerOptions=e.answerOptions||{},this.sdpTransform=e.sdpTransform||(e=>e),this.streams=e.streams||(e.stream?[e.stream]:[]),this.trickle=void 0===e.trickle||e.trickle,this.allowHalfTrickle=void 0!==e.allowHalfTrickle&&e.allowHalfTrickle,this.iceCompleteTimeout=e.iceCompleteTimeout||5000,this.destroyed=false,this.destroying=false,this._connected=false,this.remoteAddress=void 0,this.remoteFamily=void 0,this.remotePort=void 0,this.localAddress=void 0,this.localFamily=void 0,this.localPort=void 0,this._wrtc=e.wrtc&&"object"==typeof e.wrtc?e.wrtc:o(),!this._wrtc)if("undefined"==typeof window)throw l(new Error("No WebRTC support: Specify `opts.wrtc` option in this environment"),"ERR_WEBRTC_SUPPORT");else throw l(new Error("No WebRTC support: Not a supported browser"),"ERR_WEBRTC_SUPPORT");this._pcReady=false,this._channelReady=false,this._iceComplete=false,this._iceCompleteTimer=null,this._channel=null,this._pendingCandidates=[],this._isNegotiating=false,this._firstNegotiation=true,this._batchedNegotiation=false,this._queuedNegotiation=false,this._sendersAwaitingStable=[],this._senderMap=new Map,this._closingInterval=null,this._remoteTracks=[],this._remoteStreams=[],this._chunk=null,this._cb=null,this._interval=null;try{this._pc=new this._wrtc.RTCPeerConnection(this.config);}catch(e){return void this.destroy(l(e,"ERR_PC_CONSTRUCTOR"))}this._isReactNativeWebrtc="number"==typeof this._pc._peerConnectionId,this._pc.oniceconnectionstatechange=()=>{this._onIceStateChange();},this._pc.onicegatheringstatechange=()=>{this._onIceStateChange();},this._pc.onconnectionstatechange=()=>{this._onConnectionStateChange();},this._pc.onsignalingstatechange=()=>{this._onSignalingStateChange();},this._pc.onicecandidate=e=>{this._onIceCandidate(e);},"object"==typeof this._pc.peerIdentity&&this._pc.peerIdentity.catch(e=>{this.destroy(l(e,"ERR_PC_PEER_IDENTITY"));}),this.initiator||this.channelNegotiated?this._setupData({channel:this._pc.createDataChannel(this.channelName,this.channelConfig)}):this._pc.ondatachannel=e=>{this._setupData(e);},this.streams&&this.streams.forEach(e=>{this.addStream(e);}),this._pc.ontrack=e=>{this._onTrack(e);},this._debug("initial negotiation"),this._needsNegotiation(),this._onFinishBound=()=>{this._onFinish();},this.once("finish",this._onFinishBound);}get bufferSize(){return this._channel&&this._channel.bufferedAmount||0}get connected(){return this._connected&&"open"===this._channel.readyState}address(){return {port:this.localPort,family:this.localFamily,address:this.localAddress}}signal(e){if(!this.destroying){if(this.destroyed)throw l(new Error("cannot signal after peer is destroyed"),"ERR_DESTROYED");if("string"==typeof e)try{e=JSON.parse(e);}catch(t){e={};}this._debug("signal()"),e.renegotiate&&this.initiator&&(this._debug("got request to renegotiate"),this._needsNegotiation()),e.transceiverRequest&&this.initiator&&(this._debug("got request for transceiver"),this.addTransceiver(e.transceiverRequest.kind,e.transceiverRequest.init)),e.candidate&&(this._pc.remoteDescription&&this._pc.remoteDescription.type?this._addIceCandidate(e.candidate):this._pendingCandidates.push(e.candidate)),e.sdp&&this._pc.setRemoteDescription(new this._wrtc.RTCSessionDescription(e)).then(()=>{this.destroyed||(this._pendingCandidates.forEach(e=>{this._addIceCandidate(e);}),this._pendingCandidates=[],"offer"===this._pc.remoteDescription.type&&this._createAnswer());}).catch(e=>{this.destroy(l(e,"ERR_SET_REMOTE_DESCRIPTION"));}),e.sdp||e.candidate||e.renegotiate||e.transceiverRequest||this.destroy(l(new Error("signal() called with invalid signal data"),"ERR_SIGNALING"));}}_addIceCandidate(e){const t=new this._wrtc.RTCIceCandidate(e);this._pc.addIceCandidate(t).catch(e=>{!t.address||t.address.endsWith(".local")?r("Ignoring unsupported ICE candidate."):this.destroy(l(e,"ERR_ADD_ICE_CANDIDATE"));});}send(e){if(!this.destroying){if(this.destroyed)throw l(new Error("cannot send after peer is destroyed"),"ERR_DESTROYED");this._channel.send(e);}}addTransceiver(e,t){if(!this.destroying){if(this.destroyed)throw l(new Error("cannot addTransceiver after peer is destroyed"),"ERR_DESTROYED");if(this._debug("addTransceiver()"),this.initiator)try{this._pc.addTransceiver(e,t),this._needsNegotiation();}catch(e){this.destroy(l(e,"ERR_ADD_TRANSCEIVER"));}else this.emit("signal",{type:"transceiverRequest",transceiverRequest:{kind:e,init:t}});}}addStream(e){if(!this.destroying){if(this.destroyed)throw l(new Error("cannot addStream after peer is destroyed"),"ERR_DESTROYED");this._debug("addStream()"),e.getTracks().forEach(t=>{this.addTrack(t,e);});}}addTrack(e,t){if(this.destroying)return;if(this.destroyed)throw l(new Error("cannot addTrack after peer is destroyed"),"ERR_DESTROYED");this._debug("addTrack()");const n=this._senderMap.get(e)||new Map;let r=n.get(t);if(!r)r=this._pc.addTrack(e,t),n.set(t,r),this._senderMap.set(e,n),this._needsNegotiation();else if(r.removed)throw l(new Error("Track has been removed. You should enable/disable tracks that you want to re-add."),"ERR_SENDER_REMOVED");else throw l(new Error("Track has already been added to that stream."),"ERR_SENDER_ALREADY_ADDED")}replaceTrack(e,t,n){if(this.destroying)return;if(this.destroyed)throw l(new Error("cannot replaceTrack after peer is destroyed"),"ERR_DESTROYED");this._debug("replaceTrack()");const r=this._senderMap.get(e),a=r?r.get(n):null;if(!a)throw l(new Error("Cannot replace track that was never added."),"ERR_TRACK_NOT_ADDED");t&&this._senderMap.set(t,r),null==a.replaceTrack?this.destroy(l(new Error("replaceTrack is not supported in this browser"),"ERR_UNSUPPORTED_REPLACETRACK")):a.replaceTrack(t);}removeTrack(e,t){if(this.destroying)return;if(this.destroyed)throw l(new Error("cannot removeTrack after peer is destroyed"),"ERR_DESTROYED");this._debug("removeSender()");const n=this._senderMap.get(e),r=n?n.get(t):null;if(!r)throw l(new Error("Cannot remove track that was never added."),"ERR_TRACK_NOT_ADDED");try{r.removed=!0,this._pc.removeTrack(r);}catch(e){"NS_ERROR_UNEXPECTED"===e.name?this._sendersAwaitingStable.push(r):this.destroy(l(e,"ERR_REMOVE_TRACK"));}this._needsNegotiation();}removeStream(e){if(!this.destroying){if(this.destroyed)throw l(new Error("cannot removeStream after peer is destroyed"),"ERR_DESTROYED");this._debug("removeSenders()"),e.getTracks().forEach(t=>{this.removeTrack(t,e);});}}_needsNegotiation(){this._debug("_needsNegotiation"),this._batchedNegotiation||(this._batchedNegotiation=true,s(()=>{this._batchedNegotiation=false,this.initiator||!this._firstNegotiation?(this._debug("starting batched negotiation"),this.negotiate()):this._debug("non-initiator initial negotiation request discarded"),this._firstNegotiation=false;}));}negotiate(){if(!this.destroying){if(this.destroyed)throw l(new Error("cannot negotiate after peer is destroyed"),"ERR_DESTROYED");this.initiator?this._isNegotiating?(this._queuedNegotiation=true,this._debug("already negotiating, queueing")):(this._debug("start negotiation"),setTimeout(()=>{this._createOffer();},0)):this._isNegotiating?(this._queuedNegotiation=true,this._debug("already negotiating, queueing")):(this._debug("requesting negotiation from initiator"),this.emit("signal",{type:"renegotiate",renegotiate:true})),this._isNegotiating=true;}}destroy(e){this._destroy(e,()=>{});}_destroy(e,t){this.destroyed||this.destroying||(this.destroying=true,this._debug("destroying (error: %s)",e&&(e.message||e)),s(()=>{if(this.destroyed=true,this.destroying=false,this._debug("destroy (error: %s)",e&&(e.message||e)),this.readable=this.writable=false,this._readableState.ended||this.push(null),this._writableState.finished||this.end(),this._connected=false,this._pcReady=false,this._channelReady=false,this._remoteTracks=null,this._remoteStreams=null,this._senderMap=null,clearInterval(this._closingInterval),this._closingInterval=null,clearInterval(this._interval),this._interval=null,this._chunk=null,this._cb=null,this._onFinishBound&&this.removeListener("finish",this._onFinishBound),this._onFinishBound=null,this._channel){try{this._channel.close();}catch(e){}this._channel.onmessage=null,this._channel.onopen=null,this._channel.onclose=null,this._channel.onerror=null;}if(this._pc){try{this._pc.close();}catch(e){}this._pc.oniceconnectionstatechange=null,this._pc.onicegatheringstatechange=null,this._pc.onsignalingstatechange=null,this._pc.onicecandidate=null,this._pc.ontrack=null,this._pc.ondatachannel=null;}this._pc=null,this._channel=null,e&&this.emit("error",e),this.emit("close"),t();}));}_setupData(e){if(!e.channel)return this.destroy(l(new Error("Data channel event is missing `channel` property"),"ERR_DATA_CHANNEL"));this._channel=e.channel,this._channel.binaryType="arraybuffer","number"==typeof this._channel.bufferedAmountLowThreshold&&(this._channel.bufferedAmountLowThreshold=u),this.channelName=this._channel.label,this._channel.onmessage=e=>{this._onChannelMessage(e);},this._channel.onbufferedamountlow=()=>{this._onChannelBufferedAmountLow();},this._channel.onopen=()=>{this._onChannelOpen();},this._channel.onclose=()=>{this._onChannelClose();},this._channel.onerror=e=>{const t=e.error instanceof Error?e.error:new Error(`Datachannel error: ${e.message} ${e.filename}:${e.lineno}:${e.colno}`);this.destroy(l(t,"ERR_DATA_CHANNEL"));};let t=false;this._closingInterval=setInterval(()=>{this._channel&&"closing"===this._channel.readyState?(t&&this._onChannelClose(),t=true):t=false;},5000);}_read(){}_write(e,t,n){if(this.destroyed)return n(l(new Error("cannot write after peer is destroyed"),"ERR_DATA_CHANNEL"));if(this._connected){try{this.send(e);}catch(e){return this.destroy(l(e,"ERR_DATA_CHANNEL"))}this._channel.bufferedAmount>u?(this._debug("start backpressure: bufferedAmount %d",this._channel.bufferedAmount),this._cb=n):n(null);}else this._debug("write before connect"),this._chunk=e,this._cb=n;}_onFinish(){if(!this.destroyed){const e=()=>{setTimeout(()=>this.destroy(),1e3);};this._connected?e():this.once("connect",e);}}_startIceCompleteTimeout(){this.destroyed||this._iceCompleteTimer||(this._debug("started iceComplete timeout"),this._iceCompleteTimer=setTimeout(()=>{this._iceComplete||(this._iceComplete=true,this._debug("iceComplete timeout completed"),this.emit("iceTimeout"),this.emit("_iceComplete"));},this.iceCompleteTimeout));}_createOffer(){this.destroyed||this._pc.createOffer(this.offerOptions).then(e=>{if(this.destroyed)return;this.trickle||this.allowHalfTrickle||(e.sdp=n(e.sdp)),e.sdp=this.sdpTransform(e.sdp);const t=()=>{if(!this.destroyed){const t=this._pc.localDescription||e;this._debug("signal"),this.emit("signal",{type:t.type,sdp:t.sdp});}};this._pc.setLocalDescription(e).then(()=>{this._debug("createOffer success"),this.destroyed||(this.trickle||this._iceComplete?t():this.once("_iceComplete",t));}).catch(e=>{this.destroy(l(e,"ERR_SET_LOCAL_DESCRIPTION"));});}).catch(e=>{this.destroy(l(e,"ERR_CREATE_OFFER"));});}_requestMissingTransceivers(){this._pc.getTransceivers&&this._pc.getTransceivers().forEach(e=>{e.mid||!e.sender.track||e.requested||(e.requested=true,this.addTransceiver(e.sender.track.kind));});}_createAnswer(){this.destroyed||this._pc.createAnswer(this.answerOptions).then(e=>{if(this.destroyed)return;this.trickle||this.allowHalfTrickle||(e.sdp=n(e.sdp)),e.sdp=this.sdpTransform(e.sdp);const t=()=>{if(!this.destroyed){const t=this._pc.localDescription||e;this._debug("signal"),this.emit("signal",{type:t.type,sdp:t.sdp}),this.initiator||this._requestMissingTransceivers();}};this._pc.setLocalDescription(e).then(()=>{this.destroyed||(this.trickle||this._iceComplete?t():this.once("_iceComplete",t));}).catch(e=>{this.destroy(l(e,"ERR_SET_LOCAL_DESCRIPTION"));});}).catch(e=>{this.destroy(l(e,"ERR_CREATE_ANSWER"));});}_onConnectionStateChange(){this.destroyed||"failed"===this._pc.connectionState&&this.destroy(l(new Error("Connection failed."),"ERR_CONNECTION_FAILURE"));}_onIceStateChange(){if(this.destroyed)return;const e=this._pc.iceConnectionState,t=this._pc.iceGatheringState;this._debug("iceStateChange (connection: %s) (gathering: %s)",e,t),this.emit("iceStateChange",e,t),("connected"===e||"completed"===e)&&(this._pcReady=true,this._maybeReady()),"failed"===e&&this.destroy(l(new Error("Ice connection failed."),"ERR_ICE_CONNECTION_FAILURE")),"closed"===e&&this.destroy(l(new Error("Ice connection closed."),"ERR_ICE_CONNECTION_CLOSED"));}getStats(e){const t=e=>("[object Array]"===Object.prototype.toString.call(e.values)&&e.values.forEach(t=>{Object.assign(e,t);}),e);0===this._pc.getStats.length||this._isReactNativeWebrtc?this._pc.getStats().then(n=>{const r=[];n.forEach(e=>{r.push(t(e));}),e(null,r);},t=>e(t)):0<this._pc.getStats.length?this._pc.getStats(n=>{if(this.destroyed)return;const r=[];n.result().forEach(e=>{const n={};e.names().forEach(t=>{n[t]=e.stat(t);}),n.id=e.id,n.type=e.type,n.timestamp=e.timestamp,r.push(t(n));}),e(null,r);},t=>e(t)):e(null,[]);}_maybeReady(){if(this._debug("maybeReady pc %s channel %s",this._pcReady,this._channelReady),this._connected||this._connecting||!this._pcReady||!this._channelReady)return;this._connecting=true;const e=()=>{this.destroyed||this.getStats((t,n)=>{if(this.destroyed)return;t&&(n=[]);const r={},a={},o={};let i=false;n.forEach(e=>{("remotecandidate"===e.type||"remote-candidate"===e.type)&&(r[e.id]=e),("localcandidate"===e.type||"local-candidate"===e.type)&&(a[e.id]=e),("candidatepair"===e.type||"candidate-pair"===e.type)&&(o[e.id]=e);});const d=e=>{i=true;let t=a[e.localCandidateId];t&&(t.ip||t.address)?(this.localAddress=t.ip||t.address,this.localPort=+t.port):t&&t.ipAddress?(this.localAddress=t.ipAddress,this.localPort=+t.portNumber):"string"==typeof e.googLocalAddress&&(t=e.googLocalAddress.split(":"),this.localAddress=t[0],this.localPort=+t[1]),this.localAddress&&(this.localFamily=this.localAddress.includes(":")?"IPv6":"IPv4");let n=r[e.remoteCandidateId];n&&(n.ip||n.address)?(this.remoteAddress=n.ip||n.address,this.remotePort=+n.port):n&&n.ipAddress?(this.remoteAddress=n.ipAddress,this.remotePort=+n.portNumber):"string"==typeof e.googRemoteAddress&&(n=e.googRemoteAddress.split(":"),this.remoteAddress=n[0],this.remotePort=+n[1]),this.remoteAddress&&(this.remoteFamily=this.remoteAddress.includes(":")?"IPv6":"IPv4"),this._debug("connect local: %s:%s remote: %s:%s",this.localAddress,this.localPort,this.remoteAddress,this.remotePort);};if(n.forEach(e=>{"transport"===e.type&&e.selectedCandidatePairId&&d(o[e.selectedCandidatePairId]),("googCandidatePair"===e.type&&"true"===e.googActiveConnection||("candidatepair"===e.type||"candidate-pair"===e.type)&&e.selected)&&d(e);}),!i&&(!Object.keys(o).length||Object.keys(a).length))return void setTimeout(e,100);if(this._connecting=false,this._connected=true,this._chunk){try{this.send(this._chunk);}catch(e){return this.destroy(l(e,"ERR_DATA_CHANNEL"))}this._chunk=null,this._debug("sent chunk from \"write before connect\"");const e=this._cb;this._cb=null,e(null);}"number"!=typeof this._channel.bufferedAmountLowThreshold&&(this._interval=setInterval(()=>this._onInterval(),150),this._interval.unref&&this._interval.unref()),this._debug("connect"),this.emit("connect");});};e();}_onInterval(){this._cb&&this._channel&&!(this._channel.bufferedAmount>u)&&this._onChannelBufferedAmountLow();}_onSignalingStateChange(){this.destroyed||("stable"===this._pc.signalingState&&(this._isNegotiating=false,this._debug("flushing sender queue",this._sendersAwaitingStable),this._sendersAwaitingStable.forEach(e=>{this._pc.removeTrack(e),this._queuedNegotiation=true;}),this._sendersAwaitingStable=[],this._queuedNegotiation?(this._debug("flushing negotiation queue"),this._queuedNegotiation=false,this._needsNegotiation()):(this._debug("negotiated"),this.emit("negotiated"))),this._debug("signalingStateChange %s",this._pc.signalingState),this.emit("signalingStateChange",this._pc.signalingState));}_onIceCandidate(e){this.destroyed||(e.candidate&&this.trickle?this.emit("signal",{type:"candidate",candidate:{candidate:e.candidate.candidate,sdpMLineIndex:e.candidate.sdpMLineIndex,sdpMid:e.candidate.sdpMid}}):!e.candidate&&!this._iceComplete&&(this._iceComplete=true,this.emit("_iceComplete")),e.candidate&&this._startIceCompleteTimeout());}_onChannelMessage(e){if(this.destroyed)return;let t=e.data;t instanceof ArrayBuffer&&(t=c.from(t)),this.push(t);}_onChannelBufferedAmountLow(){if(!this.destroyed&&this._cb){this._debug("ending backpressure: bufferedAmount %d",this._channel.bufferedAmount);const e=this._cb;this._cb=null,e(null);}}_onChannelOpen(){this._connected||this.destroyed||(this._debug("on channel open"),this._channelReady=true,this._maybeReady());}_onChannelClose(){this.destroyed||(this._debug("on channel close"),this.destroy());}_onTrack(e){this.destroyed||e.streams.forEach(t=>{this._debug("on track"),this.emit("track",e.track,t),this._remoteTracks.push({track:e.track,stream:t}),this._remoteStreams.some(e=>e.id===t.id)||(this._remoteStreams.push(t),s(()=>{this._debug("on stream"),this.emit("stream",t);}));});}_debug(){const e=[].slice.call(arguments);e[0]="["+this._id+"] "+e[0],a.apply(null,e);}}p.WEBRTC_SUPPORT=!!o(),p.config={iceServers:[{urls:["stun:stun.l.google.com:19302","stun:global.stun.twilio.com:3478"]}],sdpSemantics:"unified-plan"},p.channelConfig={},t.exports=p;},{buffer:3,debug:4,"err-code":6,"get-browser-rtc":8,"queue-microtask":13,randombytes:14,"readable-stream":29}]},{},[])("/")}); 
-  	} (simplepeer_min));
-  	return simplepeer_min.exports;
-  }
-
-  var simplepeer_minExports = requireSimplepeer_min();
+  var simplepeer_minExports = simplepeer_min.exports;
   var Peer = /*@__PURE__*/getDefaultExportFromCjs(simplepeer_minExports);
 
   /**
@@ -41629,7 +45545,6 @@
    * The unique prosemirror plugin key for undoPlugin
    *
    * @public
-   * @type {PluginKey<import('./undo-plugin').UndoPluginState>}
    */
   const yUndoPluginKey = new PluginKey('y-undo');
 
@@ -41639,200 +45554,6 @@
    * @public
    */
   const yCursorPluginKey = new PluginKey('yjs-cursor');
-
-  /**
-   * @module sha256
-   * Spec: https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.180-4.pdf
-   * Resources:
-   * - https://web.archive.org/web/20150315061807/http://csrc.nist.gov/groups/STM/cavp/documents/shs/sha256-384-512.pdf
-   */
-
-
-  /**
-   * @param {number} w - a 32bit uint
-   * @param {number} shift
-   */
-  const rotr = (w, shift) => (w >>> shift) | (w << (32 - shift));
-
-  /**
-   * Helper for SHA-224 & SHA-256. See 4.1.2.
-   * @param {number} x
-   */
-  const sum0to256 = x => rotr(x, 2) ^ rotr(x, 13) ^ rotr(x, 22);
-
-  /**
-   * Helper for SHA-224 & SHA-256. See 4.1.2.
-   * @param {number} x
-   */
-  const sum1to256 = x => rotr(x, 6) ^ rotr(x, 11) ^ rotr(x, 25);
-
-  /**
-   * Helper for SHA-224 & SHA-256. See 4.1.2.
-   * @param {number} x
-   */
-  const sigma0to256 = x => rotr(x, 7) ^ rotr(x, 18) ^ x >>> 3;
-
-  /**
-   * Helper for SHA-224 & SHA-256. See 4.1.2.
-   * @param {number} x
-   */
-  const sigma1to256 = x => rotr(x, 17) ^ rotr(x, 19) ^ x >>> 10;
-
-  // @todo don't init these variables globally
-
-  /**
-   * See 4.2.2: Constant for sha256 & sha224
-   * These words represent the first thirty-two bits of the fractional parts of
-   * the cube roots of the first sixty-four prime numbers. In hex, these constant words are (from left to
-   * right)
-   */
-  const K = new Uint32Array([
-    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
-  ]);
-
-  /**
-   * See 5.3.3. Initial hash value.
-   *
-   * These words were obtained by taking the first thirty-two bits of the fractional parts of the
-   * square roots of the first eight prime numbers.
-   *
-   * @todo shouldn't be a global variable
-   */
-  const HINIT = new Uint32Array([
-    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
-  ]);
-
-  // time to beat: (large value < 4.35s)
-
-  class Hasher {
-    constructor () {
-      const buf = new ArrayBuffer(64 + 64 * 4);
-      // Init working variables using a single arraybuffer
-      this._H = new Uint32Array(buf, 0, 8);
-      this._H.set(HINIT);
-      // "Message schedule" - a working variable
-      this._W = new Uint32Array(buf, 64, 64);
-    }
-
-    _updateHash () {
-      const H = this._H;
-      const W = this._W;
-      for (let t = 16; t < 64; t++) {
-        W[t] = sigma1to256(W[t - 2]) + W[t - 7] + sigma0to256(W[t - 15]) + W[t - 16];
-      }
-      let a = H[0];
-      let b = H[1];
-      let c = H[2];
-      let d = H[3];
-      let e = H[4];
-      let f = H[5];
-      let g = H[6];
-      let h = H[7];
-      for (let tt = 0, T1, T2; tt < 64; tt++) {
-        T1 = (h + sum1to256(e) + ((e & f) ^ (~e & g)) + K[tt] + W[tt]) >>> 0;
-        T2 = (sum0to256(a) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
-        h = g;
-        g = f;
-        f = e;
-        e = (d + T1) >>> 0;
-        d = c;
-        c = b;
-        b = a;
-        a = (T1 + T2) >>> 0;
-      }
-      H[0] += a;
-      H[1] += b;
-      H[2] += c;
-      H[3] += d;
-      H[4] += e;
-      H[5] += f;
-      H[6] += g;
-      H[7] += h;
-    }
-
-    /**
-     * Returns a 32-byte hash.
-     *
-     * @param {Uint8Array} data
-     */
-    digest (data) {
-      let i = 0;
-      for (; i + 56 <= data.length;) {
-        // write data in big endianess
-        let j = 0;
-        for (; j < 16 && i + 3 < data.length; j++) {
-          this._W[j] = data[i++] << 24 | data[i++] << 16 | data[i++] << 8 | data[i++];
-        }
-        if (i % 64 !== 0) { // there is still room to write partial content and the ending bit.
-          this._W.fill(0, j, 16);
-          while (i < data.length) {
-            this._W[j] |= data[i] << ((3 - (i % 4)) * 8);
-            i++;
-          }
-          this._W[j] |= BIT8 << ((3 - (i % 4)) * 8);
-        }
-        this._updateHash();
-      }
-      // same check as earlier - the ending bit has been written
-      const isPaddedWith1 = i % 64 !== 0;
-      this._W.fill(0, 0, 16);
-      let j = 0;
-      for (; i < data.length; j++) {
-        for (let ci = 3; ci >= 0 && i < data.length; ci--) {
-          this._W[j] |= data[i++] << (ci * 8);
-        }
-      }
-      // Write padding of the message. See 5.1.2.
-      if (!isPaddedWith1) {
-        this._W[j - (i % 4 === 0 ? 0 : 1)] |= BIT8 << ((3 - (i % 4)) * 8);
-      }
-      // write length of message (size in bits) as 64 bit uint
-      // @todo test that this works correctly
-      this._W[14] = data.byteLength / BIT30; // same as data.byteLength >>> 30 - but works on floats
-      this._W[15] = data.byteLength * 8;
-      this._updateHash();
-      // correct H endianness to use big endiannes and return a Uint8Array
-      const dv = new Uint8Array(32);
-      for (let i = 0; i < this._H.length; i++) {
-        for (let ci = 0; ci < 4; ci++) {
-          dv[i * 4 + ci] = this._H[i] >>> (3 - ci) * 8;
-        }
-      }
-      return dv
-    }
-  }
-
-  /**
-   * Returns a 32-byte hash.
-   *
-   * @param {Uint8Array} data
-   */
-  const digest = data => new Hasher().digest(data);
-
-  /**
-   * Custom function to transform sha256 hash to N byte
-   *
-   * @param {Uint8Array} digest
-   */
-  const _convolute = digest => {
-    const N = 6;
-    for (let i = N; i < digest.length; i++) {
-      digest[i % N] = digest[i % N] ^ digest[i];
-    }
-    return digest.slice(0, N)
-  };
-
-  /**
-   * @param {any} json
-   */
-  const hashOfJSON = (json) => toBase64(_convolute(digest(encodeAny(json))));
 
   /**
    * @module bindings/prosemirror
@@ -41866,7 +45587,6 @@
    * @property {Array<ColorDef>} [YSyncOpts.colors]
    * @property {Map<string,ColorDef>} [YSyncOpts.colorMapping]
    * @property {Y.PermanentUserData|null} [YSyncOpts.permanentUserData]
-   * @property {ProsemirrorMapping} [YSyncOpts.mapping]
    * @property {function} [YSyncOpts.onFirstRender] Fired when the content from Yjs is initially rendered to ProseMirror
    */
 
@@ -41906,11 +45626,10 @@
     colors = defaultColors,
     colorMapping = new Map(),
     permanentUserData = null,
-    onFirstRender = () => {},
-    mapping
+    onFirstRender = () => {}
   } = {}) => {
-    let initialContentChanged = false;
-    const binding = new ProsemirrorBinding(yXmlFragment, mapping);
+    let changedInitialContent = false;
+    let rerenderTimeout;
     const plugin = new Plugin({
       props: {
         editable: (state) => {
@@ -41927,7 +45646,7 @@
           return {
             type: yXmlFragment,
             doc: yXmlFragment.doc,
-            binding,
+            binding: null,
             snapshot: null,
             prevSnapshot: null,
             isChangeOrigin: false,
@@ -41951,24 +45670,26 @@
           pluginState.isChangeOrigin = change !== undefined &&
             !!change.isChangeOrigin;
           pluginState.isUndoRedoOperation = change !== undefined && !!change.isChangeOrigin && !!change.isUndoRedoOperation;
-          if (binding.prosemirrorView !== null) {
+          if (pluginState.binding !== null) {
             if (
               change !== undefined &&
               (change.snapshot != null || change.prevSnapshot != null)
             ) {
               // snapshot changed, rerender next
               timeout(0, () => {
-                if (binding.prosemirrorView == null) {
+                if (
+                  pluginState.binding == null || pluginState.binding.isDestroyed
+                ) {
                   return
                 }
                 if (change.restore == null) {
-                  binding._renderSnapshot(
+                  pluginState.binding._renderSnapshot(
                     change.snapshot,
                     change.prevSnapshot,
                     pluginState
                   );
                 } else {
-                  binding._renderSnapshot(
+                  pluginState.binding._renderSnapshot(
                     change.snapshot,
                     change.snapshot,
                     pluginState
@@ -41977,9 +45698,9 @@
                   delete pluginState.restore;
                   delete pluginState.snapshot;
                   delete pluginState.prevSnapshot;
-                  binding.mux(() => {
-                    binding._prosemirrorChanged(
-                      binding.prosemirrorView.state.doc
+                  pluginState.binding.mux(() => {
+                    pluginState.binding._prosemirrorChanged(
+                      pluginState.binding.prosemirrorView.state.doc
                     );
                   });
                 }
@@ -41990,12 +45711,16 @@
         }
       },
       view: (view) => {
-        binding.initView(view);
-        if (mapping == null) {
-          // force rerender to update the bindings mapping
-          binding._forceRerender();
+        const binding = new ProsemirrorBinding(yXmlFragment, view);
+        if (rerenderTimeout != null) {
+          rerenderTimeout.destroy();
         }
-        onFirstRender();
+        // Make sure this is called in a separate context
+        rerenderTimeout = timeout(0, () => {
+          binding._forceRerender();
+          view.dispatch(view.state.tr.setMeta(ySyncPluginKey, { binding }));
+          onFirstRender();
+        });
         return {
           update: () => {
             const pluginState = plugin.getState(view.state);
@@ -42003,15 +45728,12 @@
               pluginState.snapshot == null && pluginState.prevSnapshot == null
             ) {
               if (
-                // If the content doesn't change initially, we don't render anything to Yjs
-                // If the content was cleared by a user action, we want to catch the change and
-                // represent it in Yjs
-                initialContentChanged ||
+                changedInitialContent ||
                 view.state.doc.content.findDiffStart(
                   view.state.doc.type.createAndFill().content
                 ) !== null
               ) {
-                initialContentChanged = true;
+                changedInitialContent = true;
                 if (
                   pluginState.addToHistory === false &&
                   !pluginState.isChangeOrigin
@@ -42035,6 +45757,7 @@
             }
           },
           destroy: () => {
+            rerenderTimeout.destroy();
             binding.destroy();
           }
         }
@@ -42044,49 +45767,31 @@
   };
 
   /**
-   * @param {import('prosemirror-state').Transaction} tr
-   * @param {ReturnType<typeof getRelativeSelection>} relSel
+   * @param {any} tr
+   * @param {any} relSel
    * @param {ProsemirrorBinding} binding
    */
   const restoreRelativeSelection = (tr, relSel, binding) => {
     if (relSel !== null && relSel.anchor !== null && relSel.head !== null) {
-      if (relSel.type === 'all') {
-        tr.setSelection(new AllSelection(tr.doc));
-      } else if (relSel.type === 'node') {
-        const anchor = relativePositionToAbsolutePosition(
-          binding.doc,
-          binding.type,
-          relSel.anchor,
-          binding.mapping
-        );
-        tr.setSelection(NodeSelection.create(tr.doc, anchor));
-      } else {
-        const anchor = relativePositionToAbsolutePosition(
-          binding.doc,
-          binding.type,
-          relSel.anchor,
-          binding.mapping
-        );
-        const head = relativePositionToAbsolutePosition(
-          binding.doc,
-          binding.type,
-          relSel.head,
-          binding.mapping
-        );
-        if (anchor !== null && head !== null) {
-          const sel = TextSelection.between(tr.doc.resolve(anchor), tr.doc.resolve(head));
-          tr.setSelection(sel);
-        }
+      const anchor = relativePositionToAbsolutePosition(
+        binding.doc,
+        binding.type,
+        relSel.anchor,
+        binding.mapping
+      );
+      const head = relativePositionToAbsolutePosition(
+        binding.doc,
+        binding.type,
+        relSel.head,
+        binding.mapping
+      );
+      if (anchor !== null && head !== null) {
+        tr = tr.setSelection(TextSelection.create(tr.doc, anchor, head));
       }
     }
   };
 
-  /**
-   * @param {ProsemirrorBinding} pmbinding
-   * @param {import('prosemirror-state').EditorState} state
-   */
   const getRelativeSelection = (pmbinding, state) => ({
-    type: /** @type {any} */ (state.selection).jsonID,
     anchor: absolutePositionToRelativePosition(
       state.selection.anchor,
       pmbinding.type,
@@ -42107,23 +45812,17 @@
   class ProsemirrorBinding {
     /**
      * @param {Y.XmlFragment} yXmlFragment The bind source
-     * @param {ProsemirrorMapping} mapping
+     * @param {any} prosemirrorView The target binding
      */
-    constructor (yXmlFragment, mapping = new Map()) {
+    constructor (yXmlFragment, prosemirrorView) {
       this.type = yXmlFragment;
-      /**
-       * this will be set once the view is created
-       * @type {any}
-       */
-      this.prosemirrorView = null;
+      this.prosemirrorView = prosemirrorView;
       this.mux = createMutex();
-      this.mapping = mapping;
+      this.isDestroyed = false;
       /**
-       * Is overlapping mark - i.e. mark does not exclude itself.
-       *
-       * @type {Map<import('prosemirror-model').MarkType, boolean>}
+       * @type {ProsemirrorMapping}
        */
-      this.isOMark = new Map();
+      this.mapping = new Map();
       this._observeFunction = this._typeChanged.bind(this);
       /**
        * @type {Y.Doc}
@@ -42135,16 +45834,21 @@
        */
       this.beforeTransactionSelection = null;
       this.beforeAllTransactions = () => {
-        if (this.beforeTransactionSelection === null && this.prosemirrorView != null) {
+        if (this.beforeTransactionSelection === null) {
           this.beforeTransactionSelection = getRelativeSelection(
             this,
-            this.prosemirrorView.state
+            prosemirrorView.state
           );
         }
       };
       this.afterAllTransactions = () => {
         this.beforeTransactionSelection = null;
       };
+
+      this.doc.on('beforeAllTransactions', this.beforeAllTransactions);
+      this.doc.on('afterAllTransactions', this.afterAllTransactions);
+      yXmlFragment.observeDeep(this._observeFunction);
+
       this._domSelectionInView = null;
     }
 
@@ -42171,8 +45875,6 @@
 
     _isDomSelectionInView () {
       const selection = this.prosemirrorView._root.getSelection();
-
-      if (selection == null || selection.anchorNode == null) return false
 
       const range = this.prosemirrorView._root.createRange();
       range.setStart(selection.anchorNode, selection.anchorOffset);
@@ -42212,13 +45914,13 @@
     }
 
     unrenderSnapshot () {
-      this.mapping.clear();
+      this.mapping = new Map();
       this.mux(() => {
         const fragmentContent = this.type.toArray().map((t) =>
           createNodeFromYElement(
             /** @type {Y.XmlElement} */ (t),
             this.prosemirrorView.state.schema,
-            this
+            this.mapping
           )
         ).filter((n) => n !== null);
         // @ts-ignore
@@ -42233,17 +45935,13 @@
     }
 
     _forceRerender () {
-      this.mapping.clear();
+      this.mapping = new Map();
       this.mux(() => {
-        // If this is a forced rerender, this might neither happen as a pm change nor within a Yjs
-        // transaction. Then the "before selection" doesn't exist. In this case, we need to create a
-        // relative position before replacing content. Fixes #126
-        const sel = this.beforeTransactionSelection !== null ? null : this.prosemirrorView.state.selection;
         const fragmentContent = this.type.toArray().map((t) =>
           createNodeFromYElement(
             /** @type {Y.XmlElement} */ (t),
             this.prosemirrorView.state.schema,
-            this
+            this.mapping
           )
         ).filter((n) => n !== null);
         // @ts-ignore
@@ -42252,81 +45950,27 @@
           this.prosemirrorView.state.doc.content.size,
           new Slice(Fragment.from(fragmentContent), 0, 0)
         );
-        if (sel) {
-          /**
-           * If the Prosemirror document we just created from this.type is
-           * smaller than the previous document, the selection might be
-           * out of bound, which would make Prosemirror throw an error.
-           */
-          const clampedAnchor = min(max(sel.anchor, 0), tr.doc.content.size);
-          const clampedHead = min(max(sel.head, 0), tr.doc.content.size);
-
-          tr.setSelection(TextSelection.create(tr.doc, clampedAnchor, clampedHead));
-        }
         this.prosemirrorView.dispatch(
-          tr.setMeta(ySyncPluginKey, { isChangeOrigin: true, binding: this })
+          tr.setMeta(ySyncPluginKey, { isChangeOrigin: true })
         );
       });
     }
 
     /**
-     * @param {Y.Snapshot|Uint8Array} snapshot
-     * @param {Y.Snapshot|Uint8Array} prevSnapshot
+     * @param {Y.Snapshot} snapshot
+     * @param {Y.Snapshot} prevSnapshot
      * @param {Object} pluginState
      */
     _renderSnapshot (snapshot$1, prevSnapshot, pluginState) {
-      /**
-       * The document that contains the full history of this document.
-       * @type {Y.Doc}
-       */
-      let historyDoc = this.doc;
-      let historyType = this.type;
       if (!snapshot$1) {
         snapshot$1 = snapshot(this.doc);
       }
-      if (snapshot$1 instanceof Uint8Array || prevSnapshot instanceof Uint8Array) {
-        if (!(snapshot$1 instanceof Uint8Array) || !(prevSnapshot instanceof Uint8Array)) {
-          // expected both snapshots to be v2 updates
-          unexpectedCase();
-        }
-        historyDoc = new Doc({ gc: false });
-        applyUpdateV2(historyDoc, prevSnapshot);
-        prevSnapshot = snapshot(historyDoc);
-        applyUpdateV2(historyDoc, snapshot$1);
-        snapshot$1 = snapshot(historyDoc);
-        if (historyType._item === null) {
-          /**
-           * If is a root type, we need to find the root key in the initial document
-           * and use it to get the history type.
-           */
-          const rootKey = Array.from(this.doc.share.keys()).find(
-            (key) => this.doc.share.get(key) === this.type
-          );
-          historyType = historyDoc.getXmlFragment(rootKey);
-        } else {
-          /**
-           * If it is a sub type, we use the item id to find the history type.
-           */
-          const historyStructs =
-            historyDoc.store.clients.get(historyType._item.id.client) ?? [];
-          const itemIndex = findIndexSS(
-            historyStructs,
-            historyType._item.id.clock
-          );
-          const item = /** @type {Y.Item} */ (historyStructs[itemIndex]);
-          const content = /** @type {Y.ContentType} */ (item.content);
-          historyType = /** @type {Y.XmlFragment} */ (content.type);
-        }
-      }
       // clear mapping because we are going to rerender
-      this.mapping.clear();
+      this.mapping = new Map();
       this.mux(() => {
-        historyDoc.transact((transaction) => {
+        this.doc.transact((transaction) => {
           // before rendering, we are going to sanitize ops and split deleted ops
           // if they were deleted by seperate users.
-          /**
-           * @type {Y.PermanentUserData}
-           */
           const pud = pluginState.permanentUserData;
           if (pud) {
             pud.dss.forEach((ds) => {
@@ -42353,7 +45997,7 @@
           };
           // Create document fragment and render
           const fragmentContent = typeListToArraySnapshot(
-            historyType,
+            this.type,
             new Snapshot(prevSnapshot.ds, snapshot$1.sv)
           ).map((t) => {
             if (
@@ -42363,7 +46007,7 @@
               return createNodeFromYElement(
                 t,
                 this.prosemirrorView.state.schema,
-                { mapping: new Map(), isOMark: new Map() },
+                new Map(),
                 snapshot$1,
                 prevSnapshot,
                 computeYChange
@@ -42392,7 +46036,6 @@
      * @param {Y.Transaction} transaction
      */
     _typeChanged (events, transaction) {
-      if (this.prosemirrorView == null) return
       const syncState = ySyncPluginKey.getState(this.prosemirrorView.state);
       if (
         events.length === 0 || syncState.snapshot != null ||
@@ -42424,7 +46067,7 @@
           createNodeIfNotExists(
             /** @type {Y.XmlElement | Y.XmlHook} */ (t),
             this.prosemirrorView.state.schema,
-            this
+            this.mapping
           )
         ).filter((n) => n !== null);
         // @ts-ignore
@@ -42444,12 +46087,9 @@
       });
     }
 
-    /**
-     * @param {import('prosemirror-model').Node} doc
-     */
     _prosemirrorChanged (doc) {
       this.doc.transact(() => {
-        updateYFragment(this.doc, this.type, doc, this);
+        updateYFragment(this.doc, this.type, doc, this.mapping);
         this.beforeTransactionSelection = getRelativeSelection(
           this,
           this.prosemirrorView.state
@@ -42457,21 +46097,8 @@
       }, ySyncPluginKey);
     }
 
-    /**
-     * View is ready to listen to changes. Register observers.
-     * @param {any} prosemirrorView
-     */
-    initView (prosemirrorView) {
-      if (this.prosemirrorView != null) this.destroy();
-      this.prosemirrorView = prosemirrorView;
-      this.doc.on('beforeAllTransactions', this.beforeAllTransactions);
-      this.doc.on('afterAllTransactions', this.afterAllTransactions);
-      this.type.observeDeep(this._observeFunction);
-    }
-
     destroy () {
-      if (this.prosemirrorView == null) return
-      this.prosemirrorView = null;
+      this.isDestroyed = true;
       this.type.unobserveDeep(this._observeFunction);
       this.doc.off('beforeAllTransactions', this.beforeAllTransactions);
       this.doc.off('afterAllTransactions', this.afterAllTransactions);
@@ -42482,7 +46109,7 @@
    * @private
    * @param {Y.XmlElement | Y.XmlHook} el
    * @param {PModel.Schema} schema
-   * @param {BindingMetadata} meta
+   * @param {ProsemirrorMapping} mapping
    * @param {Y.Snapshot} [snapshot]
    * @param {Y.Snapshot} [prevSnapshot]
    * @param {function('removed' | 'added', Y.ID):any} [computeYChange]
@@ -42491,18 +46118,18 @@
   const createNodeIfNotExists = (
     el,
     schema,
-    meta,
+    mapping,
     snapshot,
     prevSnapshot,
     computeYChange
   ) => {
-    const node = /** @type {PModel.Node} */ (meta.mapping.get(el));
+    const node = /** @type {PModel.Node} */ (mapping.get(el));
     if (node === undefined) {
       if (el instanceof YXmlElement) {
         return createNodeFromYElement(
           el,
           schema,
-          meta,
+          mapping,
           snapshot,
           prevSnapshot,
           computeYChange
@@ -42518,7 +46145,7 @@
    * @private
    * @param {Y.XmlElement} el
    * @param {any} schema
-   * @param {BindingMetadata} meta
+   * @param {ProsemirrorMapping} mapping
    * @param {Y.Snapshot} [snapshot]
    * @param {Y.Snapshot} [prevSnapshot]
    * @param {function('removed' | 'added', Y.ID):any} [computeYChange]
@@ -42527,21 +46154,18 @@
   const createNodeFromYElement = (
     el,
     schema,
-    meta,
+    mapping,
     snapshot,
     prevSnapshot,
     computeYChange
   ) => {
     const children = [];
-    /**
-     * @param {Y.XmlElement | Y.XmlText} type
-     */
     const createChildren = (type) => {
-      if (type instanceof YXmlElement) {
+      if (type.constructor === YXmlElement) {
         const n = createNodeIfNotExists(
           type,
           schema,
-          meta,
+          mapping,
           snapshot,
           prevSnapshot,
           computeYChange
@@ -42550,24 +46174,10 @@
           children.push(n);
         }
       } else {
-        // If the next ytext exists and was created by us, move the content to the current ytext.
-        // This is a fix for #160 -- duplication of characters when two Y.Text exist next to each
-        // other.
-        const nextytext = /** @type {Y.ContentType} */ (type._item.right?.content)?.type;
-        if (nextytext instanceof YText && !nextytext._item.deleted && nextytext._item.id.client === nextytext.doc.clientID) {
-          type.applyDelta([
-            { retain: type.length },
-            ...nextytext.toDelta()
-          ]);
-          nextytext.doc.transact(tr => {
-            nextytext._item.delete(tr);
-          });
-        }
-        // now create the prosemirror text nodes
         const ns = createTextNodesFromYText(
           type,
           schema,
-          meta,
+          mapping,
           snapshot,
           prevSnapshot,
           computeYChange
@@ -42601,14 +46211,14 @@
         }
       }
       const node = schema.node(el.nodeName, attrs, children);
-      meta.mapping.set(el, node);
+      mapping.set(el, node);
       return node
     } catch (e) {
       // an error occured while creating the node. This is probably a result of a concurrent action.
       /** @type {Y.Doc} */ (el.doc).transact((transaction) => {
         /** @type {Y.Item} */ (el._item).delete(transaction);
       }, ySyncPluginKey);
-      meta.mapping.delete(el);
+      mapping.delete(el);
       return null
     }
   };
@@ -42616,8 +46226,8 @@
   /**
    * @private
    * @param {Y.XmlText} text
-   * @param {import('prosemirror-model').Schema} schema
-   * @param {BindingMetadata} _meta
+   * @param {any} schema
+   * @param {ProsemirrorMapping} _mapping
    * @param {Y.Snapshot} [snapshot]
    * @param {Y.Snapshot} [prevSnapshot]
    * @param {function('removed' | 'added', Y.ID):any} [computeYChange]
@@ -42626,7 +46236,7 @@
   const createTextNodesFromYText = (
     text,
     schema,
-    _meta,
+    _mapping,
     snapshot,
     prevSnapshot,
     computeYChange
@@ -42636,7 +46246,11 @@
     try {
       for (let i = 0; i < deltas.length; i++) {
         const delta = deltas[i];
-        nodes.push(schema.text(delta.insert, attributesToMarks(delta.attributes, schema)));
+        const marks = [];
+        for (const markName in delta.attributes) {
+          marks.push(schema.mark(markName, delta.attributes[markName]));
+        }
+        nodes.push(schema.text(delta.insert, marks));
       }
     } catch (e) {
       // an error occured while creating the node. This is probably a result of a concurrent action.
@@ -42652,28 +46266,28 @@
   /**
    * @private
    * @param {Array<any>} nodes prosemirror node
-   * @param {BindingMetadata} meta
+   * @param {ProsemirrorMapping} mapping
    * @return {Y.XmlText}
    */
-  const createTypeFromTextNodes = (nodes, meta) => {
+  const createTypeFromTextNodes = (nodes, mapping) => {
     const type = new YXmlText();
     const delta = nodes.map((node) => ({
       // @ts-ignore
       insert: node.text,
-      attributes: marksToAttributes(node.marks, meta)
+      attributes: marksToAttributes(node.marks)
     }));
     type.applyDelta(delta);
-    meta.mapping.set(type, nodes);
+    mapping.set(type, nodes);
     return type
   };
 
   /**
    * @private
    * @param {any} node prosemirror node
-   * @param {BindingMetadata} meta
+   * @param {ProsemirrorMapping} mapping
    * @return {Y.XmlElement}
    */
-  const createTypeFromElementNode = (node, meta) => {
+  const createTypeFromElementNode = (node, mapping) => {
     const type = new YXmlElement(node.type.name);
     for (const key in node.attrs) {
       const val = node.attrs[key];
@@ -42684,38 +46298,31 @@
     type.insert(
       0,
       normalizePNodeContent(node).map((n) =>
-        createTypeFromTextOrElementNode(n, meta)
+        createTypeFromTextOrElementNode(n, mapping)
       )
     );
-    meta.mapping.set(type, node);
+    mapping.set(type, node);
     return type
   };
 
   /**
    * @private
    * @param {PModel.Node|Array<PModel.Node>} node prosemirror text node
-   * @param {BindingMetadata} meta
+   * @param {ProsemirrorMapping} mapping
    * @return {Y.XmlElement|Y.XmlText}
    */
-  const createTypeFromTextOrElementNode = (node, meta) =>
+  const createTypeFromTextOrElementNode = (node, mapping) =>
     node instanceof Array
-      ? createTypeFromTextNodes(node, meta)
-      : createTypeFromElementNode(node, meta);
+      ? createTypeFromTextNodes(node, mapping)
+      : createTypeFromElementNode(node, mapping);
 
-  /**
-   * @param {any} val
-   */
   const isObject = (val) => typeof val === 'object' && val !== null;
 
-  /**
-   * @param {any} pattrs
-   * @param {any} yattrs
-   */
   const equalAttrs = (pattrs, yattrs) => {
     const keys = Object.keys(pattrs).filter((key) => pattrs[key] !== null);
     let eq =
       keys.length ===
-        (yattrs == null ? 0 : Object.keys(yattrs).filter((key) => yattrs[key] !== null).length);
+        Object.keys(yattrs).filter((key) => yattrs[key] !== null).length;
     for (let i = 0; i < keys.length && eq; i++) {
       const key = keys[i];
       const l = pattrs[key];
@@ -42760,14 +46367,12 @@
   const equalYTextPText = (ytext, ptexts) => {
     const delta = ytext.toDelta();
     return delta.length === ptexts.length &&
-      delta.every(/** @type {(d:any,i:number) => boolean} */ (d, i) =>
+      delta.every((d, i) =>
         d.insert === /** @type {any} */ (ptexts[i]).text &&
         keys(d.attributes || {}).length === ptexts[i].marks.length &&
-        every(d.attributes, (attr, yattrname) => {
-          const markname = yattr2markname(yattrname);
-          const pmarks = ptexts[i].marks;
-          return equalAttrs(attr, pmarks.find(/** @param {any} mark */ mark => mark.type.name === markname)?.attrs)
-        })
+        ptexts[i].marks.every((mark) =>
+          equalAttrs(d.attributes[mark.type.name] || {}, mark.attrs)
+        )
       )
   };
 
@@ -42805,10 +46410,10 @@
   /**
    * @param {Y.XmlElement} ytype
    * @param {PModel.Node} pnode
-   * @param {BindingMetadata} meta
+   * @param {ProsemirrorMapping} mapping
    * @return {{ foundMappedChild: boolean, equalityFactor: number }}
    */
-  const computeChildEqualityFactor = (ytype, pnode, meta) => {
+  const computeChildEqualityFactor = (ytype, pnode, mapping) => {
     const yChildren = ytype.toArray();
     const pChildren = normalizePNodeContent(pnode);
     const pChildCnt = pChildren.length;
@@ -42820,7 +46425,7 @@
     for (; left < minCnt; left++) {
       const leftY = yChildren[left];
       const leftP = pChildren[left];
-      if (mappedIdentity(meta.mapping.get(leftY), leftP)) {
+      if (mappedIdentity(mapping.get(leftY), leftP)) {
         foundMappedChild = true; // definite (good) match!
       } else if (!equalYTypePNode(leftY, leftP)) {
         break
@@ -42829,7 +46434,7 @@
     for (; left + right < minCnt; right++) {
       const rightY = yChildren[yChildCnt - right - 1];
       const rightP = pChildren[pChildCnt - right - 1];
-      if (mappedIdentity(meta.mapping.get(rightY), rightP)) {
+      if (mappedIdentity(mapping.get(rightY), rightP)) {
         foundMappedChild = true;
       } else if (!equalYTypePNode(rightY, rightP)) {
         break
@@ -42841,9 +46446,6 @@
     }
   };
 
-  /**
-   * @param {Y.Text} ytext
-   */
   const ytextTrans = (ytext) => {
     let str = '';
     /**
@@ -42872,14 +46474,14 @@
    *
    * @param {Y.Text} ytext
    * @param {Array<any>} ptexts
-   * @param {BindingMetadata} meta
+   * @param {ProsemirrorMapping} mapping
    */
-  const updateYText = (ytext, ptexts, meta) => {
-    meta.mapping.set(ytext, ptexts);
+  const updateYText = (ytext, ptexts, mapping) => {
+    mapping.set(ytext, ptexts);
     const { nAttrs, str } = ytextTrans(ytext);
     const content = ptexts.map((p) => ({
       insert: /** @type {any} */ (p).text,
-      attributes: Object.assign({}, nAttrs, marksToAttributes(p.marks, meta))
+      attributes: Object.assign({}, nAttrs, marksToAttributes(p.marks))
     }));
     const { insert, remove, index } = simpleDiff(
       str,
@@ -42892,66 +46494,31 @@
     );
   };
 
-  const hashedMarkNameRegex = /(.*)(--[a-zA-Z0-9+/=]{8})$/;
-  /**
-   * @param {string} attrName
-   */
-  const yattr2markname = attrName => hashedMarkNameRegex.exec(attrName)?.[1] ?? attrName;
-
-  /**
-   * @todo move this to markstoattributes
-   *
-   * @param {Object<string, any>} attrs
-   * @param {import('prosemirror-model').Schema} schema
-   */
-  const attributesToMarks = (attrs, schema) => {
-    /**
-     * @type {Array<import('prosemirror-model').Mark>}
-     */
-    const marks = [];
-    for (const markName in attrs) {
-      // remove hashes if necessary
-      marks.push(schema.mark(yattr2markname(markName), attrs[markName]));
-    }
-    return marks
-  };
-
-  /**
-   * @param {Array<import('prosemirror-model').Mark>} marks
-   * @param {BindingMetadata} meta
-   */
-  const marksToAttributes = (marks, meta) => {
+  const marksToAttributes = (marks) => {
     const pattrs = {};
     marks.forEach((mark) => {
       if (mark.type.name !== 'ychange') {
-        const isOverlapping = setIfUndefined(meta.isOMark, mark.type, () => !mark.type.excludes(mark.type));
-        pattrs[isOverlapping ? `${mark.type.name}--${hashOfJSON(mark.toJSON())}` : mark.type.name] = mark.attrs;
+        pattrs[mark.type.name] = mark.attrs;
       }
     });
     return pattrs
   };
 
   /**
-   * Update a yDom node by syncing the current content of the prosemirror node.
-   *
-   * This is a y-prosemirror internal feature that you can use at your own risk.
-   *
    * @private
-   * @unstable
-   *
    * @param {{transact: Function}} y
    * @param {Y.XmlFragment} yDomFragment
    * @param {any} pNode
-   * @param {BindingMetadata} meta
+   * @param {ProsemirrorMapping} mapping
    */
-  const updateYFragment = (y, yDomFragment, pNode, meta) => {
+  const updateYFragment = (y, yDomFragment, pNode, mapping) => {
     if (
       yDomFragment instanceof YXmlElement &&
       yDomFragment.nodeName !== pNode.type.name
     ) {
       throw new Error('node name mismatch!')
     }
-    meta.mapping.set(yDomFragment, pNode);
+    mapping.set(yDomFragment, pNode);
     // update attributes
     if (yDomFragment instanceof YXmlElement) {
       const yDomAttrs = yDomFragment.getAttributes();
@@ -42984,23 +46551,23 @@
     for (; left < minCnt; left++) {
       const leftY = yChildren[left];
       const leftP = pChildren[left];
-      if (!mappedIdentity(meta.mapping.get(leftY), leftP)) {
+      if (!mappedIdentity(mapping.get(leftY), leftP)) {
         if (equalYTypePNode(leftY, leftP)) {
           // update mapping
-          meta.mapping.set(leftY, leftP);
+          mapping.set(leftY, leftP);
         } else {
           break
         }
       }
     }
     // find number of matching elements from right
-    for (; right + left < minCnt; right++) {
+    for (; right + left + 1 < minCnt; right++) {
       const rightY = yChildren[yChildCnt - right - 1];
       const rightP = pChildren[pChildCnt - right - 1];
-      if (!mappedIdentity(meta.mapping.get(rightY), rightP)) {
+      if (!mappedIdentity(mapping.get(rightY), rightP)) {
         if (equalYTypePNode(rightY, rightP)) {
           // update mapping
-          meta.mapping.set(rightY, rightP);
+          mapping.set(rightY, rightP);
         } else {
           break
         }
@@ -43015,7 +46582,7 @@
         const rightP = pChildren[pChildCnt - right - 1];
         if (leftY instanceof YXmlText && leftP instanceof Array) {
           if (!equalYTextPText(leftY, leftP)) {
-            updateYText(leftY, leftP, meta);
+            updateYText(leftY, leftP, mapping);
           }
           left += 1;
         } else {
@@ -43028,12 +46595,12 @@
             const equalityLeft = computeChildEqualityFactor(
               /** @type {Y.XmlElement} */ (leftY),
               /** @type {PModel.Node} */ (leftP),
-              meta
+              mapping
             );
             const equalityRight = computeChildEqualityFactor(
               /** @type {Y.XmlElement} */ (rightY),
               /** @type {PModel.Node} */ (rightP),
-              meta
+              mapping
             );
             if (
               equalityLeft.foundMappedChild && !equalityRight.foundMappedChild
@@ -43056,7 +46623,7 @@
               y,
               /** @type {Y.XmlFragment} */ (leftY),
               /** @type {PModel.Node} */ (leftP),
-              meta
+              mapping
             );
             left += 1;
           } else if (updateRight) {
@@ -43064,14 +46631,14 @@
               y,
               /** @type {Y.XmlFragment} */ (rightY),
               /** @type {PModel.Node} */ (rightP),
-              meta
+              mapping
             );
             right += 1;
           } else {
-            meta.mapping.delete(yDomFragment.get(left));
+            mapping.delete(yDomFragment.get(left));
             yDomFragment.delete(left, 1);
             yDomFragment.insert(left, [
-              createTypeFromTextOrElementNode(leftP, meta)
+              createTypeFromTextOrElementNode(leftP, mapping)
             ]);
             left += 1;
           }
@@ -43081,18 +46648,18 @@
       if (
         yChildCnt === 1 && pChildCnt === 0 && yChildren[0] instanceof YXmlText
       ) {
-        meta.mapping.delete(yChildren[0]);
+        mapping.delete(yChildren[0]);
         // Edge case handling https://github.com/yjs/y-prosemirror/issues/108
         // Only delete the content of the Y.Text to retain remote changes on the same Y.Text object
         yChildren[0].delete(0, yChildren[0].length);
       } else if (yDelLen > 0) {
-        yDomFragment.slice(left, left + yDelLen).forEach(type => meta.mapping.delete(type));
+        yDomFragment.slice(left, left + yDelLen).forEach(type => mapping.delete(type));
         yDomFragment.delete(left, yDelLen);
       }
       if (left + right < pChildCnt) {
         const ins = [];
         for (let i = left; i < pChildCnt - right; i++) {
-          ins.push(createTypeFromTextOrElementNode(pChildren[i], meta));
+          ins.push(createTypeFromTextOrElementNode(pChildren[i], mapping));
         }
         yDomFragment.insert(left, ins);
       }
@@ -43153,8 +46720,7 @@
    */
   const absolutePositionToRelativePosition = (pos, type, mapping) => {
     if (pos === 0) {
-      // if the type is later populated, we want to retain the 0 position (hence assoc=-1)
-      return createRelativePositionFromTypeIndex(type, 0, type.length === 0 ? -1 : 0)
+      return createRelativePositionFromTypeIndex(type, 0)
     }
     /**
      * @type {any}
@@ -43163,7 +46729,7 @@
     while (n !== null && type !== n) {
       if (n instanceof YXmlText) {
         if (n._length >= pos) {
-          return createRelativePositionFromTypeIndex(n, pos, type.length === 0 ? -1 : 0)
+          return createRelativePositionFromTypeIndex(n, pos)
         } else {
           pos -= n._length;
         }
@@ -43217,7 +46783,7 @@
         return createRelativePosition(n._item.parent, n._item)
       }
     }
-    return createRelativePositionFromTypeIndex(type, type._length, type.length === 0 ? -1 : 0)
+    return createRelativePositionFromTypeIndex(type, type._length)
   };
 
   const createRelativePosition = (type, item) => {
@@ -43293,16 +46859,6 @@
   };
 
   /**
-   * Default awareness state filter
-   *
-   * @param {number} currentClientId current client id
-   * @param {number} userClientId user client id
-   * @param {any} _user user data
-   * @return {boolean}
-   */
-  const defaultAwarenessStateFilter = (currentClientId, userClientId, _user) => currentClientId !== userClientId;
-
-  /**
    * Default generator for a cursor element
    *
    * @param {any} user user data
@@ -43341,15 +46897,13 @@
   /**
    * @param {any} state
    * @param {Awareness} awareness
-   * @param {function(number, number, any):boolean} awarenessFilter
-   * @param {(user: { name: string, color: string }, clientId: number) => Element} createCursor
-   * @param {(user: { name: string, color: string }, clientId: number) => import('prosemirror-view').DecorationAttrs} createSelection
+   * @param {function({ name: string, color: string }):Element} createCursor
+   * @param {function({ name: string, color: string }):import('prosemirror-view').DecorationAttrs} createSelection
    * @return {any} DecorationSet
    */
   const createDecorations = (
     state,
     awareness,
-    awarenessFilter,
     createCursor,
     createSelection
   ) => {
@@ -43358,16 +46912,15 @@
     const decorations = [];
     if (
       ystate.snapshot != null || ystate.prevSnapshot != null ||
-      ystate.binding.mapping.size === 0
+      ystate.binding === null
     ) {
       // do not render cursors while snapshot is active
       return DecorationSet.create(state.doc, [])
     }
     awareness.getStates().forEach((aw, clientId) => {
-      if (!awarenessFilter(y.clientID, clientId, aw)) {
+      if (clientId === y.clientID) {
         return
       }
-
       if (aw.cursor != null) {
         const user = aw.user || {};
         if (user.color == null) {
@@ -43396,7 +46949,7 @@
           anchor = min(anchor, maxsize);
           head = min(head, maxsize);
           decorations.push(
-            Decoration.widget(head, () => createCursor(user, clientId), {
+            Decoration.widget(head, () => createCursor(user), {
               key: clientId + '',
               side: 10
             })
@@ -43404,7 +46957,7 @@
           const from = min(anchor, head);
           const to = max(anchor, head);
           decorations.push(
-            Decoration.inline(from, to, createSelection(user, clientId), {
+            Decoration.inline(from, to, createSelection(user), {
               inclusiveEnd: true,
               inclusiveStart: false
             })
@@ -43422,9 +46975,8 @@
    * @public
    * @param {Awareness} awareness
    * @param {object} opts
-   * @param {function(any, any, any):boolean} [opts.awarenessStateFilter]
-   * @param {(user: any, clientId: number) => HTMLElement} [opts.cursorBuilder]
-   * @param {(user: any, clientId: number) => import('prosemirror-view').DecorationAttrs} [opts.selectionBuilder]
+   * @param {function(any):HTMLElement} [opts.cursorBuilder]
+   * @param {function(any):import('prosemirror-view').DecorationAttrs} [opts.selectionBuilder]
    * @param {function(any):any} [opts.getSelection]
    * @param {string} [cursorStateField] By default all editor bindings use the awareness 'cursor' field to propagate cursor information.
    * @return {any}
@@ -43432,7 +46984,6 @@
   const yCursorPlugin = (
     awareness,
     {
-      awarenessStateFilter = defaultAwarenessStateFilter,
       cursorBuilder = defaultCursorBuilder,
       selectionBuilder = defaultSelectionBuilder,
       getSelection = (state) => state.selection
@@ -43446,7 +46997,6 @@
           return createDecorations(
             state,
             awareness,
-            awarenessStateFilter,
             cursorBuilder,
             selectionBuilder
           )
@@ -43461,7 +47011,6 @@
             return createDecorations(
               newState,
               awareness,
-              awarenessStateFilter,
               cursorBuilder,
               selectionBuilder
             )
@@ -43485,6 +47034,9 @@
           const ystate = ySyncPluginKey.getState(view.state);
           // @note We make implicit checks when checking for the cursor property
           const current = awareness.getLocalState() || {};
+          if (ystate.binding == null) {
+            return
+          }
           if (view.hasFocus()) {
             const selection = getSelection(view.state);
             /**
@@ -43548,14 +47100,14 @@
     });
 
   // --- схема с поддержкой списков, зачёркивания, подсветки ---
-  const nodes = schema$1.spec.nodes;
-  const marks = schema$1.spec.marks;
+  const nodes = schema$2.spec.nodes;
+  const marks = schema$2.spec.marks;
   const listNodes = {
       bullet_list: { attrs: {}, content: "list_item+", group: "block", parseDOM: [{ tag: "ul" }], toDOM() { return ["ul", 0]; } },
       ordered_list: { attrs: { order: { default: 1 } }, content: "list_item+", group: "block", parseDOM: [{ tag: "ol" }], toDOM(node) { return ["ol", { start: node.attrs.order }, 0]; } },
       list_item: { attrs: {}, content: "paragraph block*", defining: true, parseDOM: [{ tag: "li" }], toDOM() { return ["li", 0]; } }
   };
-  const mySchema = new schema$1({
+  const mySchema = new schema$2({
       nodes: nodes.append(listNodes),
       marks
   });
@@ -43762,5 +47314,5 @@
       console.log('Collab status:', event.connected ? 'connected' : 'disconnected');
   });
 
-})();
+})(punycode);
 //# sourceMappingURL=bundle.js.map
