@@ -6,23 +6,45 @@
         body { margin: 0; overflow: hidden; }
         #markmap-container { width: 100vw; height: 100vh; }
     </style>
-    <script src="map.bundle.js"></script>
-    <script>
-        // Дожидаемся загрузки бандла и карты
-        (function() {
-            function waitForMap() {
-                if (window.updateMarkmap) {
-                    // Тестовые данные, если map.html открыт напрямую
-                    window.updateMarkmap('# Редактор не активен\n## Открой этот файл через index.html');
-                } else {
-                    setTimeout(waitForMap, 100);
-                }
-            }
-            waitForMap();
-        })();
-    </script>
+    <!-- D3 нужен отдельно -->
+    <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+    <!-- UMD-сборки Markmap -->
+    <script src="https://cdn.jsdelivr.net/npm/markmap-lib@0.18.12/dist/index.umd.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markmap-view@0.18.12/dist/index.umd.js"></script>
 </head>
 <body>
     <div id="markmap-container"></div>
+    <script>
+        // Инициализация карты
+        let currentMap = null;
+
+        function renderMap(markdown) {
+            const container = document.getElementById('markmap-container');
+            if (!container) return;
+            const transformer = new window.markmapLib.Transformer();
+            const { root } = transformer.transform(markdown || '# Пусто\n## Нет данных');
+            if (currentMap) {
+                currentMap.setData(root);
+            } else {
+                currentMap = window.markmapView.Markmap.create(container, null, root);
+            }
+        }
+
+        // Глобальная функция для обновления извне
+        window.updateMarkmap = renderMap;
+
+        // Обработка сообщений от родительского окна
+        window.addEventListener('message', (event) => {
+            if (event.data.type === 'updateMap') {
+                renderMap(event.data.markdown);
+            }
+        });
+
+        // Сигнал, что карта готова
+        window.parent.postMessage({ type: 'mapReady' }, '*');
+
+        // Инициализация с тестовым сообщением
+        renderMap('# Загрузка...\n## Карта готова к работе');
+    </script>
 </body>
 </html>
