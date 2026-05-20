@@ -36846,22 +36846,23 @@ ${end2.comment}` : end2.comment;
     }
   }
   let currentMap = null;
-  function initMap(markdown) {
+  function updateMap(markdown) {
     const container = document.getElementById("markmap-container");
     if (!container) return;
     const transformer = new Transformer();
-    const { root: root2 } = transformer.transform(markdown || "# Пустой документ");
+    const { root: root2 } = transformer.transform(markdown || "# Пусто");
     if (currentMap) {
       currentMap.setData(root2);
     } else {
       currentMap = it.create(container, null, root2);
     }
   }
+  window.updateMarkmap = updateMap;
   window.addEventListener("message", (event) => {
     if (event.data.type === "updateMap") {
-      initMap(event.data.markdown);
+      updateMap(event.data.markdown);
     }
   });
   window.parent.postMessage({ type: "mapReady" }, "*");
-  initMap("# Тестовая карта\n## Работает?\n### Да, если ты видишь это");
+  updateMap("# Редактор не активен\n## Открой через index.html");
 })();
