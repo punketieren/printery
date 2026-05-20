@@ -1,56 +1,292 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Markmap — ментальная карта</title>
     <style>
-        body { margin: 0; overflow: hidden; }
-        #markmap-container { width: 100vw; height: 100vh; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: system-ui, 'Segoe UI', 'Roboto', sans-serif;
+            background: linear-gradient(145deg, #f0f7ff 0%, #e9eef5 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .card {
+            max-width: 1300px;
+            width: 100%;
+            background: white;
+            border-radius: 2rem;
+            box-shadow: 0 25px 45px -12px rgba(0, 0, 0, 0.35);
+            overflow: hidden;
+            transition: all 0.2s;
+        }
+
+        .header {
+            background: #1e2b3c;
+            color: white;
+            padding: 1rem 1.8rem;
+            border-bottom: 3px solid #ffb347;
+        }
+
+        .header h1 {
+            font-size: 1.7rem;
+            font-weight: 600;
+            letter-spacing: -0.3px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .header h1::before {
+            content: "🧠";
+            font-size: 1.8rem;
+        }
+
+        .header p {
+            font-size: 0.85rem;
+            opacity: 0.85;
+            margin-top: 6px;
+        }
+
+        .toolbar {
+            background: #fef9e8;
+            padding: 8px 20px;
+            border-bottom: 1px solid #ddd;
+            font-size: 0.8rem;
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .info {
+            color: #2c5a2e;
+            background: #e6f4ea;
+            padding: 4px 12px;
+            border-radius: 40px;
+            font-size: 0.75rem;
+        }
+
+        .controls {
+            display: flex;
+            gap: 12px;
+        }
+
+        button {
+            background: white;
+            border: 1px solid #b9c8b2;
+            padding: 4px 12px;
+            border-radius: 30px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: 0.2s;
+            font-size: 0.75rem;
+        }
+
+        button:hover {
+            background: #ffb34720;
+            border-color: #ffb347;
+        }
+
+        #markmap-container {
+            width: 100%;
+            height: 550px;
+            background: #ffffff;
+            position: relative;
+        }
+
+        svg {
+            width: 100%;
+            height: 100%;
+            background: #fefef7;
+            border-radius: 0 0 1rem 1rem;
+        }
+
+        .footer {
+            background: #f4f7fc;
+            padding: 12px 20px;
+            font-size: 0.7rem;
+            text-align: center;
+            color: #3a5e4c;
+            border-top: 1px solid #dce5e0;
+        }
+
+        a {
+            color: #1f6392;
+            text-decoration: none;
+        }
+
+        @media (max-width: 700px) {
+            #markmap-container {
+                height: 420px;
+            }
+            .header h1 {
+                font-size: 1.3rem;
+            }
+        }
     </style>
-    <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/markmap-lib@0.18.12/dist/index.umd.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/markmap-view@0.18.12/dist/index.umd.js"></script>
+    <!-- Подключаем markmap core и зависимости -->
+    <script src="https://cdn.jsdelivr.net/npm/d3@6.7.0/dist/d3.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markmap-view@0.15.3/dist/index.min.js"></script>
+    <!-- Подключаем markmap-lib для парсинга Markdown в структуру -->
+    <script src="https://cdn.jsdelivr.net/npm/markmap-lib@0.15.3/dist/index.min.js"></script>
 </head>
 <body>
-    <div id="markmap-container"></div>
-    <script>
-        // Ждём, пока всё загрузится, с повторными попытками
-        function waitForDeps() {
-            if (window.d3 && window.markmapLib && window.markmapView) {
-                init();
-            } else {
-                setTimeout(waitForDeps, 100);
-            }
+<div class="card">
+    <div class="header">
+        <h1>Markmap · Интерактивная ментальная карта</h1>
+        <p>✨ Древовидная схема мыслей с возможностью сворачивать/разворачивать узлы. Кликайте по кружкам ➕➖</p>
+    </div>
+    <div class="toolbar">
+        <div class="info">📌 Маркдаун → карта знаний</div>
+        <div class="controls">
+            <button id="resetZoomBtn">⟳ Сбросить масштаб</button>
+            <button id="fitBtn">🎯 Центрировать карту</button>
+        </div>
+    </div>
+    <div id="markmap-container">
+        <svg id="markmap-svg"></svg>
+    </div>
+    <div class="footer">
+        💡 Markmap визуализирует Markdown-структуру как mind map. Нажмите на заголовок или значок, чтобы свернуть ветку. | Powered by markmap-lib + d3
+    </div>
+</div>
+
+<script>
+    (function() {
+        // Ждем загрузки всех библиотек
+        if (!window.markmap || !window.markmap.Transformer || !window.markmap.Markmap) {
+            console.error("Markmap библиотеки загружаются...");
         }
 
-        function init() {
-            console.log('Dependencies ready');
-            let currentMap = null;
+        // --- Исходные данные в формате Markdown (структура ментальной карты) ---
+        const mindmapMarkdown = `
+# 🌍 План развития "МаркМейп проект"
+## 🧩 Технологии
+### Фронтенд
+- React / Vue
+- D3.js (визуализация)
+### Бэкенд
+- Node.js + Express
+- Python (FastAPI)
+### DevOps
+- Docker
+- GitLab CI
+## 📚 Обучение и ресурсы
+### Курсы
+- Основы визуализации
+- Продвинутый Markdown
+### Книги
+- "The Mind Map Book"
+- "Designing Data‑Driven Documents"
+## 🎯 Цели проекта
+### Ближайшие (Q3)
+1. Создать прототип карты
+2. Интеграция с Obsidian
+### Долгосрочные
+- AI генерация идей
+- Коллаборация в реальном времени
+## ✨ Фишки Markmap
+- [x] Сворачивание веток
+- [x] Интерактивный зум
+- [ ] Экспорт в PNG
+- [ ] Подсветка связей
+## 🌱 Идеи для контента
+> Ментальные карты для вебинаров  
+> Технические документации  
+> Планирование спринтов
+`;
 
-            function renderMap(markdown) {
-                const container = document.getElementById('markmap-container');
-                if (!container) return;
-                const transformer = new window.markmapLib.Transformer();
-                const { root } = transformer.transform(markdown || '# Пусто\n## Нет данных');
-                if (currentMap) {
-                    currentMap.setData(root);
+        // Получаем элемент SVG
+        const svgElement = document.getElementById('markmap-svg');
+        
+        // Функция для рендера Markmap с данными
+        let mm = null; // глобальная ссылка на экземпляр Markmap
+        let currentRoot = null;
+
+        async function renderMarkmap(markdownText) {
+            try {
+                // markmap-lib: преобразование Markdown -> структура для рендеринга
+                const { Transformer } = window.markmap;
+                const transformer = new Transformer();
+                
+                // Получаем данные (root) из markdown
+                const { root } = transformer.transform(markdownText);
+                currentRoot = root;
+                
+                // Если карта уже создана — обновляем данные, иначе создаем новую
+                if (mm) {
+                    mm.setData(root);
+                    mm.fit(); // автоматически подгоняем под видимую область после обновления
                 } else {
-                    currentMap = window.markmapView.Markmap.create(container, null, root);
+                    // Инициализируем markmap на SVG
+                    mm = window.markmap.Markmap.create(svgElement, {
+                        // Настройки внешнего вида
+                        duration: 300,      // анимация
+                        color: (node) => {
+                            // Кастомные цвета в зависимости от глубины (простая стилизация)
+                            const depth = node.depth || 0;
+                            const colors = ['#2c7da0', '#61a5c2', '#89c2d9', '#a9d6e5', '#cfe8ef'];
+                            return colors[depth % colors.length];
+                        },
+                        paddingX: 18,
+                        initialExpandLevel: 2,   // изначально раскрыты узлы до 2 уровня (0 = корень)
+                    }, root);
                 }
+                
+                // Небольшой фит после инициализации
+                setTimeout(() => {
+                    if (mm) mm.fit();
+                }, 100);
+            } catch (error) {
+                console.error("Ошибка рендеринга Markmap:", error);
+                svgElement.innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="red" font-size="14">Ошибка загрузки карты: ${error.message}</text>`;
             }
-
-            window.updateMarkmap = renderMap;
-
-            window.addEventListener('message', (event) => {
-                if (event.data.type === 'updateMap') {
-                    renderMap(event.data.markdown);
-                }
-            });
-
-            window.parent.postMessage({ type: 'mapReady' }, '*');
-            renderMap('# Загрузка...\n## Карта готова');
         }
 
-        waitForDeps();
-    </script>
+        // Запускаем рендер с нашим Markdown
+        renderMarkmap(mindmapMarkdown);
+        
+        // Дополнительные кнопки управления
+        document.getElementById('resetZoomBtn').addEventListener('click', () => {
+            if (mm) {
+                mm.fit();   // fit сбрасывает масштаб и центрирует
+            }
+        });
+        
+        document.getElementById('fitBtn').addEventListener('click', () => {
+            if (mm) {
+                mm.fit();
+            }
+        });
+        
+        // Обработка изменения размеров окна для адаптации карты (необязательно)
+        let resizeTimer;
+        window.addEventListener('resize', () => {
+            if (resizeTimer) clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+                if (mm) {
+                    mm.fit();
+                }
+            }, 200);
+        });
+        
+        // Также добавим возможность перерисовать карту при полной загрузке шрифтов и т.д.
+        window.addEventListener('load', () => {
+            if (mm) setTimeout(() => mm.fit(), 50);
+        });
+    })();
+</script>
 </body>
 </html>
