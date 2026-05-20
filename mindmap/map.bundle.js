@@ -38131,6 +38131,10 @@ ${end2.comment}` : end2.comment;
       currentMap = it.create(container, null, root3);
     }
   }
+  window.markmap = {
+    Transformer,
+    Markmap: it
+  };
   window.updateMarkmap = render2;
   window.addEventListener("message", (event) => {
     if (event.data.type === "updateMap")
