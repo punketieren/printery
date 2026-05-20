@@ -7,6 +7,20 @@
         #markmap-container { width: 100vw; height: 100vh; }
     </style>
     <script src="map.bundle.js"></script>
+    <script>
+        // Дожидаемся загрузки бандла и карты
+        (function() {
+            function waitForMap() {
+                if (window.updateMarkmap) {
+                    // Тестовые данные, если map.html открыт напрямую
+                    window.updateMarkmap('# Редактор не активен\n## Открой этот файл через index.html');
+                } else {
+                    setTimeout(waitForMap, 100);
+                }
+            }
+            waitForMap();
+        })();
+    </script>
 </head>
 <body>
     <div id="markmap-container"></div>
