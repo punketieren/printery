@@ -143,13 +143,13 @@ document.getElementById('fullscreen-map').addEventListener('click', () => {
 });
 
 const iframe = document.getElementById('mapFrame');
-let currentLevel = 6; // начальный уровень (всё развёрнуто)
+let currentLevel = 10; // начальный уровень (всё развёрнуто)
 
 // Функция изменения уровня (delta: +1 – свернуть, -1 – развернуть)
 function setLevel(delta) {
     let newLevel = currentLevel + delta;
     if (newLevel < 1) newLevel = 1;
-    if (newLevel > 6) newLevel = 6;
+    if (newLevel > 10) newLevel = 10;
     if (newLevel !== currentLevel) {
         currentLevel = newLevel;
         iframe.contentWindow?.collapseLevel?.(currentLevel);
@@ -159,11 +159,11 @@ function setLevel(delta) {
 // Кнопка "свернуть" (увеличиваем уровень сворачивания)
 const btnCollapse = document.getElementById('collapse');
 if (btnCollapse) {
-    btnCollapse.addEventListener('click', () => setLevel(+1));
+    btnCollapse.addEventListener('click', () => setLevel(-1));
 }
 
 // Кнопка "развернуть" (уменьшаем уровень сворачивания)
 const btnExpand = document.getElementById('expand');
 if (btnExpand) {
-    btnExpand.addEventListener('click', () => setLevel(-1));
+    btnExpand.addEventListener('click', () => setLevel(+1));
 }
