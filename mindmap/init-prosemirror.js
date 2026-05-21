@@ -154,22 +154,31 @@ if (loadBtn) {
         input.click();
     });
 }
-        // ---- Отправка Markdown в карту ----
-        const iframe = document.getElementById('mapFrame');
-        if (!iframe) return;
+            // ---- ОТПРАВКА MARKDOWN В КАРТУ ПРИ ИЗМЕНЕНИЯХ ----
+    if (window.editorView) {
+        const originalDispatch = window.editorView.dispatch;
+        window.editorView.dispatch = (tr) => {
+            originalDispatch(tr);
+            const markdown = window.ProseMirror.defaultMarkdownSerializer.serialize(window.editorView.state.doc);
+            const iframe = document.getElementById('mapFrame');
+            if (iframe && iframe.contentWindow) {
+                iframe.contentWindow.postMessage({ type: 'updateMap', markdown }, '*');
+            }
+        };
+    }
 
-        function sendMarkdownToMap(markdown) {
-            if (iframe.contentWindow) {
-                iframe.contentWindow.postMessage({
-                    type: 'updateMap',
-                    markdown: markdown
-      }, '*');  } } 
-        // Ждём готовности карты
-        window.addEventListener('message', function(event) {
-            if (event.source === iframe.contentWindow && event.data.type === 'mapReady') {
-                console.log('Карта готова, отправляем Markdown...'); 
-                sendMarkdownToMap('# Главная идея\n## Первая ветка\n### Подпункт 1.1');
-   }  });  } })();
+    // ---- ОТПРАВКА НАЧАЛЬНОГО MARKDOWN (ДЛЯ СТРАХОВКИ) ----
+    setTimeout(() => {
+        if (window.editorView) {
+            const markdown = window.ProseMirror.defaultMarkdownSerializer.serialize(window.editorView.state.doc);
+            const iframe = document.getElementById('mapFrame');
+            if (iframe && iframe.contentWindow) {
+                iframe.contentWindow.postMessage({ type: 'updateMap', markdown }, '*');
+            }
+        }
+    }, 500)
+ 
+        ;  } })();
 // Выпадающие меню по клику
 (function() {
     const dropdowns = document.querySelectorAll('.dropdown');
