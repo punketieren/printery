@@ -82,28 +82,6 @@
         }
     });
 })();
-// Выпадающие меню по клику
-(function() {
-    const dropdowns = document.querySelectorAll('.dropdown');
-    dropdowns.forEach(dropdown => {
-        const btn = dropdown.querySelector('button');
-        const content = dropdown.querySelector('.dropdown-content');
-        if (!btn || !content) return;
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            dropdowns.forEach(d => {
-                const c = d.querySelector('.dropdown-content');
-                if (c && c !== content) c.classList.remove('show');
-            });
-            content.classList.toggle('show');
-        });
-    });
-    document.addEventListener('click', (e) => {
-        if (!e.target.closest('.dropdown')) {
-            document.querySelectorAll('.dropdown-content.show').forEach(c => c.classList.remove('show'));
-        }
-    });
-})();
 
 // Управление картой (кнопки collapse / expand)
 (function() {
