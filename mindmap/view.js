@@ -1,5 +1,4 @@
- 
-// Отдельный обработчик для скругления правой панели
+ // Отдельный обработчик для скругления правой панели
 (function() {
     const leftPanel = document.getElementById('editor-panel');
     const rightPanel = document.getElementById('viewer-panel');
@@ -10,9 +9,7 @@
             rightPanel.classList.add('left-collapsed');
         } else {
             rightPanel.classList.remove('left-collapsed');
-        }
-    }
-
+ } }
     // Наблюдаем за изменениями класса collapsed
     const observer = new MutationObserver(() => updateRightPanelRounding());
     observer.observe(leftPanel, { attributes: true, attributeFilter: ['class'] });
@@ -20,7 +17,38 @@
     // Запускаем при загрузке
     updateRightPanelRounding();
 })();
-
+// ----- Фикс для fit-btn, fullscreen-map, ресайзера (чтобы работали постоянно) -----
+(function() {
+    const iframe = document.getElementById('mapFrame');
+    if (!iframe) return;
+    // Кнопка Fit
+    const fitBtn = document.getElementById('fit-btn');
+    if (fitBtn && !fitBtn._fixed) {
+        fitBtn._fixed = true;
+        fitBtn.onclick = () => {
+            if (iframe.contentWindow?.currentMap) {
+                iframe.contentWindow.currentMap.fit();
+            } else {
+                console.warn('Карта ещё не загружена');
+   }  }; }
+    // Кнопка Fullscreen
+    const fullscreenBtn = document.getElementById('fullscreen-map');
+    if (fullscreenBtn && !fullscreenBtn._fixed) {
+        fullscreenBtn._fixed = true;
+        fullscreenBtn.onclick = () => {
+            const panel = document.getElementById('viewer-panel');
+            panel.classList.toggle('fullscreen');
+            setTimeout(() => {
+                if (iframe.contentWindow?.currentMap) iframe.contentWindow.currentMap.fit();
+            }, 100);
+        };}
+    // Ресайзер — если он уже работает, но вдруг его обработчик слетает
+    const resizer = document.getElementById('resizer');
+    if (resizer && !resizer._fixed) {
+        resizer._fixed = true;
+        resizer.addEventListener('mousedown', (e) => {
+            e.stopPropagation();
+  });}})();
 // ==================================================
 // 1. Ресайзер: клик — сворачивание/разворачивание, холд — ресайз
 // ==================================================
@@ -48,8 +76,7 @@
             localStorage.setItem('panelWidth', currentWidth);
             leftPanel.classList.add('collapsed');
         }
-        localStorage.setItem('panelCollapsed', leftPanel.classList.contains('collapsed'));
-    }
+        localStorage.setItem('panelCollapsed', leftPanel.classList.contains('collapsed')); }
 
     // Восстановление состояния при загрузке
     if (localStorage.getItem('panelCollapsed') === 'true') {
@@ -84,17 +111,14 @@
                     const saved = localStorage.getItem('panelWidth');
                     if (saved) leftPanel.style.width = saved + 'px';
                     startWidth = leftPanel.offsetWidth;
-                }
-            }
+ }}
 
             if (dragStarted) {
                 let newWidth = startWidth + (e.clientX - startX);
                 newWidth = Math.min(Math.max(newWidth, 300), window.innerWidth * 0.9);
                 leftPanel.style.width = newWidth + 'px';
                 localStorage.setItem('panelWidth', newWidth);
-            }
-        };
-
+ }};
         const onMouseUp = () => {
             document.removeEventListener('mousemove', onMouseMove);
             document.removeEventListener('mouseup', onMouseUp);
@@ -104,12 +128,9 @@
             // ДОБАВЛЕНО: возвращаем iframe и transition
             if (iframe) iframe.style.pointerEvents = 'auto';
             leftPanel.style.transition = '';
-
             if (!isDragging) {
                 togglePanel();
-            }
-        };
-
+  } };
         document.addEventListener('mousemove', onMouseMove);
         document.addEventListener('mouseup', onMouseUp);
     });
@@ -117,7 +138,7 @@
 // 2. Выпадающие меню по клику (не конфликтуют)
 (function() {
     const dropdowns = document.querySelectorAll('.dropdown');
-    
+   
     dropdowns.forEach(dropdown => {
         const btn = dropdown.querySelector('button');
         const content = dropdown.querySelector('.dropdown-content');
@@ -130,15 +151,11 @@
                 if (c && c !== content) c.classList.remove('show');
             });
             content.classList.toggle('show');
-        });
-    });
-
+  }); });
     document.addEventListener('click', (e) => {
         if (!e.target.closest('.dropdown')) {
             document.querySelectorAll('.dropdown-content.show').forEach(c => c.classList.remove('show'));
-        }
-    });
-})(); 
+  } });})(); 
 
 document.getElementById('fullscreen-map').addEventListener('click', () => {
     const panel = document.getElementById('viewer-panel');
@@ -153,14 +170,12 @@ document.getElementById('fullscreen-map').addEventListener('click', () => {
 const fitBtn = document.getElementById('fit-btn');
 const iframe = document.getElementById('mapFrame');
 
-//fitBtn?.addEventListener('click', () => {
-  //  if (iframe && iframe.contentWindow && iframe.contentWindow.currentMap) {
-    //    iframe.contentWindow.currentMap.fit();
-   // } else {
-    //    console.warn('Карта не готова или нет метода fit');
-   // }
-//});
-
+fitBtn?.addEventListener('click', () => {
+  if (iframe && iframe.contentWindow && iframe.contentWindow.currentMap) {
+        iframe.contentWindow.currentMap.fit();
+    } else {
+        console.warn('Карта не готова или нет метода fit');
+  }});
 const iframe = document.getElementById('mapFrame');
 let currentLevel = 9;
 
@@ -168,7 +183,6 @@ function updateLevelDisplay() {
     const span = document.getElementById('map-level');
     if (span) span.textContent = currentLevel;
 }
-
 function setLevel(delta) {
     let newLevel = currentLevel + delta;
     if (newLevel < 1) newLevel = 1;
@@ -177,9 +191,7 @@ function setLevel(delta) {
         currentLevel = newLevel;
         iframe.contentWindow?.collapseLevel?.(currentLevel);
         updateLevelDisplay();
-    }
-}
-
+ }}
 // Кнопка "свернуть" (collapse) — теперь уменьшает уровень (delta -1)
 document.getElementById('collapse').addEventListener('click', () => setLevel(-1));
 // Кнопка "развернуть" (expand) — теперь увеличивает уровень (delta +1)
