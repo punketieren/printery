@@ -10441,351 +10441,6 @@
 		if (plugin.spec.state || plugin.spec.filterTransaction || plugin.spec.appendTransaction) throw new RangeError("Plugins passed directly to the view must not have a state component");
 	}
 	//#endregion
-	//#region node_modules/prosemirror-schema-basic/dist/index.js
-	var pDOM = ["p", 0], blockquoteDOM = ["blockquote", 0], hrDOM = ["hr"], preDOM = ["pre", ["code", 0]], brDOM = ["br"];
-	/**
-	[Specs](https://prosemirror.net/docs/ref/#model.NodeSpec) for the nodes defined in this schema.
-	*/
-	var nodes = {
-		/**
-		NodeSpec The top level document node.
-		*/
-		doc: { content: "block+" },
-		/**
-		A plain paragraph textblock. Represented in the DOM
-		as a `<p>` element.
-		*/
-		paragraph: {
-			content: "inline*",
-			group: "block",
-			parseDOM: [{ tag: "p" }],
-			toDOM() {
-				return pDOM;
-			}
-		},
-		/**
-		A blockquote (`<blockquote>`) wrapping one or more blocks.
-		*/
-		blockquote: {
-			content: "block+",
-			group: "block",
-			defining: true,
-			parseDOM: [{ tag: "blockquote" }],
-			toDOM() {
-				return blockquoteDOM;
-			}
-		},
-		/**
-		A horizontal rule (`<hr>`).
-		*/
-		horizontal_rule: {
-			group: "block",
-			parseDOM: [{ tag: "hr" }],
-			toDOM() {
-				return hrDOM;
-			}
-		},
-		/**
-		A heading textblock, with a `level` attribute that
-		should hold the number 1 to 6. Parsed and serialized as `<h1>` to
-		`<h6>` elements.
-		*/
-		heading: {
-			attrs: { level: {
-				default: 1,
-				validate: "number"
-			} },
-			content: "inline*",
-			group: "block",
-			defining: true,
-			parseDOM: [
-				{
-					tag: "h1",
-					attrs: { level: 1 }
-				},
-				{
-					tag: "h2",
-					attrs: { level: 2 }
-				},
-				{
-					tag: "h3",
-					attrs: { level: 3 }
-				},
-				{
-					tag: "h4",
-					attrs: { level: 4 }
-				},
-				{
-					tag: "h5",
-					attrs: { level: 5 }
-				},
-				{
-					tag: "h6",
-					attrs: { level: 6 }
-				}
-			],
-			toDOM(node) {
-				return ["h" + node.attrs.level, 0];
-			}
-		},
-		/**
-		A code listing. Disallows marks or non-text inline
-		nodes by default. Represented as a `<pre>` element with a
-		`<code>` element inside of it.
-		*/
-		code_block: {
-			content: "text*",
-			marks: "",
-			group: "block",
-			code: true,
-			defining: true,
-			parseDOM: [{
-				tag: "pre",
-				preserveWhitespace: "full"
-			}],
-			toDOM() {
-				return preDOM;
-			}
-		},
-		/**
-		The text node.
-		*/
-		text: { group: "inline" },
-		/**
-		An inline image (`<img>`) node. Supports `src`,
-		`alt`, and `href` attributes. The latter two default to the empty
-		string.
-		*/
-		image: {
-			inline: true,
-			attrs: {
-				src: { validate: "string" },
-				alt: {
-					default: null,
-					validate: "string|null"
-				},
-				title: {
-					default: null,
-					validate: "string|null"
-				}
-			},
-			group: "inline",
-			draggable: true,
-			parseDOM: [{
-				tag: "img[src]",
-				getAttrs(dom) {
-					return {
-						src: dom.getAttribute("src"),
-						title: dom.getAttribute("title"),
-						alt: dom.getAttribute("alt")
-					};
-				}
-			}],
-			toDOM(node) {
-				let { src, alt, title } = node.attrs;
-				return ["img", {
-					src,
-					alt,
-					title
-				}];
-			}
-		},
-		/**
-		A hard line break, represented in the DOM as `<br>`.
-		*/
-		hard_break: {
-			inline: true,
-			group: "inline",
-			selectable: false,
-			parseDOM: [{ tag: "br" }],
-			toDOM() {
-				return brDOM;
-			}
-		}
-	};
-	var emDOM = ["em", 0], strongDOM = ["strong", 0], codeDOM = ["code", 0];
-	/**
-	This schema roughly corresponds to the document schema used by
-	[CommonMark](http://commonmark.org/), minus the list elements,
-	which are defined in the [`prosemirror-schema-list`](https://prosemirror.net/docs/ref/#schema-list)
-	module.
-	
-	To reuse elements from this schema, extend or read from its
-	`spec.nodes` and `spec.marks` [properties](https://prosemirror.net/docs/ref/#model.Schema.spec).
-	*/
-	var schema$1 = new Schema$1({
-		nodes,
-		marks: {
-			/**
-			A link. Has `href` and `title` attributes. `title`
-			defaults to the empty string. Rendered and parsed as an `<a>`
-			element.
-			*/
-			link: {
-				attrs: {
-					href: { validate: "string" },
-					title: {
-						default: null,
-						validate: "string|null"
-					}
-				},
-				inclusive: false,
-				parseDOM: [{
-					tag: "a[href]",
-					getAttrs(dom) {
-						return {
-							href: dom.getAttribute("href"),
-							title: dom.getAttribute("title")
-						};
-					}
-				}],
-				toDOM(node) {
-					let { href, title } = node.attrs;
-					return [
-						"a",
-						{
-							href,
-							title
-						},
-						0
-					];
-				}
-			},
-			/**
-			An emphasis mark. Rendered as an `<em>` element. Has parse rules
-			that also match `<i>` and `font-style: italic`.
-			*/
-			em: {
-				parseDOM: [
-					{ tag: "i" },
-					{ tag: "em" },
-					{ style: "font-style=italic" },
-					{
-						style: "font-style=normal",
-						clearMark: (m) => m.type.name == "em"
-					}
-				],
-				toDOM() {
-					return emDOM;
-				}
-			},
-			/**
-			A strong mark. Rendered as `<strong>`, parse rules also match
-			`<b>` and `font-weight: bold`.
-			*/
-			strong: {
-				parseDOM: [
-					{ tag: "strong" },
-					{
-						tag: "b",
-						getAttrs: (node) => node.style.fontWeight != "normal" && null
-					},
-					{
-						style: "font-weight=400",
-						clearMark: (m) => m.type.name == "strong"
-					},
-					{
-						style: "font-weight",
-						getAttrs: (value) => /^(bold(er)?|[5-9]\d{2,})$/.test(value) && null
-					}
-				],
-				toDOM() {
-					return strongDOM;
-				}
-			},
-			/**
-			Code font mark. Represented as a `<code>` element.
-			*/
-			code: {
-				code: true,
-				parseDOM: [{ tag: "code" }],
-				toDOM() {
-					return codeDOM;
-				}
-			}
-		}
-	});
-	//#endregion
-	//#region node_modules/prosemirror-schema-list/dist/index.js
-	var olDOM = ["ol", 0], ulDOM = ["ul", 0], liDOM = ["li", 0];
-	/**
-	An ordered list [node spec](https://prosemirror.net/docs/ref/#model.NodeSpec). Has a single
-	attribute, `order`, which determines the number at which the list
-	starts counting, and defaults to 1. Represented as an `<ol>`
-	element.
-	*/
-	var orderedList = {
-		attrs: { order: {
-			default: 1,
-			validate: "number"
-		} },
-		parseDOM: [{
-			tag: "ol",
-			getAttrs(dom) {
-				return { order: dom.hasAttribute("start") ? +dom.getAttribute("start") : 1 };
-			}
-		}],
-		toDOM(node) {
-			return node.attrs.order == 1 ? olDOM : [
-				"ol",
-				{ start: node.attrs.order },
-				0
-			];
-		}
-	};
-	/**
-	A bullet list node spec, represented in the DOM as `<ul>`.
-	*/
-	var bulletList = {
-		parseDOM: [{ tag: "ul" }],
-		toDOM() {
-			return ulDOM;
-		}
-	};
-	/**
-	A list item (`<li>`) spec.
-	*/
-	var listItem = {
-		parseDOM: [{ tag: "li" }],
-		toDOM() {
-			return liDOM;
-		},
-		defining: true
-	};
-	function add(obj, props) {
-		let copy = {};
-		for (let prop in obj) copy[prop] = obj[prop];
-		for (let prop in props) copy[prop] = props[prop];
-		return copy;
-	}
-	/**
-	Convenience function for adding list-related node types to a map
-	specifying the nodes for a schema. Adds
-	[`orderedList`](https://prosemirror.net/docs/ref/#schema-list.orderedList) as `"ordered_list"`,
-	[`bulletList`](https://prosemirror.net/docs/ref/#schema-list.bulletList) as `"bullet_list"`, and
-	[`listItem`](https://prosemirror.net/docs/ref/#schema-list.listItem) as `"list_item"`.
-	
-	`itemContent` determines the content expression for the list items.
-	If you want the commands defined in this module to apply to your
-	list structure, it should have a shape like `"paragraph block*"` or
-	`"paragraph (ordered_list | bullet_list)*"`. `listGroup` can be
-	given to assign a group name to the list node types, for example
-	`"block"`.
-	*/
-	function addListNodes(nodes, itemContent, listGroup) {
-		return nodes.append({
-			ordered_list: add(orderedList, {
-				content: "list_item+",
-				group: listGroup
-			}),
-			bullet_list: add(bulletList, {
-				content: "list_item+",
-				group: listGroup
-			}),
-			list_item: add(listItem, { content: itemContent })
-		});
-	}
-	//#endregion
 	//#region node_modules/w3c-keyname/index.js
 	var base = {
 		8: "Backspace",
@@ -36532,8 +36187,126 @@
 	//#endregion
 	//#region src/editor.js
 	var mySchema = new Schema$1({
-		nodes: addListNodes(schema$1.spec.nodes, "paragraph block*", "block"),
-		marks: schema$1.spec.marks
+		nodes: {
+			doc: { content: "block+" },
+			paragraph: {
+				group: "block",
+				content: "inline*",
+				parseDOM: [{ tag: "p" }],
+				toDOM: () => ["p", 0]
+			},
+			heading: {
+				attrs: { level: { default: 1 } },
+				group: "block",
+				content: "inline*",
+				parseDOM: [
+					{
+						tag: "h1",
+						attrs: { level: 1 }
+					},
+					{
+						tag: "h2",
+						attrs: { level: 2 }
+					},
+					{
+						tag: "h3",
+						attrs: { level: 3 }
+					},
+					{
+						tag: "h4",
+						attrs: { level: 4 }
+					},
+					{
+						tag: "h5",
+						attrs: { level: 5 }
+					},
+					{
+						tag: "h6",
+						attrs: { level: 6 }
+					}
+				],
+				toDOM: (node) => [`h${node.attrs.level}`, 0]
+			},
+			bullet_list: {
+				group: "block",
+				content: "list_item+",
+				parseDOM: [{ tag: "ul" }],
+				toDOM: () => ["ul", 0]
+			},
+			ordered_list: {
+				group: "block",
+				content: "list_item+",
+				parseDOM: [{ tag: "ol" }],
+				toDOM: () => ["ol", 0]
+			},
+			list_item: {
+				content: "paragraph block*",
+				defining: true,
+				parseDOM: [{ tag: "li" }],
+				toDOM: () => ["li", 0]
+			},
+			blockquote: {
+				group: "block",
+				content: "block+",
+				parseDOM: [{ tag: "blockquote" }],
+				toDOM: () => ["blockquote", 0]
+			},
+			code_block: {
+				group: "block",
+				content: "text*",
+				parseDOM: [{ tag: "pre" }],
+				toDOM: () => ["pre", ["code", 0]]
+			},
+			horizontal_rule: {
+				group: "block",
+				parseDOM: [{ tag: "hr" }],
+				toDOM: () => ["hr"]
+			},
+			text: { group: "inline" }
+		},
+		marks: {
+			em: {
+				parseDOM: [
+					{ tag: "i" },
+					{ tag: "em" },
+					{ style: "font-style=italic" }
+				],
+				toDOM: () => ["em", 0]
+			},
+			strong: {
+				parseDOM: [
+					{ tag: "b" },
+					{ tag: "strong" },
+					{ style: "font-weight=bold" }
+				],
+				toDOM: () => ["strong", 0]
+			},
+			code: {
+				parseDOM: [{ tag: "code" }],
+				toDOM: () => ["code", 0]
+			},
+			link: {
+				attrs: { href: { default: "" } },
+				parseDOM: [{ tag: "a[href]" }],
+				toDOM: (node) => [
+					"a",
+					{ href: node.attrs.href },
+					0
+				]
+			},
+			strike: {
+				parseDOM: [
+					{ tag: "s" },
+					{ tag: "del" },
+					{ style: "text-decoration=line-through" }
+				],
+				toDOM: () => ["s", 0]
+			},
+			mark: {
+				parseDOM: [{ tag: "mark" }],
+				toDOM: () => ["mark", 0]
+			}
+		}
 	});
 	var ydoc = new Doc();
 	var provider = new WebrtcProvider("prosemirror-room", ydoc);
