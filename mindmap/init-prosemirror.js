@@ -46,7 +46,19 @@ const formatBtn = (id, cmd, markName = null) => {
         window.editorView.focus();
     });
 };
-
+// Обновление отображения уровня заголовка
+function updateHeadingLevel() {
+    const { state } = window.editorView;
+    const { $from } = state.selection;
+    const node = $from.node($from.depth);
+    const level = (node && node.type.name === 'heading') ? node.attrs.level : 0;
+    const span = document.getElementById('heading-level');
+    if (span) span.textContent = level === 0 ? '-' : `H${level}`;
+}
+// Вызываем при каждом изменении выделения
+window.editorView.dom.addEventListener('click', updateHeadingLevel);
+window.editorView.dom.addEventListener('keyup', updateHeadingLevel);
+updateHeadingLevel();
 // Жирный Курсив Зачёркнутый Код Подсветка
 formatBtn('bold', 'toggleMark', 'strong'); 
 formatBtn('italic', 'toggleMark', 'em'); 
