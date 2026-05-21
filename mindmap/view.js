@@ -1,4 +1,3 @@
-// ==================== view.js (исправленный, без ошибок) ====================
 
 // Отдельный обработчик для скругления правой панели
 (function() {
@@ -123,7 +122,8 @@
             setTimeout(() => {
                 if (iframe?.contentWindow?.currentMap) {
                     iframe.contentWindow.currentMap.fit();
-   }    }, 100);  };  } });// Сохранение PNG из карты
+   }    }, 100);  };  } });
+   // Сохранение PNG из карты
 const savePngBtn = document.getElementById('save-png');
 if (savePngBtn) {
     savePngBtn.addEventListener('click', () => {
@@ -134,4 +134,4 @@ if (savePngBtn) {
             console.warn('Функция saveAsPNG не найдена в карте');
         }
     });
-}();
+}
