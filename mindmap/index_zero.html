@@ -5,7 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>ProseMirror WYSIWYG + Markmap</title>
     <link rel="stylesheet" href="styles.css">
-	 
+	 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prosemirror-view@1.31.0/style/prosemirror.css">
+<script src="https://cdn.jsdelivr.net/npm/prosemirror-model@1.19.0/dist/index.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/prosemirror-state@1.4.0/dist/index.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/prosemirror-view@1.31.0/dist/index.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/prosemirror-schema-basic@1.2.0/dist/index.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/prosemirror-schema-list@1.2.0/dist/index.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/prosemirror-commands@1.3.0/dist/index.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/prosemirror-keymap@1.2.0/dist/index.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/prosemirror-history@1.3.0/dist/index.js"></script>
 </head>
 <body>
 <div class="container">
@@ -108,5 +116,24 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 </script>
+<script>const { Schema } = ProseMirror.model;
+const { EditorState } = ProseMirror.state;
+const { EditorView } = ProseMirror.view;
+const { schema } = ProseMirror.schemaBasic;
+const { keymap } = ProseMirror.keymap;
+const { history, undo, redo } = ProseMirror.history;
+const { baseKeymap } = ProseMirror.commands;
+
+const mySchema = new Schema({
+    nodes: schema.spec.nodes,
+    marks: schema.spec.marks
+});
+
+const view = new EditorView(document.getElementById('editor-container'), {
+    state: EditorState.create({
+        schema: mySchema,
+        plugins: [history(), keymap(baseKeymap), keymap({ "Mod-z": undo, "Mod-y": redo })]
+    })
+});</script>
 </body>
 </html>
