@@ -79,11 +79,77 @@ formatBtn('italic', 'toggleMark', 'em');
 formatBtn('strike', 'toggleMark', 'strike'); 
 formatBtn('code-inline', 'toggleMark', 'code'); 
 formatBtn('highlight', 'toggleMark', 'mark'); 
-// Маркированный список Нумерованный список Цитата Блок кода
-formatBtn('ul', 'wrapIn', 'bullet_list'); 
-formatBtn('ol', 'wrapIn', 'ordered_list'); 
-formatBtn('quote', 'wrapIn', 'blockquote'); 
-formatBtn('code-block', 'setBlockType', 'code_block');
+// Маркированный список (переключение)
+const ulBtn = document.getElementById('ul');
+if (ulBtn) {
+    ulBtn.addEventListener('click', () => {
+        const { state, dispatch } = window.editorView;
+        const { $from, $to } = state.selection;
+        const range = $from.blockRange($to);
+        if (range) {
+            const parent = state.doc.resolve(range.start).node();
+            if (parent.type.name === 'bullet_list') {
+                window.ProseMirror.lift(range)(state, dispatch);
+            } else {
+                window.ProseMirror.wrapIn(state.schema.nodes.bullet_list)(state, dispatch);
+            }
+        }
+    });
+}
+
+// Нумерованный список
+const olBtn = document.getElementById('ol');
+if (olBtn) {
+    olBtn.addEventListener('click', () => {
+        const { state, dispatch } = window.editorView;
+        const { $from, $to } = state.selection;
+        const range = $from.blockRange($to);
+        if (range) {
+            const parent = state.doc.resolve(range.start).node();
+            if (parent.type.name === 'ordered_list') {
+                window.ProseMirror.lift(range)(state, dispatch);
+            } else {
+                window.ProseMirror.wrapIn(state.schema.nodes.ordered_list)(state, dispatch);
+            }
+        }
+    });
+}
+
+// Цитата
+const quoteBtn = document.getElementById('quote');
+if (quoteBtn) {
+    quoteBtn.addEventListener('click', () => {
+        const { state, dispatch } = window.editorView;
+        const { $from, $to } = state.selection;
+        const range = $from.blockRange($to);
+        if (range) {
+            const parent = state.doc.resolve(range.start).node();
+            if (parent.type.name === 'blockquote') {
+                window.ProseMirror.lift(range)(state, dispatch);
+            } else {
+                window.ProseMirror.wrapIn(state.schema.nodes.blockquote)(state, dispatch);
+            }
+        }
+    });
+}
+
+// Блок кода
+const codeBlockBtn = document.getElementById('code-block');
+if (codeBlockBtn) {
+    codeBlockBtn.addEventListener('click', () => {
+        const { state, dispatch } = window.editorView;
+        const { $from, $to } = state.selection;
+        const range = $from.blockRange($to);
+        if (range) {
+            const parent = state.doc.resolve(range.start).node();
+            if (parent.type.name === 'code_block') {
+                window.ProseMirror.setBlockType(state.schema.nodes.paragraph)(state, dispatch);
+            } else {
+                window.ProseMirror.setBlockType(state.schema.nodes.code_block)(state, dispatch);
+            }
+        }
+    });
+}
 // Параграф
 formatBtn('paragraph', 'setBlockType', 'paragraph'); 
 // Кнопки изменения уровня заголовка (отдельно, потому что нужно передать атрибут level)
