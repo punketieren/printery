@@ -27,6 +27,54 @@
     })   }); 
         // Сохраняем глобально (для доступа из других скриптов)
         window.editorView = view; 
+		// Undo / Redo (если кнопки существуют)
+const undoBtn = document.getElementById('undo');
+const redoBtn = document.getElementById('redo');
+
+if (undoBtn) {
+    undoBtn.addEventListener('click', () => {
+        if (window.ProseMirror.undo) window.ProseMirror.undo(window.editorView.state, window.editorView.dispatch);
+    });
+}
+if (redoBtn) {
+    redoBtn.addEventListener('click', () => {
+        if (window.ProseMirror.redo) window.ProseMirror.redo(window.editorView.state, window.editorView.dispatch);
+    });
+}
+
+// Сохранение в файл .md
+const saveBtn = document.getElementById('save-btn');
+if (saveBtn) {
+    saveBtn.addEventListener('click', () => {
+        const markdown = window.ProseMirror.defaultMarkdownSerializer.serialize(window.editorView.state.doc);
+        const blob = new Blob([markdown], { type: 'text/markdown' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'document.md';
+        a.click();
+        URL.revokeObjectURL(url);
+    });
+}
+
+// Загрузка из файла .md
+const loadBtn = document.getElementById('load-btn');
+if (loadBtn) {
+    loadBtn.addEventListener('click', () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.md,.txt';
+        input.onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const text = await file.text();
+            const doc = window.ProseMirror.defaultMarkdownParser.parse(text);
+            const tr = window.editorView.state.tr.replaceWith(0, window.editorView.state.doc.content.size, doc);
+            window.editorView.dispatch(tr);
+        };
+        input.click();
+    });
+}
         // ---- Отправка Markdown в карту ----
         const iframe = document.getElementById('mapFrame');
         if (!iframe) return;
