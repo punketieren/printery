@@ -3964,6 +3964,46 @@
 		} else end++;
 		tr.step(new ReplaceAroundStep(start, end, gapStart, gapEnd, new Slice(before.append(after), openStart, openEnd), before.size - openStart, true));
 	}
+	/**
+	Try to find a valid way to wrap the content in the given range in a
+	node of the given type. May introduce extra nodes around and inside
+	the wrapper node, if necessary. Returns null if no valid wrapping
+	could be found. When `innerRange` is given, that range's content is
+	used as the content to fit into the wrapping, instead of the
+	content of `range`.
+	*/
+	function findWrapping(range, nodeType, attrs = null, innerRange = range) {
+		let around = findWrappingOutside(range, nodeType);
+		let inner = around && findWrappingInside(innerRange, nodeType);
+		if (!inner) return null;
+		return around.map(withAttrs).concat({
+			type: nodeType,
+			attrs
+		}).concat(inner.map(withAttrs));
+	}
+	function withAttrs(type) {
+		return {
+			type,
+			attrs: null
+		};
+	}
+	function findWrappingOutside(range, type) {
+		let { parent, startIndex, endIndex } = range;
+		let around = parent.contentMatchAt(startIndex).findWrapping(type);
+		if (!around) return null;
+		let outer = around.length ? around[0] : type;
+		return parent.canReplaceWith(startIndex, endIndex, outer) ? around : null;
+	}
+	function findWrappingInside(range, type) {
+		let { parent, startIndex, endIndex } = range;
+		let inner = parent.child(startIndex);
+		let inside = type.contentMatch.findWrapping(inner.type);
+		if (!inside) return null;
+		let innerMatch = (inside.length ? inside[inside.length - 1] : type).contentMatch;
+		for (let i = startIndex; innerMatch && i < endIndex; i++) innerMatch = innerMatch.matchType(parent.child(i).type);
+		if (!innerMatch || !innerMatch.validEnd) return null;
+		return inside;
+	}
 	function wrap(tr, range, wrappers) {
 		let content = Fragment.empty;
 		for (let i = wrappers.length - 1; i >= 0; i--) {
@@ -3976,7 +4016,7 @@
 		let start = range.start, end = range.end;
 		tr.step(new ReplaceAroundStep(start, end, start, end, new Slice(content, 0, 0), wrappers.length, true));
 	}
-	function setBlockType(tr, from, to, type, attrs) {
+	function setBlockType$1(tr, from, to, type, attrs) {
 		if (!type.isTextblock) throw new RangeError("Type given to setBlockType should be a textblock");
 		let mapFrom = tr.steps.length;
 		tr.doc.nodesBetween(from, to, (node, pos) => {
@@ -4779,7 +4819,7 @@
 		the given node type with the given attributes.
 		*/
 		setBlockType(from, to = from, type, attrs = null) {
-			setBlockType(this, from, to, type, attrs);
+			setBlockType$1(this, from, to, type, attrs);
 			return this;
 		}
 		/**
@@ -11736,6 +11776,126 @@
 	Moves the cursor to the end of current text block.
 	*/
 	var selectTextblockEnd = selectTextblockSide(1);
+	/**
+	Wrap the selection in a node of the given type with the given
+	attributes.
+	*/
+	function wrapIn(nodeType, attrs = null) {
+		return function(state, dispatch) {
+			let { $from, $to } = state.selection;
+			let range = $from.blockRange($to), wrapping = range && findWrapping(range, nodeType, attrs);
+			if (!wrapping) return false;
+			if (dispatch) dispatch(state.tr.wrap(range, wrapping).scrollIntoView());
+			return true;
+		};
+	}
+	/**
+	Returns a command that tries to set the selected textblocks to the
+	given node type with the given attributes.
+	*/
+	function setBlockType(nodeType, attrs = null) {
+		return function(state, dispatch) {
+			let applicable = false;
+			for (let i = 0; i < state.selection.ranges.length && !applicable; i++) {
+				let { $from: { pos: from }, $to: { pos: to } } = state.selection.ranges[i];
+				state.doc.nodesBetween(from, to, (node, pos) => {
+					if (applicable) return false;
+					if (!node.isTextblock || node.hasMarkup(nodeType, attrs)) return;
+					if (node.type == nodeType) applicable = true;
+					else {
+						let $pos = state.doc.resolve(pos), index = $pos.index();
+						applicable = $pos.parent.canReplaceWith(index, index + 1, nodeType);
+					}
+				});
+			}
+			if (!applicable) return false;
+			if (dispatch) {
+				let tr = state.tr;
+				for (let i = 0; i < state.selection.ranges.length; i++) {
+					let { $from: { pos: from }, $to: { pos: to } } = state.selection.ranges[i];
+					tr.setBlockType(from, to, nodeType, attrs);
+				}
+				dispatch(tr.scrollIntoView());
+			}
+			return true;
+		};
+	}
+	function markApplies(doc, ranges, type, enterAtoms) {
+		for (let i = 0; i < ranges.length; i++) {
+			let { $from, $to } = ranges[i];
+			let can = $from.depth == 0 ? doc.inlineContent && doc.type.allowsMarkType(type) : false;
+			doc.nodesBetween($from.pos, $to.pos, (node, pos) => {
+				if (can || !enterAtoms && node.isAtom && node.isInline && pos >= $from.pos && pos + node.nodeSize <= $to.pos) return false;
+				can = node.inlineContent && node.type.allowsMarkType(type);
+			});
+			if (can) return true;
+		}
+		return false;
+	}
+	function removeInlineAtoms(ranges) {
+		let result = [];
+		for (let i = 0; i < ranges.length; i++) {
+			let { $from, $to } = ranges[i];
+			$from.doc.nodesBetween($from.pos, $to.pos, (node, pos) => {
+				if (node.isAtom && node.content.size && node.isInline && pos >= $from.pos && pos + node.nodeSize <= $to.pos) {
+					if (pos + 1 > $from.pos) result.push(new SelectionRange($from, $from.doc.resolve(pos + 1)));
+					$from = $from.doc.resolve(pos + 1 + node.content.size);
+					return false;
+				}
+			});
+			if ($from.pos < $to.pos) result.push(new SelectionRange($from, $to));
+		}
+		return result;
+	}
+	/**
+	Create a command function that toggles the given mark with the
+	given attributes. Will return `false` when the current selection
+	doesn't support that mark. This will remove the mark if any marks
+	of that type exist in the selection, or add it otherwise. If the
+	selection is empty, this applies to the [stored
+	marks](https://prosemirror.net/docs/ref/#state.EditorState.storedMarks) instead of a range of the
+	document.
+	*/
+	function toggleMark(markType, attrs = null, options) {
+		let removeWhenPresent = (options && options.removeWhenPresent) !== false;
+		let enterAtoms = (options && options.enterInlineAtoms) !== false;
+		let dropSpace = !(options && options.includeWhitespace);
+		return function(state, dispatch) {
+			let { empty, $cursor, ranges } = state.selection;
+			if (empty && !$cursor || !markApplies(state.doc, ranges, markType, enterAtoms)) return false;
+			if (dispatch) if ($cursor) if (markType.isInSet(state.storedMarks || $cursor.marks())) dispatch(state.tr.removeStoredMark(markType));
+			else dispatch(state.tr.addStoredMark(markType.create(attrs)));
+			else {
+				let add, tr = state.tr;
+				if (!enterAtoms) ranges = removeInlineAtoms(ranges);
+				if (removeWhenPresent) add = !ranges.some((r) => state.doc.rangeHasMark(r.$from.pos, r.$to.pos, markType));
+				else add = !ranges.every((r) => {
+					let missing = false;
+					tr.doc.nodesBetween(r.$from.pos, r.$to.pos, (node, pos, parent) => {
+						if (missing) return false;
+						missing = !markType.isInSet(node.marks) && !!parent && parent.type.allowsMarkType(markType) && !(node.isText && /^\s*$/.test(node.textBetween(Math.max(0, r.$from.pos - pos), Math.min(node.nodeSize, r.$to.pos - pos))));
+					});
+					return !missing;
+				});
+				for (let i = 0; i < ranges.length; i++) {
+					let { $from, $to } = ranges[i];
+					if (!add) tr.removeMark($from.pos, $to.pos, markType);
+					else {
+						let from = $from.pos, to = $to.pos, start = $from.nodeAfter, end = $to.nodeBefore;
+						let spaceStart = dropSpace && start && start.isText ? /^\s*/.exec(start.text)[0].length : 0;
+						let spaceEnd = dropSpace && end && end.isText ? /\s*$/.exec(end.text)[0].length : 0;
+						if (from + spaceStart < to) {
+							from += spaceStart;
+							to -= spaceEnd;
+						}
+						tr.addMark(from, to, markType.create(attrs));
+					}
+				}
+				dispatch(tr.scrollIntoView());
+			}
+			return true;
+		};
+	}
 	/**
 	Combine a number of command functions into a single function (which
 	calls them one by one until one returns true).
@@ -36371,10 +36531,13 @@
 	};
 	//#endregion
 	//#region src/editor.js
+	window.ProseMirror.wrapIn = wrapIn;
+	window.ProseMirror.setBlockType = setBlockType;
 	var mySchema = new Schema$1({
 		nodes: addListNodes(schema$1.spec.nodes, "paragraph block*", "block"),
 		marks: schema$1.spec.marks
 	});
+	window.ProseMirror.toggleMark = toggleMark;
 	var ydoc = new Doc();
 	var provider = new WebrtcProvider("prosemirror-room", ydoc);
 	var yXmlFragment = ydoc.getXmlFragment("prosemirror");
