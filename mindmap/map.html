@@ -52,9 +52,9 @@
         async function init() {
             try {
                 // Загружаем зависимости
-                await loadScript('libs/d3.js');
-                await loadScript('libs/markmap-lib.umd.js');
-                await loadScript('libs/markmap-view.umd.js');
+                await loadScript('d3.js');
+                await loadScript('markmap-lib.umd.js');
+                await loadScript('markmap-view.umd.js');
 
                 const container = document.getElementById('markmap-container');
                 const transformer = new window.markmapLib.Transformer();
