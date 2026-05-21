@@ -27,6 +27,20 @@
     })   }); 
         // Сохраняем глобально (для доступа из других скриптов)
         window.editorView = view; 
+		const { ydoc, yXmlFragment, provider, ySyncPlugin, yCursorPlugin } = window.ProseMirror;
+
+const view = new EditorView(document.getElementById('editor'), {
+    state: EditorState.create({
+        schema: mySchema,
+        doc: initialDoc,
+        plugins: [
+            ySyncPlugin(yXmlFragment),
+            yCursorPlugin(provider.awareness),
+            history(),
+            keymap(baseKeymap)
+        ]
+    })
+});
 		// Привязка кнопок форматирования
 const formatBtn = (id, cmd, markName = null) => {
     const btn = document.getElementById(id);
@@ -188,6 +202,15 @@ if (loadBtn) {
     }, 500)
  
         ;  } })();
+		const savePngBtn = document.getElementById('save-png');
+if (savePngBtn) {
+    savePngBtn.addEventListener('click', () => {
+        const iframe = document.getElementById('mapFrame');
+        if (iframe && iframe.contentWindow && iframe.contentWindow.saveAsPNG) {
+            iframe.contentWindow.saveAsPNG();
+        }
+    });
+};
 // Выпадающие меню по клику
 (function() {
     const dropdowns = document.querySelectorAll('.dropdown');

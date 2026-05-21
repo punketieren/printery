@@ -123,4 +123,15 @@
             setTimeout(() => {
                 if (iframe?.contentWindow?.currentMap) {
                     iframe.contentWindow.currentMap.fit();
-   }    }, 100);  };  } })();
+   }    }, 100);  };  } });// Сохранение PNG из карты
+const savePngBtn = document.getElementById('save-png');
+if (savePngBtn) {
+    savePngBtn.addEventListener('click', () => {
+        const iframe = document.getElementById('mapFrame');
+        if (iframe && iframe.contentWindow && iframe.contentWindow.saveAsPNG) {
+            iframe.contentWindow.saveAsPNG();
+        } else {
+            console.warn('Функция saveAsPNG не найдена в карте');
+        }
+    });
+}();

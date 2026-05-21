@@ -3946,7 +3946,7 @@
 		}
 		return null;
 	}
-	function lift(tr, range, target) {
+	function lift$1(tr, range, target) {
 		let { $from, $to, depth } = range;
 		let gapStart = $from.before(depth + 1), gapEnd = $to.after(depth + 1);
 		let start = gapStart, end = gapEnd;
@@ -4794,7 +4794,7 @@
 		sure the lift is valid.
 		*/
 		lift(range, target) {
-			lift(this, range, target);
+			lift$1(this, range, target);
 			return this;
 		}
 		/**
@@ -11228,6 +11228,17 @@
 		}
 		return null;
 	}
+	/**
+	Lift the selected block, or the closest ancestor block of the
+	selection that can be lifted, out of its parent node.
+	*/
+	var lift = (state, dispatch) => {
+		let { $from, $to } = state.selection;
+		let range = $from.blockRange($to), target = range && liftTarget(range);
+		if (target == null) return false;
+		if (dispatch) dispatch(state.tr.lift(range, target).scrollIntoView());
+		return true;
+	};
 	/**
 	If the selection is in a node whose type has a truthy
 	[`code`](https://prosemirror.net/docs/ref/#model.NodeSpec.code) property in its spec, replace the
@@ -25665,7 +25676,7 @@
 	function isString(obj) {
 		return _class(obj) === "[object String]";
 	}
-	function isObject$1(obj) {
+	function isObject$2(obj) {
 		return _class(obj) === "[object Object]";
 	}
 	function isRegExp(obj) {
@@ -25758,7 +25769,7 @@
 				link: null
 			};
 			self.__compiled__[name] = compiled;
-			if (isObject$1(val)) {
+			if (isObject$2(val)) {
 				if (isRegExp(val.validate)) compiled.validate = createValidator(val.validate);
 				else if (isFunction(val.validate)) compiled.validate = val.validate;
 				else schemaError(name, val);
@@ -28355,8 +28366,21 @@
 	var getRandomValues = crypto.getRandomValues.bind(crypto);
 	//#endregion
 	//#region node_modules/lib0/random.js
+	/**
+	* Isomorphic module for true random numbers / buffers / uuids.
+	*
+	* Attention: falls back to Math.random if the browser does not support crypto.
+	*
+	* @module random
+	*/
 	var rand = Math.random;
 	var uint32 = () => getRandomValues(new Uint32Array(1))[0];
+	/**
+	* @template T
+	* @param {Array<T>} arr
+	* @return {T}
+	*/
+	var oneOf$1 = (arr) => arr[floor(rand() * arr.length)];
 	var uuidv4Template = "10000000-1000-4000-8000-100000000000";
 	/**
 	* @return {string}
@@ -28508,7 +28532,7 @@
 	* @param {any} o
 	* @return {o is { [k:string]:any }}
 	*/
-	var isObject = (o) => typeof o === "object";
+	var isObject$1 = (o) => typeof o === "object";
 	/**
 	* Object.assign
 	*/
@@ -28990,7 +29014,7 @@
 		if (a == null || b == null || a.constructor !== b.constructor) return false;
 		if (a[EqualityTraitSymbol]) return equals(a, b);
 		if (isArray(a)) return every$1(a, (aitem) => some(b, (bitem) => shapeExtends(aitem, bitem)));
-		else if (isObject(a)) return every(a, (aitem, akey) => shapeExtends(aitem, b[akey]));
+		else if (isObject$1(a)) return every(a, (aitem, akey) => shapeExtends(aitem, b[akey]));
 		/* c8 ignore next */
 		return false;
 	};
@@ -29883,6 +29907,33 @@
 	* @return {string}
 	*/
 	var stringify = JSON.stringify;
+	//#endregion
+	//#region node_modules/lib0/eventloop.js
+	/**
+	* @typedef {Object} TimeoutObject
+	* @property {function} TimeoutObject.destroy
+	*/
+	/**
+	* @param {function(number):void} clearFunction
+	*/
+	var createTimeoutClass = (clearFunction) => class TT {
+		/**
+		* @param {number} timeoutId
+		*/
+		constructor(timeoutId) {
+			this._ = timeoutId;
+		}
+		destroy() {
+			clearFunction(this._);
+		}
+	};
+	var Timeout = createTimeoutClass(clearTimeout);
+	/**
+	* @param {number} timeout
+	* @param {function} callback
+	* @return {TimeoutObject}
+	*/
+	var timeout = (timeout, callback) => new Timeout(setTimeout(callback, timeout));
 	//#endregion
 	//#region node_modules/lib0/symbol.js
 	/**
@@ -31729,6 +31780,226 @@
 		for (const [key, value] of type.doc.share.entries()) if (value === type) return key;
 		throw unexpectedCase();
 	};
+	/**
+	* Check if `parent` is a parent of `child`.
+	*
+	* @param {AbstractType<any>} parent
+	* @param {Item|null} child
+	* @return {Boolean} Whether `parent` is a parent of `child`.
+	*
+	* @private
+	* @function
+	*/
+	var isParentOf = (parent, child) => {
+		while (child !== null) {
+			if (child.parent === parent) return true;
+			child = child.parent._item;
+		}
+		return false;
+	};
+	/**
+	* A relative position is based on the Yjs model and is not affected by document changes.
+	* E.g. If you place a relative position before a certain character, it will always point to this character.
+	* If you place a relative position at the end of a type, it will always point to the end of the type.
+	*
+	* A numeric position is often unsuited for user selections, because it does not change when content is inserted
+	* before or after.
+	*
+	* ```Insert(0, 'x')('a|bc') = 'xa|bc'``` Where | is the relative position.
+	*
+	* One of the properties must be defined.
+	*
+	* @example
+	*   // Current cursor position is at position 10
+	*   const relativePosition = createRelativePositionFromIndex(yText, 10)
+	*   // modify yText
+	*   yText.insert(0, 'abc')
+	*   yText.delete(3, 10)
+	*   // Compute the cursor position
+	*   const absolutePosition = createAbsolutePositionFromRelativePosition(y, relativePosition)
+	*   absolutePosition.type === yText // => true
+	*   console.log('cursor location is ' + absolutePosition.index) // => cursor location is 3
+	*
+	*/
+	var RelativePosition = class {
+		/**
+		* @param {ID|null} type
+		* @param {string|null} tname
+		* @param {ID|null} item
+		* @param {number} assoc
+		*/
+		constructor(type, tname, item, assoc = 0) {
+			/**
+			* @type {ID|null}
+			*/
+			this.type = type;
+			/**
+			* @type {string|null}
+			*/
+			this.tname = tname;
+			/**
+			* @type {ID | null}
+			*/
+			this.item = item;
+			/**
+			* A relative position is associated to a specific character. By default
+			* assoc >= 0, the relative position is associated to the character
+			* after the meant position.
+			* I.e. position 1 in 'ab' is associated to character 'b'.
+			*
+			* If assoc < 0, then the relative position is associated to the character
+			* before the meant position.
+			*
+			* @type {number}
+			*/
+			this.assoc = assoc;
+		}
+	};
+	/**
+	* @param {any} json
+	* @return {RelativePosition}
+	*
+	* @function
+	*/
+	var createRelativePositionFromJSON = (json) => new RelativePosition(json.type == null ? null : createID(json.type.client, json.type.clock), json.tname ?? null, json.item == null ? null : createID(json.item.client, json.item.clock), json.assoc == null ? 0 : json.assoc);
+	var AbsolutePosition = class {
+		/**
+		* @param {AbstractType<any>} type
+		* @param {number} index
+		* @param {number} [assoc]
+		*/
+		constructor(type, index, assoc = 0) {
+			/**
+			* @type {AbstractType<any>}
+			*/
+			this.type = type;
+			/**
+			* @type {number}
+			*/
+			this.index = index;
+			this.assoc = assoc;
+		}
+	};
+	/**
+	* @param {AbstractType<any>} type
+	* @param {number} index
+	* @param {number} [assoc]
+	*
+	* @function
+	*/
+	var createAbsolutePosition = (type, index, assoc = 0) => new AbsolutePosition(type, index, assoc);
+	/**
+	* @param {AbstractType<any>} type
+	* @param {ID|null} item
+	* @param {number} [assoc]
+	*
+	* @function
+	*/
+	var createRelativePosition$1 = (type, item, assoc) => {
+		let typeid = null;
+		let tname = null;
+		if (type._item === null) tname = findRootTypeKey(type);
+		else typeid = createID(type._item.id.client, type._item.id.clock);
+		return new RelativePosition(typeid, tname, item, assoc);
+	};
+	/**
+	* Create a relativePosition based on a absolute position.
+	*
+	* @param {AbstractType<any>} type The base type (e.g. YText or YArray).
+	* @param {number} index The absolute position.
+	* @param {number} [assoc]
+	* @return {RelativePosition}
+	*
+	* @function
+	*/
+	var createRelativePositionFromTypeIndex = (type, index, assoc = 0) => {
+		let t = type._start;
+		if (assoc < 0) {
+			if (index === 0) return createRelativePosition$1(type, null, assoc);
+			index--;
+		}
+		while (t !== null) {
+			if (!t.deleted && t.countable) {
+				if (t.length > index) return createRelativePosition$1(type, createID(t.id.client, t.id.clock + index), assoc);
+				index -= t.length;
+			}
+			if (t.right === null && assoc < 0) return createRelativePosition$1(type, t.lastId, assoc);
+			t = t.right;
+		}
+		return createRelativePosition$1(type, null, assoc);
+	};
+	/**
+	* @param {StructStore} store
+	* @param {ID} id
+	*/
+	var getItemWithOffset = (store, id) => {
+		const item = getItem(store, id);
+		return {
+			item,
+			diff: id.clock - item.id.clock
+		};
+	};
+	/**
+	* Transform a relative position to an absolute position.
+	*
+	* If you want to share the relative position with other users, you should set
+	* `followUndoneDeletions` to false to get consistent results across all clients.
+	*
+	* When calculating the absolute position, we try to follow the "undone deletions". This yields
+	* better results for the user who performed undo. However, only the user who performed the undo
+	* will get the better results, the other users don't know which operations recreated a deleted
+	* range of content. There is more information in this ticket: https://github.com/yjs/yjs/issues/638
+	*
+	* @param {RelativePosition} rpos
+	* @param {Doc} doc
+	* @param {boolean} followUndoneDeletions - whether to follow undone deletions - see https://github.com/yjs/yjs/issues/638
+	* @return {AbsolutePosition|null}
+	*
+	* @function
+	*/
+	var createAbsolutePositionFromRelativePosition = (rpos, doc, followUndoneDeletions = true) => {
+		const store = doc.store;
+		const rightID = rpos.item;
+		const typeID = rpos.type;
+		const tname = rpos.tname;
+		const assoc = rpos.assoc;
+		let type = null;
+		let index = 0;
+		if (rightID !== null) {
+			if (getState(store, rightID.client) <= rightID.clock) return null;
+			const res = followUndoneDeletions ? followRedone(store, rightID) : getItemWithOffset(store, rightID);
+			const right = res.item;
+			if (!(right instanceof Item)) return null;
+			type = right.parent;
+			if (type._item === null || !type._item.deleted) {
+				index = right.deleted || !right.countable ? 0 : res.diff + (assoc >= 0 ? 0 : 1);
+				let n = right.left;
+				while (n !== null) {
+					if (!n.deleted && n.countable) index += n.length;
+					n = n.left;
+				}
+			}
+		} else {
+			if (tname !== null) type = doc.get(tname);
+			else if (typeID !== null) {
+				if (getState(store, typeID.client) <= typeID.clock) return null;
+				const { item } = followUndoneDeletions ? followRedone(store, typeID) : { item: getItem(store, typeID) };
+				if (item instanceof Item && item.content instanceof ContentType) type = item.content.type;
+				else return null;
+			} else throw unexpectedCase();
+			if (assoc >= 0) index = type._length;
+			else index = 0;
+		}
+		return createAbsolutePosition(type, index, rpos.assoc);
+	};
+	/**
+	* @param {RelativePosition|null} a
+	* @param {RelativePosition|null} b
+	* @return {boolean}
+	*
+	* @function
+	*/
+	var compareRelativePositions = (a, b) => a === b || a !== null && b !== null && a.tname === b.tname && compareIDs(a.item, b.item) && compareIDs(a.type, b.type) && a.assoc === b.assoc;
 	var Snapshot = class {
 		/**
 		* @param {DeleteSet} ds
@@ -31754,13 +32025,18 @@
 	var createSnapshot = (ds, sm) => new Snapshot(ds, sm);
 	createSnapshot(createDeleteSet(), /* @__PURE__ */ new Map());
 	/**
+	* @param {Doc} doc
+	* @return {Snapshot}
+	*/
+	var snapshot = (doc) => createSnapshot(createDeleteSetFromStructStore(doc.store), getStateVector(doc.store));
+	/**
 	* @param {Item} item
 	* @param {Snapshot|undefined} snapshot
 	*
 	* @protected
 	* @function
 	*/
-	var isVisible = (item, snapshot) => snapshot === void 0 ? !item.deleted : snapshot.sv.has(item.id.client) && (snapshot.sv.get(item.id.client) || 0) > item.id.clock && !isDeleted(snapshot.ds, item.id);
+	var isVisible$1 = (item, snapshot) => snapshot === void 0 ? !item.deleted : snapshot.sv.has(item.id.client) && (snapshot.sv.get(item.id.client) || 0) > item.id.clock && !isDeleted(snapshot.ds, item.id);
 	/**
 	* @param {Transaction} transaction
 	* @param {Snapshot} snapshot
@@ -32307,6 +32583,340 @@
 			}
 		}
 		return result;
+	};
+	var StackItem = class {
+		/**
+		* @param {DeleteSet} deletions
+		* @param {DeleteSet} insertions
+		*/
+		constructor(deletions, insertions) {
+			this.insertions = insertions;
+			this.deletions = deletions;
+			/**
+			* Use this to save and restore metadata like selection range
+			*/
+			this.meta = /* @__PURE__ */ new Map();
+		}
+	};
+	/**
+	* @param {Transaction} tr
+	* @param {UndoManager} um
+	* @param {StackItem} stackItem
+	*/
+	var clearUndoManagerStackItem = (tr, um, stackItem) => {
+		iterateDeletedStructs(tr, stackItem.deletions, (item) => {
+			if (item instanceof Item && um.scope.some((type) => type === tr.doc || isParentOf(type, item))) keepItem(item, false);
+		});
+	};
+	/**
+	* @param {UndoManager} undoManager
+	* @param {Array<StackItem>} stack
+	* @param {'undo'|'redo'} eventType
+	* @return {StackItem?}
+	*/
+	var popStackItem = (undoManager, stack, eventType) => {
+		/**
+		* Keep a reference to the transaction so we can fire the event with the changedParentTypes
+		* @type {any}
+		*/
+		let _tr = null;
+		const doc = undoManager.doc;
+		const scope = undoManager.scope;
+		transact(doc, (transaction) => {
+			while (stack.length > 0 && undoManager.currStackItem === null) {
+				const store = doc.store;
+				const stackItem = stack.pop();
+				/**
+				* @type {Set<Item>}
+				*/
+				const itemsToRedo = /* @__PURE__ */ new Set();
+				/**
+				* @type {Array<Item>}
+				*/
+				const itemsToDelete = [];
+				let performedChange = false;
+				iterateDeletedStructs(transaction, stackItem.insertions, (struct) => {
+					if (struct instanceof Item) {
+						if (struct.redone !== null) {
+							let { item, diff } = followRedone(store, struct.id);
+							if (diff > 0) item = getItemCleanStart(transaction, createID(item.id.client, item.id.clock + diff));
+							struct = item;
+						}
+						if (!struct.deleted && scope.some((type) => type === transaction.doc || isParentOf(type, struct))) itemsToDelete.push(struct);
+					}
+				});
+				iterateDeletedStructs(transaction, stackItem.deletions, (struct) => {
+					if (struct instanceof Item && scope.some((type) => type === transaction.doc || isParentOf(type, struct)) && !isDeleted(stackItem.insertions, struct.id)) itemsToRedo.add(struct);
+				});
+				itemsToRedo.forEach((struct) => {
+					performedChange = redoItem(transaction, struct, itemsToRedo, stackItem.insertions, undoManager.ignoreRemoteMapChanges, undoManager) !== null || performedChange;
+				});
+				for (let i = itemsToDelete.length - 1; i >= 0; i--) {
+					const item = itemsToDelete[i];
+					if (undoManager.deleteFilter(item)) {
+						item.delete(transaction);
+						performedChange = true;
+					}
+				}
+				undoManager.currStackItem = performedChange ? stackItem : null;
+			}
+			transaction.changed.forEach((subProps, type) => {
+				if (subProps.has(null) && type._searchMarker) type._searchMarker.length = 0;
+			});
+			_tr = transaction;
+		}, undoManager);
+		const res = undoManager.currStackItem;
+		if (res != null) {
+			const changedParentTypes = _tr.changedParentTypes;
+			undoManager.emit("stack-item-popped", [{
+				stackItem: res,
+				type: eventType,
+				changedParentTypes,
+				origin: undoManager
+			}, undoManager]);
+			undoManager.currStackItem = null;
+		}
+		return res;
+	};
+	/**
+	* @typedef {Object} UndoManagerOptions
+	* @property {number} [UndoManagerOptions.captureTimeout=500]
+	* @property {function(Transaction):boolean} [UndoManagerOptions.captureTransaction] Do not capture changes of a Transaction if result false.
+	* @property {function(Item):boolean} [UndoManagerOptions.deleteFilter=()=>true] Sometimes
+	* it is necessary to filter what an Undo/Redo operation can delete. If this
+	* filter returns false, the type/item won't be deleted even it is in the
+	* undo/redo scope.
+	* @property {Set<any>} [UndoManagerOptions.trackedOrigins=new Set([null])]
+	* @property {boolean} [ignoreRemoteMapChanges] Experimental. By default, the UndoManager will never overwrite remote changes. Enable this property to enable overwriting remote changes on key-value changes (Y.Map, properties on Y.Xml, etc..).
+	* @property {Doc} [doc] The document that this UndoManager operates on. Only needed if typeScope is empty.
+	*/
+	/**
+	* @typedef {Object} StackItemEvent
+	* @property {StackItem} StackItemEvent.stackItem
+	* @property {any} StackItemEvent.origin
+	* @property {'undo'|'redo'} StackItemEvent.type
+	* @property {Map<AbstractType<YEvent<any>>,Array<YEvent<any>>>} StackItemEvent.changedParentTypes
+	*/
+	/**
+	* Fires 'stack-item-added' event when a stack item was added to either the undo- or
+	* the redo-stack. You may store additional stack information via the
+	* metadata property on `event.stackItem.meta` (it is a `Map` of metadata properties).
+	* Fires 'stack-item-popped' event when a stack item was popped from either the
+	* undo- or the redo-stack. You may restore the saved stack information from `event.stackItem.meta`.
+	*
+	* @extends {ObservableV2<{'stack-item-added':function(StackItemEvent, UndoManager):void, 'stack-item-popped': function(StackItemEvent, UndoManager):void, 'stack-cleared': function({ undoStackCleared: boolean, redoStackCleared: boolean }):void, 'stack-item-updated': function(StackItemEvent, UndoManager):void }>}
+	*/
+	var UndoManager = class extends ObservableV2 {
+		/**
+		* @param {Doc|AbstractType<any>|Array<AbstractType<any>>} typeScope Limits the scope of the UndoManager. If this is set to a ydoc instance, all changes on that ydoc will be undone. If set to a specific type, only changes on that type or its children will be undone. Also accepts an array of types.
+		* @param {UndoManagerOptions} options
+		*/
+		constructor(typeScope, { captureTimeout = 500, captureTransaction = (_tr) => true, deleteFilter = () => true, trackedOrigins = new Set([null]), ignoreRemoteMapChanges = false, doc = isArray(typeScope) ? typeScope[0].doc : typeScope instanceof Doc ? typeScope : typeScope.doc } = {}) {
+			super();
+			/**
+			* @type {Array<AbstractType<any> | Doc>}
+			*/
+			this.scope = [];
+			this.doc = doc;
+			this.addToScope(typeScope);
+			this.deleteFilter = deleteFilter;
+			trackedOrigins.add(this);
+			this.trackedOrigins = trackedOrigins;
+			this.captureTransaction = captureTransaction;
+			/**
+			* @type {Array<StackItem>}
+			*/
+			this.undoStack = [];
+			/**
+			* @type {Array<StackItem>}
+			*/
+			this.redoStack = [];
+			/**
+			* Whether the client is currently undoing (calling UndoManager.undo)
+			*
+			* @type {boolean}
+			*/
+			this.undoing = false;
+			this.redoing = false;
+			/**
+			* The currently popped stack item if UndoManager.undoing or UndoManager.redoing
+			*
+			* @type {StackItem|null}
+			*/
+			this.currStackItem = null;
+			this.lastChange = 0;
+			this.ignoreRemoteMapChanges = ignoreRemoteMapChanges;
+			this.captureTimeout = captureTimeout;
+			/**
+			* @param {Transaction} transaction
+			*/
+			this.afterTransactionHandler = (transaction) => {
+				if (!this.captureTransaction(transaction) || !this.scope.some((type) => transaction.changedParentTypes.has(type) || type === this.doc) || !this.trackedOrigins.has(transaction.origin) && (!transaction.origin || !this.trackedOrigins.has(transaction.origin.constructor))) return;
+				const undoing = this.undoing;
+				const redoing = this.redoing;
+				const stack = undoing ? this.redoStack : this.undoStack;
+				if (undoing) this.stopCapturing();
+				else if (!redoing) this.clear(false, true);
+				const insertions = new DeleteSet();
+				transaction.afterState.forEach((endClock, client) => {
+					const startClock = transaction.beforeState.get(client) || 0;
+					const len = endClock - startClock;
+					if (len > 0) addToDeleteSet(insertions, client, startClock, len);
+				});
+				const now = getUnixTime();
+				let didAdd = false;
+				if (this.lastChange > 0 && now - this.lastChange < this.captureTimeout && stack.length > 0 && !undoing && !redoing) {
+					const lastOp = stack[stack.length - 1];
+					lastOp.deletions = mergeDeleteSets([lastOp.deletions, transaction.deleteSet]);
+					lastOp.insertions = mergeDeleteSets([lastOp.insertions, insertions]);
+				} else {
+					stack.push(new StackItem(transaction.deleteSet, insertions));
+					didAdd = true;
+				}
+				if (!undoing && !redoing) this.lastChange = now;
+				iterateDeletedStructs(
+					transaction,
+					transaction.deleteSet,
+					/** @param {Item|GC} item */
+					(item) => {
+						if (item instanceof Item && this.scope.some((type) => type === transaction.doc || isParentOf(type, item))) keepItem(item, true);
+					}
+				);
+				/**
+				* @type {[StackItemEvent, UndoManager]}
+				*/
+				const changeEvent = [{
+					stackItem: stack[stack.length - 1],
+					origin: transaction.origin,
+					type: undoing ? "redo" : "undo",
+					changedParentTypes: transaction.changedParentTypes
+				}, this];
+				if (didAdd) this.emit("stack-item-added", changeEvent);
+				else this.emit("stack-item-updated", changeEvent);
+			};
+			this.doc.on("afterTransaction", this.afterTransactionHandler);
+			this.doc.on("destroy", () => {
+				this.destroy();
+			});
+		}
+		/**
+		* Extend the scope.
+		*
+		* @param {Array<AbstractType<any> | Doc> | AbstractType<any> | Doc} ytypes
+		*/
+		addToScope(ytypes) {
+			const tmpSet = new Set(this.scope);
+			ytypes = isArray(ytypes) ? ytypes : [ytypes];
+			ytypes.forEach((ytype) => {
+				if (!tmpSet.has(ytype)) {
+					tmpSet.add(ytype);
+					if (ytype instanceof AbstractType ? ytype.doc !== this.doc : ytype !== this.doc) warn("[yjs#509] Not same Y.Doc");
+					this.scope.push(ytype);
+				}
+			});
+		}
+		/**
+		* @param {any} origin
+		*/
+		addTrackedOrigin(origin) {
+			this.trackedOrigins.add(origin);
+		}
+		/**
+		* @param {any} origin
+		*/
+		removeTrackedOrigin(origin) {
+			this.trackedOrigins.delete(origin);
+		}
+		clear(clearUndoStack = true, clearRedoStack = true) {
+			if (clearUndoStack && this.canUndo() || clearRedoStack && this.canRedo()) this.doc.transact((tr) => {
+				if (clearUndoStack) {
+					this.undoStack.forEach((item) => clearUndoManagerStackItem(tr, this, item));
+					this.undoStack = [];
+				}
+				if (clearRedoStack) {
+					this.redoStack.forEach((item) => clearUndoManagerStackItem(tr, this, item));
+					this.redoStack = [];
+				}
+				this.emit("stack-cleared", [{
+					undoStackCleared: clearUndoStack,
+					redoStackCleared: clearRedoStack
+				}]);
+			});
+		}
+		/**
+		* UndoManager merges Undo-StackItem if they are created within time-gap
+		* smaller than `options.captureTimeout`. Call `um.stopCapturing()` so that the next
+		* StackItem won't be merged.
+		*
+		*
+		* @example
+		*     // without stopCapturing
+		*     ytext.insert(0, 'a')
+		*     ytext.insert(1, 'b')
+		*     um.undo()
+		*     ytext.toString() // => '' (note that 'ab' was removed)
+		*     // with stopCapturing
+		*     ytext.insert(0, 'a')
+		*     um.stopCapturing()
+		*     ytext.insert(0, 'b')
+		*     um.undo()
+		*     ytext.toString() // => 'a' (note that only 'b' was removed)
+		*
+		*/
+		stopCapturing() {
+			this.lastChange = 0;
+		}
+		/**
+		* Undo last changes on type.
+		*
+		* @return {StackItem?} Returns StackItem if a change was applied
+		*/
+		undo() {
+			this.undoing = true;
+			let res;
+			try {
+				res = popStackItem(this, this.undoStack, "undo");
+			} finally {
+				this.undoing = false;
+			}
+			return res;
+		}
+		/**
+		* Redo last undo operation.
+		*
+		* @return {StackItem?} Returns StackItem if a change was applied
+		*/
+		redo() {
+			this.redoing = true;
+			let res;
+			try {
+				res = popStackItem(this, this.redoStack, "redo");
+			} finally {
+				this.redoing = false;
+			}
+			return res;
+		}
+		/**
+		* Are undo steps available?
+		*
+		* @return {boolean} `true` if undo is possible
+		*/
+		canUndo() {
+			return this.undoStack.length > 0;
+		}
+		/**
+		* Are redo steps available?
+		*
+		* @return {boolean} `true` if redo is possible
+		*/
+		canRedo() {
+			return this.redoStack.length > 0;
+		}
+		destroy() {
+			this.trackedOrigins.delete(this);
+			this.doc.off("afterTransaction", this.afterTransactionHandler);
+			super.destroy();
+		}
 	};
 	/**
 	* @param {UpdateDecoderV1 | UpdateDecoderV2} decoder
@@ -33188,6 +33798,26 @@
 		return cs;
 	};
 	/**
+	* @param {AbstractType<any>} type
+	* @param {Snapshot} snapshot
+	* @return {Array<any>}
+	*
+	* @private
+	* @function
+	*/
+	var typeListToArraySnapshot = (type, snapshot) => {
+		const cs = [];
+		let n = type._start;
+		while (n !== null) {
+			if (n.countable && isVisible$1(n, snapshot)) {
+				const c = n.content.getContent();
+				for (let i = 0; i < c.length; i++) cs.push(c[i]);
+			}
+			n = n.right;
+		}
+		return cs;
+	};
+	/**
 	* Executes a provided function on once on every element of this YArray.
 	*
 	* @param {AbstractType<any>} type
@@ -33544,7 +34174,7 @@
 			*/
 			let v = value;
 			while (v !== null && (!snapshot.sv.has(v.id.client) || v.id.clock >= (snapshot.sv.get(v.id.client) || 0))) v = v.left;
-			if (v !== null && isVisible(v, snapshot)) res[key] = v.content.getContent()[v.length - 1];
+			if (v !== null && isVisible$1(v, snapshot)) res[key] = v.content.getContent()[v.length - 1];
 		});
 		return res;
 	};
@@ -34041,7 +34671,7 @@
 	* @param {any} b
 	* @return {boolean}
 	*/
-	var equalAttrs = (a, b) => a === b || typeof a === "object" && typeof b === "object" && a && b && equalFlat(a, b);
+	var equalAttrs$1 = (a, b) => a === b || typeof a === "object" && typeof b === "object" && a && b && equalFlat(a, b);
 	var ItemTextListPosition = class {
 		/**
 		* @param {Item|null} left
@@ -34128,7 +34758,7 @@
 	* @function
 	*/
 	var insertNegatedAttributes = (transaction, parent, currPos, negatedAttributes) => {
-		while (currPos.right !== null && (currPos.right.deleted === true || currPos.right.content.constructor === ContentFormat && equalAttrs(
+		while (currPos.right !== null && (currPos.right.deleted === true || currPos.right.content.constructor === ContentFormat && equalAttrs$1(
 			negatedAttributes.get(
 				/** @type {ContentFormat} */
 				currPos.right.content.key
@@ -34175,7 +34805,7 @@
 	var minimizeAttributeChanges = (currPos, attributes) => {
 		while (true) {
 			if (currPos.right === null) break;
-			else if (currPos.right.deleted || currPos.right.content.constructor === ContentFormat && equalAttrs(
+			else if (currPos.right.deleted || currPos.right.content.constructor === ContentFormat && equalAttrs$1(
 				attributes[currPos.right.content.key] ?? null,
 				/** @type {ContentFormat} */
 				currPos.right.content.value
@@ -34201,7 +34831,7 @@
 		for (const key in attributes) {
 			const val = attributes[key];
 			const currentVal = currPos.currentAttributes.get(key) ?? null;
-			if (!equalAttrs(currentVal, val)) {
+			if (!equalAttrs$1(currentVal, val)) {
 				negatedAttributes.set(key, currentVal);
 				const { left, right } = currPos;
 				currPos.right = new Item(createID(ownClientId, getState(doc.store, ownClientId)), left, left && left.lastId, right, right && right.id, parent, null, new ContentFormat(key, val));
@@ -34260,7 +34890,7 @@
 					const { key, value } = currPos.right.content;
 					const attr = attributes[key];
 					if (attr !== void 0) {
-						if (equalAttrs(attr, value)) negatedAttributes.delete(key);
+						if (equalAttrs$1(attr, value)) negatedAttributes.delete(key);
 						else {
 							if (length === 0) break iterationLoop;
 							negatedAttributes.set(key, value);
@@ -34643,16 +35273,16 @@
 								const { key, value } = item.content;
 								if (this.adds(item)) {
 									if (!this.deletes(item)) {
-										if (!equalAttrs(currentAttributes.get(key) ?? null, value)) {
+										if (!equalAttrs$1(currentAttributes.get(key) ?? null, value)) {
 											if (action === "retain") addOp();
-											if (equalAttrs(value, oldAttributes.get(key) ?? null)) delete attributes[key];
+											if (equalAttrs$1(value, oldAttributes.get(key) ?? null)) delete attributes[key];
 											else attributes[key] = value;
 										} else if (value !== null) item.delete(transaction);
 									}
 								} else if (this.deletes(item)) {
 									oldAttributes.set(key, value);
 									const curVal = currentAttributes.get(key) ?? null;
-									if (!equalAttrs(curVal, value)) {
+									if (!equalAttrs$1(curVal, value)) {
 										if (action === "retain") addOp();
 										attributes[key] = curVal;
 									}
@@ -34660,7 +35290,7 @@
 									oldAttributes.set(key, value);
 									const attr = attributes[key];
 									if (attr !== void 0) {
-										if (!equalAttrs(attr, value)) {
+										if (!equalAttrs$1(attr, value)) {
 											if (action === "retain") addOp();
 											if (value === null) delete attributes[key];
 											else attributes[key] = value;
@@ -34861,15 +35491,15 @@
 			}
 			const computeDelta = () => {
 				while (n !== null) {
-					if (isVisible(n, snapshot) || prevSnapshot !== void 0 && isVisible(n, prevSnapshot)) switch (n.content.constructor) {
+					if (isVisible$1(n, snapshot) || prevSnapshot !== void 0 && isVisible$1(n, prevSnapshot)) switch (n.content.constructor) {
 						case ContentString: {
 							const cur = currentAttributes.get("ychange");
-							if (snapshot !== void 0 && !isVisible(n, snapshot)) {
+							if (snapshot !== void 0 && !isVisible$1(n, snapshot)) {
 								if (cur === void 0 || cur.user !== n.id.client || cur.type !== "removed") {
 									packStr();
 									currentAttributes.set("ychange", computeYChange ? computeYChange("removed", n.id) : { type: "removed" });
 								}
-							} else if (prevSnapshot !== void 0 && !isVisible(n, prevSnapshot)) {
+							} else if (prevSnapshot !== void 0 && !isVisible$1(n, prevSnapshot)) {
 								if (cur === void 0 || cur.user !== n.id.client || cur.type !== "added") {
 									packStr();
 									currentAttributes.set("ychange", computeYChange ? computeYChange("added", n.id) : { type: "added" });
@@ -34899,7 +35529,7 @@
 							break;
 						}
 						case ContentFormat:
-							if (isVisible(n, snapshot)) {
+							if (isVisible$1(n, snapshot)) {
 								packStr();
 								updateCurrentAttributes(currentAttributes, n.content);
 							}
@@ -36838,6 +37468,46 @@
 	*/
 	var readContentType = (decoder) => new ContentType(typeRefs[decoder.readTypeRef()](decoder));
 	/**
+	* @todo This should return several items
+	*
+	* @param {StructStore} store
+	* @param {ID} id
+	* @return {{item:Item, diff:number}}
+	*/
+	var followRedone = (store, id) => {
+		/**
+		* @type {ID|null}
+		*/
+		let nextID = id;
+		let diff = 0;
+		let item;
+		do {
+			if (diff > 0) nextID = createID(nextID.client, nextID.clock + diff);
+			item = getItem(store, nextID);
+			diff = nextID.clock - item.id.clock;
+			nextID = item.redone;
+		} while (nextID !== null && item instanceof Item);
+		return {
+			item,
+			diff
+		};
+	};
+	/**
+	* Make sure that neither item nor any of its parents is ever deleted.
+	*
+	* This property does not persist when storing it into a database or when
+	* sending it to other peers
+	*
+	* @param {Item|null} item
+	* @param {boolean} keep
+	*/
+	var keepItem = (item, keep) => {
+		while (item !== null && item.keep !== keep) {
+			item.keep = keep;
+			item = item.parent._item;
+		}
+	};
+	/**
 	* Split leftItem into two items
 	* @param {Transaction} transaction
 	* @param {Item} leftItem
@@ -36860,6 +37530,94 @@
  /** @type {AbstractType<any>} */ rightItem.parent._map.set(rightItem.parentSub, rightItem);
 		leftItem.length = diff;
 		return rightItem;
+	};
+	/**
+	* @param {Array<StackItem>} stack
+	* @param {ID} id
+	*/
+	var isDeletedByUndoStack = (stack, id) => some(
+		stack,
+		/** @param {StackItem} s */
+		(s) => isDeleted(s.deletions, id)
+	);
+	/**
+	* Redoes the effect of this operation.
+	*
+	* @param {Transaction} transaction The Yjs instance.
+	* @param {Item} item
+	* @param {Set<Item>} redoitems
+	* @param {DeleteSet} itemsToDelete
+	* @param {boolean} ignoreRemoteMapChanges
+	* @param {import('../utils/UndoManager.js').UndoManager} um
+	*
+	* @return {Item|null}
+	*
+	* @private
+	*/
+	var redoItem = (transaction, item, redoitems, itemsToDelete, ignoreRemoteMapChanges, um) => {
+		const doc = transaction.doc;
+		const store = doc.store;
+		const ownClientID = doc.clientID;
+		const redone = item.redone;
+		if (redone !== null) return getItemCleanStart(transaction, redone);
+		let parentItem = item.parent._item;
+		/**
+		* @type {Item|null}
+		*/
+		let left = null;
+		/**
+		* @type {Item|null}
+		*/
+		let right;
+		if (parentItem !== null && parentItem.deleted === true) {
+			if (parentItem.redone === null && (!redoitems.has(parentItem) || redoItem(transaction, parentItem, redoitems, itemsToDelete, ignoreRemoteMapChanges, um) === null)) return null;
+			while (parentItem.redone !== null) parentItem = getItemCleanStart(transaction, parentItem.redone);
+		}
+		const parentType = parentItem === null ? item.parent : 		/** @type {ContentType} */ parentItem.content.type;
+		if (item.parentSub === null) {
+			left = item.left;
+			right = item;
+			while (left !== null) {
+				/**
+				* @type {Item|null}
+				*/
+				let leftTrace = left;
+				while (leftTrace !== null && leftTrace.parent._item !== parentItem) leftTrace = leftTrace.redone === null ? null : getItemCleanStart(transaction, leftTrace.redone);
+				if (leftTrace !== null && leftTrace.parent._item === parentItem) {
+					left = leftTrace;
+					break;
+				}
+				left = left.left;
+			}
+			while (right !== null) {
+				/**
+				* @type {Item|null}
+				*/
+				let rightTrace = right;
+				while (rightTrace !== null && rightTrace.parent._item !== parentItem) rightTrace = rightTrace.redone === null ? null : getItemCleanStart(transaction, rightTrace.redone);
+				if (rightTrace !== null && rightTrace.parent._item === parentItem) {
+					right = rightTrace;
+					break;
+				}
+				right = right.right;
+			}
+		} else {
+			right = null;
+			if (item.right && !ignoreRemoteMapChanges) {
+				left = item;
+				while (left !== null && left.right !== null && (left.right.redone || isDeleted(itemsToDelete, left.right.id) || isDeletedByUndoStack(um.undoStack, left.right.id) || isDeletedByUndoStack(um.redoStack, left.right.id))) {
+					left = left.right;
+					while (left.redone) left = getItemCleanStart(transaction, left.redone);
+				}
+				if (left && left.right !== null) return null;
+			} else left = parentType._map.get(item.parentSub) || null;
+		}
+		const nextId = createID(ownClientID, getState(store, ownClientID));
+		const redoneItem = new Item(nextId, left, left && left.lastId, right, right && right.id, parentType, item.parentSub, item.content.copy());
+		item.redone = nextId;
+		keepItem(redoneItem, true);
+		redoneItem.integrate(transaction, 0);
+		return redoneItem;
 	};
 	/**
 	* Abstract class that represents any content.
@@ -37281,6 +38039,1347 @@
 	console.error("Yjs was already imported. This breaks constructor checks and will lead to issues! - https://github.com/yjs/yjs/issues/438");
 	glo[importIdentifier] = true;
 	//#endregion
+	//#region node_modules/y-protocols/awareness.js
+	/**
+	* @module awareness-protocol
+	*/
+	var outdatedTimeout = 3e4;
+	/**
+	* @typedef {Object} MetaClientState
+	* @property {number} MetaClientState.clock
+	* @property {number} MetaClientState.lastUpdated unix timestamp
+	*/
+	/**
+	* The Awareness class implements a simple shared state protocol that can be used for non-persistent data like awareness information
+	* (cursor, username, status, ..). Each client can update its own local state and listen to state changes of
+	* remote clients. Every client may set a state of a remote peer to `null` to mark the client as offline.
+	*
+	* Each client is identified by a unique client id (something we borrow from `doc.clientID`). A client can override
+	* its own state by propagating a message with an increasing timestamp (`clock`). If such a message is received, it is
+	* applied if the known state of that client is older than the new state (`clock < newClock`). If a client thinks that
+	* a remote client is offline, it may propagate a message with
+	* `{ clock: currentClientClock, state: null, client: remoteClient }`. If such a
+	* message is received, and the known clock of that client equals the received clock, it will override the state with `null`.
+	*
+	* Before a client disconnects, it should propagate a `null` state with an updated clock.
+	*
+	* Awareness states must be updated every 30 seconds. Otherwise the Awareness instance will delete the client state.
+	*
+	* @extends {Observable<string>}
+	*/
+	var Awareness = class extends Observable {
+		/**
+		* @param {Y.Doc} doc
+		*/
+		constructor(doc) {
+			super();
+			this.doc = doc;
+			/**
+			* @type {number}
+			*/
+			this.clientID = doc.clientID;
+			/**
+			* Maps from client id to client state
+			* @type {Map<number, Object<string, any>>}
+			*/
+			this.states = /* @__PURE__ */ new Map();
+			/**
+			* @type {Map<number, MetaClientState>}
+			*/
+			this.meta = /* @__PURE__ */ new Map();
+			this._checkInterval = setInterval(() => {
+				const now = getUnixTime();
+				if (this.getLocalState() !== null && 3e4 / 2 <= now - this.meta.get(this.clientID).lastUpdated) this.setLocalState(this.getLocalState());
+				/**
+				* @type {Array<number>}
+				*/
+				const remove = [];
+				this.meta.forEach((meta, clientid) => {
+					if (clientid !== this.clientID && 3e4 <= now - meta.lastUpdated && this.states.has(clientid)) remove.push(clientid);
+				});
+				if (remove.length > 0) removeAwarenessStates(this, remove, "timeout");
+			}, floor(outdatedTimeout / 10));
+			doc.on("destroy", () => {
+				this.destroy();
+			});
+			this.setLocalState({});
+		}
+		destroy() {
+			this.emit("destroy", [this]);
+			this.setLocalState(null);
+			super.destroy();
+			clearInterval(this._checkInterval);
+		}
+		/**
+		* @return {Object<string,any>|null}
+		*/
+		getLocalState() {
+			return this.states.get(this.clientID) || null;
+		}
+		/**
+		* @param {Object<string,any>|null} state
+		*/
+		setLocalState(state) {
+			const clientID = this.clientID;
+			const currLocalMeta = this.meta.get(clientID);
+			const clock = currLocalMeta === void 0 ? 0 : currLocalMeta.clock + 1;
+			const prevState = this.states.get(clientID);
+			if (state === null) this.states.delete(clientID);
+			else this.states.set(clientID, state);
+			this.meta.set(clientID, {
+				clock,
+				lastUpdated: getUnixTime()
+			});
+			const added = [];
+			const updated = [];
+			const filteredUpdated = [];
+			const removed = [];
+			if (state === null) removed.push(clientID);
+			else if (prevState == null) {
+				if (state != null) added.push(clientID);
+			} else {
+				updated.push(clientID);
+				if (!equalityDeep(prevState, state)) filteredUpdated.push(clientID);
+			}
+			if (added.length > 0 || filteredUpdated.length > 0 || removed.length > 0) this.emit("change", [{
+				added,
+				updated: filteredUpdated,
+				removed
+			}, "local"]);
+			this.emit("update", [{
+				added,
+				updated,
+				removed
+			}, "local"]);
+		}
+		/**
+		* @param {string} field
+		* @param {any} value
+		*/
+		setLocalStateField(field, value) {
+			const state = this.getLocalState();
+			if (state !== null) this.setLocalState({
+				...state,
+				[field]: value
+			});
+		}
+		/**
+		* @return {Map<number,Object<string,any>>}
+		*/
+		getStates() {
+			return this.states;
+		}
+	};
+	/**
+	* Mark (remote) clients as inactive and remove them from the list of active peers.
+	* This change will be propagated to remote clients.
+	*
+	* @param {Awareness} awareness
+	* @param {Array<number>} clients
+	* @param {any} origin
+	*/
+	var removeAwarenessStates = (awareness, clients, origin) => {
+		const removed = [];
+		for (let i = 0; i < clients.length; i++) {
+			const clientID = clients[i];
+			if (awareness.states.has(clientID)) {
+				awareness.states.delete(clientID);
+				if (clientID === awareness.clientID) {
+					const curMeta = awareness.meta.get(clientID);
+					awareness.meta.set(clientID, {
+						clock: curMeta.clock + 1,
+						lastUpdated: getUnixTime()
+					});
+				}
+				removed.push(clientID);
+			}
+		}
+		if (removed.length > 0) {
+			awareness.emit("change", [{
+				added: [],
+				updated: [],
+				removed
+			}, origin]);
+			awareness.emit("update", [{
+				added: [],
+				updated: [],
+				removed
+			}, origin]);
+		}
+	};
+	/**
+	* @param {Awareness} awareness
+	* @param {Array<number>} clients
+	* @return {Uint8Array}
+	*/
+	var encodeAwarenessUpdate = (awareness, clients, states = awareness.states) => {
+		const len = clients.length;
+		const encoder = createEncoder();
+		writeVarUint(encoder, len);
+		for (let i = 0; i < len; i++) {
+			const clientID = clients[i];
+			const state = states.get(clientID) || null;
+			const clock = awareness.meta.get(clientID).clock;
+			writeVarUint(encoder, clientID);
+			writeVarUint(encoder, clock);
+			writeVarString(encoder, JSON.stringify(state));
+		}
+		return toUint8Array(encoder);
+	};
+	/**
+	* @param {Awareness} awareness
+	* @param {Uint8Array} update
+	* @param {any} origin This will be added to the emitted change event
+	*/
+	var applyAwarenessUpdate = (awareness, update, origin) => {
+		const decoder = createDecoder(update);
+		const timestamp = getUnixTime();
+		const added = [];
+		const updated = [];
+		const filteredUpdated = [];
+		const removed = [];
+		const len = readVarUint(decoder);
+		for (let i = 0; i < len; i++) {
+			const clientID = readVarUint(decoder);
+			let clock = readVarUint(decoder);
+			const state = JSON.parse(readVarString(decoder));
+			const clientMeta = awareness.meta.get(clientID);
+			const prevState = awareness.states.get(clientID);
+			const currClock = clientMeta === void 0 ? 0 : clientMeta.clock;
+			if (currClock < clock || currClock === clock && state === null && awareness.states.has(clientID)) {
+				if (state === null) if (clientID === awareness.clientID && awareness.getLocalState() != null) clock++;
+				else awareness.states.delete(clientID);
+				else awareness.states.set(clientID, state);
+				awareness.meta.set(clientID, {
+					clock,
+					lastUpdated: timestamp
+				});
+				if (clientMeta === void 0 && state !== null) added.push(clientID);
+				else if (clientMeta !== void 0 && state === null) removed.push(clientID);
+				else if (state !== null) {
+					if (!equalityDeep(state, prevState)) filteredUpdated.push(clientID);
+					updated.push(clientID);
+				}
+			}
+		}
+		if (added.length > 0 || filteredUpdated.length > 0 || removed.length > 0) awareness.emit("change", [{
+			added,
+			updated: filteredUpdated,
+			removed
+		}, origin]);
+		if (added.length > 0 || updated.length > 0 || removed.length > 0) awareness.emit("update", [{
+			added,
+			updated,
+			removed
+		}, origin]);
+	};
+	//#endregion
+	//#region node_modules/lib0/mutex.js
+	/**
+	* Mutual exclude for JavaScript.
+	*
+	* @module mutex
+	*/
+	/**
+	* @callback mutex
+	* @param {function():void} cb Only executed when this mutex is not in the current stack
+	* @param {function():void} [elseCb] Executed when this mutex is in the current stack
+	*/
+	/**
+	* Creates a mutual exclude function with the following property:
+	*
+	* ```js
+	* const mutex = createMutex()
+	* mutex(() => {
+	*   // This function is immediately executed
+	*   mutex(() => {
+	*     // This function is not executed, as the mutex is already active.
+	*   })
+	* })
+	* ```
+	*
+	* @return {mutex} A mutual exclude function
+	* @public
+	*/
+	var createMutex = () => {
+		let token = true;
+		return (f, g) => {
+			if (token) {
+				token = false;
+				try {
+					f();
+				} finally {
+					token = true;
+				}
+			} else if (g !== void 0) g();
+		};
+	};
+	//#endregion
+	//#region node_modules/lib0/diff.js
+	/**
+	* A SimpleDiff describes a change on a String.
+	*
+	* ```js
+	* console.log(a) // the old value
+	* console.log(b) // the updated value
+	* // Apply changes of diff (pseudocode)
+	* a.remove(diff.index, diff.remove) // Remove `diff.remove` characters
+	* a.insert(diff.index, diff.insert) // Insert `diff.insert`
+	* a === b // values match
+	* ```
+	*
+	* @template {string|Array<any>} T
+	* @typedef {Object} SimpleDiff
+	* @property {Number} index The index where changes were applied
+	* @property {Number} remove The number of characters to delete starting
+	*                                  at `index`.
+	* @property {T} insert The new text to insert at `index` after applying
+	*/
+	var highSurrogateRegex = /[\uD800-\uDBFF]/;
+	var lowSurrogateRegex = /[\uDC00-\uDFFF]/;
+	/**
+	* Create a diff between two strings. This diff implementation is highly
+	* efficient, but not very sophisticated.
+	*
+	* @function
+	*
+	* @param {string} a The old version of the string
+	* @param {string} b The updated version of the string
+	* @return {SimpleDiff<string>} The diff description.
+	*/
+	var simpleDiffString = (a, b) => {
+		let left = 0;
+		let right = 0;
+		while (left < a.length && left < b.length && a[left] === b[left]) left++;
+		if (left > 0 && highSurrogateRegex.test(a[left - 1])) left--;
+		while (right + left < a.length && right + left < b.length && a[a.length - right - 1] === b[b.length - right - 1]) right++;
+		if (right > 0 && lowSurrogateRegex.test(a[a.length - right])) right--;
+		return {
+			index: left,
+			remove: a.length - left - right,
+			insert: b.slice(left, b.length - right)
+		};
+	};
+	/**
+	* @todo Remove in favor of simpleDiffString
+	* @deprecated
+	*/
+	var simpleDiff = simpleDiffString;
+	//#endregion
+	//#region node_modules/y-prosemirror/src/plugins/keys.js
+	/**
+	* The unique prosemirror plugin key for syncPlugin
+	*
+	* @public
+	*/
+	var ySyncPluginKey = new PluginKey("y-sync");
+	/**
+	* The unique prosemirror plugin key for undoPlugin
+	*
+	* @public
+	*/
+	var yUndoPluginKey = new PluginKey("y-undo");
+	/**
+	* The unique prosemirror plugin key for cursorPlugin
+	*
+	* @public
+	*/
+	var yCursorPluginKey = new PluginKey("yjs-cursor");
+	//#endregion
+	//#region node_modules/y-prosemirror/src/plugins/sync-plugin.js
+	/**
+	* @module bindings/prosemirror
+	*/
+	/**
+	* @param {Y.Item} item
+	* @param {Y.Snapshot} [snapshot]
+	*/
+	var isVisible = (item, snapshot) => snapshot === void 0 ? !item.deleted : snapshot.sv.has(item.id.client) && snapshot.sv.get(item.id.client) > item.id.clock && !isDeleted(snapshot.ds, item.id);
+	/**
+	* Either a node if type is YXmlElement or an Array of text nodes if YXmlText
+	* @typedef {Map<Y.AbstractType<any>, PModel.Node | Array<PModel.Node>>} ProsemirrorMapping
+	*/
+	/**
+	* @typedef {Object} ColorDef
+	* @property {string} ColorDef.light
+	* @property {string} ColorDef.dark
+	*/
+	/**
+	* @typedef {Object} YSyncOpts
+	* @property {Array<ColorDef>} [YSyncOpts.colors]
+	* @property {Map<string,ColorDef>} [YSyncOpts.colorMapping]
+	* @property {Y.PermanentUserData|null} [YSyncOpts.permanentUserData]
+	* @property {function} [YSyncOpts.onFirstRender] Fired when the content from Yjs is initially rendered to ProseMirror
+	*/
+	/**
+	* @type {Array<ColorDef>}
+	*/
+	var defaultColors = [{
+		light: "#ecd44433",
+		dark: "#ecd444"
+	}];
+	/**
+	* @param {Map<string,ColorDef>} colorMapping
+	* @param {Array<ColorDef>} colors
+	* @param {string} user
+	* @return {ColorDef}
+	*/
+	var getUserColor = (colorMapping, colors, user) => {
+		if (!colorMapping.has(user)) {
+			if (colorMapping.size < colors.length) {
+				const usedColors = create$4();
+				colorMapping.forEach((color) => usedColors.add(color));
+				colors = colors.filter((color) => !usedColors.has(color));
+			}
+			colorMapping.set(user, oneOf$1(colors));
+		}
+		return colorMapping.get(user);
+	};
+	/**
+	* This plugin listens to changes in prosemirror view and keeps yXmlState and view in sync.
+	*
+	* This plugin also keeps references to the type and the shared document so other plugins can access it.
+	* @param {Y.XmlFragment} yXmlFragment
+	* @param {YSyncOpts} opts
+	* @return {any} Returns a prosemirror plugin that binds to this type
+	*/
+	var ySyncPlugin = (yXmlFragment, { colors = defaultColors, colorMapping = /* @__PURE__ */ new Map(), permanentUserData = null, onFirstRender = () => {} } = {}) => {
+		let changedInitialContent = false;
+		let rerenderTimeout;
+		const plugin = new Plugin({
+			props: { editable: (state) => {
+				const syncState = ySyncPluginKey.getState(state);
+				return syncState.snapshot == null && syncState.prevSnapshot == null;
+			} },
+			key: ySyncPluginKey,
+			state: {
+				/**
+				* @returns {any}
+				*/
+				init: (_initargs, _state) => {
+					return {
+						type: yXmlFragment,
+						doc: yXmlFragment.doc,
+						binding: null,
+						snapshot: null,
+						prevSnapshot: null,
+						isChangeOrigin: false,
+						isUndoRedoOperation: false,
+						addToHistory: true,
+						colors,
+						colorMapping,
+						permanentUserData
+					};
+				},
+				apply: (tr, pluginState) => {
+					const change = tr.getMeta(ySyncPluginKey);
+					if (change !== void 0) {
+						pluginState = Object.assign({}, pluginState);
+						for (const key in change) pluginState[key] = change[key];
+					}
+					pluginState.addToHistory = tr.getMeta("addToHistory") !== false;
+					pluginState.isChangeOrigin = change !== void 0 && !!change.isChangeOrigin;
+					pluginState.isUndoRedoOperation = change !== void 0 && !!change.isChangeOrigin && !!change.isUndoRedoOperation;
+					if (pluginState.binding !== null) {
+						if (change !== void 0 && (change.snapshot != null || change.prevSnapshot != null)) timeout(0, () => {
+							if (pluginState.binding == null || pluginState.binding.isDestroyed) return;
+							if (change.restore == null) pluginState.binding._renderSnapshot(change.snapshot, change.prevSnapshot, pluginState);
+							else {
+								pluginState.binding._renderSnapshot(change.snapshot, change.snapshot, pluginState);
+								delete pluginState.restore;
+								delete pluginState.snapshot;
+								delete pluginState.prevSnapshot;
+								pluginState.binding.mux(() => {
+									pluginState.binding._prosemirrorChanged(pluginState.binding.prosemirrorView.state.doc);
+								});
+							}
+						});
+					}
+					return pluginState;
+				}
+			},
+			view: (view) => {
+				const binding = new ProsemirrorBinding(yXmlFragment, view);
+				if (rerenderTimeout != null) rerenderTimeout.destroy();
+				rerenderTimeout = timeout(0, () => {
+					binding._forceRerender();
+					view.dispatch(view.state.tr.setMeta(ySyncPluginKey, { binding }));
+					onFirstRender();
+				});
+				return {
+					update: () => {
+						const pluginState = plugin.getState(view.state);
+						if (pluginState.snapshot == null && pluginState.prevSnapshot == null) {
+							if (changedInitialContent || view.state.doc.content.findDiffStart(view.state.doc.type.createAndFill().content) !== null) {
+								changedInitialContent = true;
+								if (pluginState.addToHistory === false && !pluginState.isChangeOrigin) {
+									const yUndoPluginState = yUndoPluginKey.getState(view.state);
+									/**
+									* @type {Y.UndoManager}
+									*/
+									const um = yUndoPluginState && yUndoPluginState.undoManager;
+									if (um) um.stopCapturing();
+								}
+								binding.mux(() => {
+									/** @type {Y.Doc} */ pluginState.doc.transact((tr) => {
+										tr.meta.set("addToHistory", pluginState.addToHistory);
+										binding._prosemirrorChanged(view.state.doc);
+									}, ySyncPluginKey);
+								});
+							}
+						}
+					},
+					destroy: () => {
+						rerenderTimeout.destroy();
+						binding.destroy();
+					}
+				};
+			}
+		});
+		return plugin;
+	};
+	/**
+	* @param {any} tr
+	* @param {any} relSel
+	* @param {ProsemirrorBinding} binding
+	*/
+	var restoreRelativeSelection = (tr, relSel, binding) => {
+		if (relSel !== null && relSel.anchor !== null && relSel.head !== null) {
+			const anchor = relativePositionToAbsolutePosition(binding.doc, binding.type, relSel.anchor, binding.mapping);
+			const head = relativePositionToAbsolutePosition(binding.doc, binding.type, relSel.head, binding.mapping);
+			if (anchor !== null && head !== null) tr = tr.setSelection(TextSelection.create(tr.doc, anchor, head));
+		}
+	};
+	var getRelativeSelection = (pmbinding, state) => ({
+		anchor: absolutePositionToRelativePosition(state.selection.anchor, pmbinding.type, pmbinding.mapping),
+		head: absolutePositionToRelativePosition(state.selection.head, pmbinding.type, pmbinding.mapping)
+	});
+	/**
+	* Binding for prosemirror.
+	*
+	* @protected
+	*/
+	var ProsemirrorBinding = class {
+		/**
+		* @param {Y.XmlFragment} yXmlFragment The bind source
+		* @param {any} prosemirrorView The target binding
+		*/
+		constructor(yXmlFragment, prosemirrorView) {
+			this.type = yXmlFragment;
+			this.prosemirrorView = prosemirrorView;
+			this.mux = createMutex();
+			this.isDestroyed = false;
+			/**
+			* @type {ProsemirrorMapping}
+			*/
+			this.mapping = /* @__PURE__ */ new Map();
+			this._observeFunction = this._typeChanged.bind(this);
+			/**
+			* @type {Y.Doc}
+			*/
+			this.doc = yXmlFragment.doc;
+			/**
+			* current selection as relative positions in the Yjs model
+			*/
+			this.beforeTransactionSelection = null;
+			this.beforeAllTransactions = () => {
+				if (this.beforeTransactionSelection === null) this.beforeTransactionSelection = getRelativeSelection(this, prosemirrorView.state);
+			};
+			this.afterAllTransactions = () => {
+				this.beforeTransactionSelection = null;
+			};
+			this.doc.on("beforeAllTransactions", this.beforeAllTransactions);
+			this.doc.on("afterAllTransactions", this.afterAllTransactions);
+			yXmlFragment.observeDeep(this._observeFunction);
+			this._domSelectionInView = null;
+		}
+		/**
+		* Create a transaction for changing the prosemirror state.
+		*
+		* @returns
+		*/
+		get _tr() {
+			return this.prosemirrorView.state.tr.setMeta("addToHistory", false);
+		}
+		_isLocalCursorInView() {
+			if (!this.prosemirrorView.hasFocus()) return false;
+			if (isBrowser && this._domSelectionInView === null) {
+				timeout(0, () => {
+					this._domSelectionInView = null;
+				});
+				this._domSelectionInView = this._isDomSelectionInView();
+			}
+			return this._domSelectionInView;
+		}
+		_isDomSelectionInView() {
+			const selection = this.prosemirrorView._root.getSelection();
+			const range = this.prosemirrorView._root.createRange();
+			range.setStart(selection.anchorNode, selection.anchorOffset);
+			range.setEnd(selection.focusNode, selection.focusOffset);
+			if (range.getClientRects().length === 0) {
+				if (range.startContainer && range.collapsed) range.selectNodeContents(range.startContainer);
+			}
+			const bounding = range.getBoundingClientRect();
+			const documentElement = doc.documentElement;
+			return bounding.bottom >= 0 && bounding.right >= 0 && bounding.left <= (window.innerWidth || documentElement.clientWidth || 0) && bounding.top <= (window.innerHeight || documentElement.clientHeight || 0);
+		}
+		/**
+		* @param {Y.Snapshot} snapshot
+		* @param {Y.Snapshot} prevSnapshot
+		*/
+		renderSnapshot(snapshot, prevSnapshot) {
+			if (!prevSnapshot) prevSnapshot = createSnapshot(createDeleteSet(), /* @__PURE__ */ new Map());
+			this.prosemirrorView.dispatch(this._tr.setMeta(ySyncPluginKey, {
+				snapshot,
+				prevSnapshot
+			}));
+		}
+		unrenderSnapshot() {
+			this.mapping = /* @__PURE__ */ new Map();
+			this.mux(() => {
+				const fragmentContent = this.type.toArray().map((t) => createNodeFromYElement(t, this.prosemirrorView.state.schema, this.mapping)).filter((n) => n !== null);
+				const tr = this._tr.replace(0, this.prosemirrorView.state.doc.content.size, new Slice(Fragment.from(fragmentContent), 0, 0));
+				tr.setMeta(ySyncPluginKey, {
+					snapshot: null,
+					prevSnapshot: null
+				});
+				this.prosemirrorView.dispatch(tr);
+			});
+		}
+		_forceRerender() {
+			this.mapping = /* @__PURE__ */ new Map();
+			this.mux(() => {
+				const fragmentContent = this.type.toArray().map((t) => createNodeFromYElement(t, this.prosemirrorView.state.schema, this.mapping)).filter((n) => n !== null);
+				const tr = this._tr.replace(0, this.prosemirrorView.state.doc.content.size, new Slice(Fragment.from(fragmentContent), 0, 0));
+				this.prosemirrorView.dispatch(tr.setMeta(ySyncPluginKey, { isChangeOrigin: true }));
+			});
+		}
+		/**
+		* @param {Y.Snapshot} snapshot
+		* @param {Y.Snapshot} prevSnapshot
+		* @param {Object} pluginState
+		*/
+		_renderSnapshot(snapshot$1, prevSnapshot, pluginState) {
+			if (!snapshot$1) snapshot$1 = snapshot(this.doc);
+			this.mapping = /* @__PURE__ */ new Map();
+			this.mux(() => {
+				this.doc.transact((transaction) => {
+					const pud = pluginState.permanentUserData;
+					if (pud) pud.dss.forEach((ds) => {
+						iterateDeletedStructs(transaction, ds, (_item) => {});
+					});
+					/**
+					* @param {'removed'|'added'} type
+					* @param {Y.ID} id
+					*/
+					const computeYChange = (type, id) => {
+						const user = type === "added" ? pud.getUserByClientId(id.client) : pud.getUserByDeletedId(id);
+						return {
+							user,
+							type,
+							color: getUserColor(pluginState.colorMapping, pluginState.colors, user)
+						};
+					};
+					const fragmentContent = typeListToArraySnapshot(this.type, new Snapshot(prevSnapshot.ds, snapshot$1.sv)).map((t) => {
+						if (!t._item.deleted || isVisible(t._item, snapshot$1) || isVisible(t._item, prevSnapshot)) return createNodeFromYElement(t, this.prosemirrorView.state.schema, /* @__PURE__ */ new Map(), snapshot$1, prevSnapshot, computeYChange);
+						else return null;
+					}).filter((n) => n !== null);
+					const tr = this._tr.replace(0, this.prosemirrorView.state.doc.content.size, new Slice(Fragment.from(fragmentContent), 0, 0));
+					this.prosemirrorView.dispatch(tr.setMeta(ySyncPluginKey, { isChangeOrigin: true }));
+				}, ySyncPluginKey);
+			});
+		}
+		/**
+		* @param {Array<Y.YEvent<any>>} events
+		* @param {Y.Transaction} transaction
+		*/
+		_typeChanged(events, transaction) {
+			const syncState = ySyncPluginKey.getState(this.prosemirrorView.state);
+			if (events.length === 0 || syncState.snapshot != null || syncState.prevSnapshot != null) {
+				this.renderSnapshot(syncState.snapshot, syncState.prevSnapshot);
+				return;
+			}
+			this.mux(() => {
+				/**
+				* @param {any} _
+				* @param {Y.AbstractType<any>} type
+				*/
+				const delType = (_, type) => this.mapping.delete(type);
+				iterateDeletedStructs(transaction, transaction.deleteSet, (struct) => {
+					if (struct.constructor === Item) {
+						const type = struct.content.type;
+						type && this.mapping.delete(type);
+					}
+				});
+				transaction.changed.forEach(delType);
+				transaction.changedParentTypes.forEach(delType);
+				const fragmentContent = this.type.toArray().map((t) => createNodeIfNotExists(t, this.prosemirrorView.state.schema, this.mapping)).filter((n) => n !== null);
+				let tr = this._tr.replace(0, this.prosemirrorView.state.doc.content.size, new Slice(Fragment.from(fragmentContent), 0, 0));
+				restoreRelativeSelection(tr, this.beforeTransactionSelection, this);
+				tr = tr.setMeta(ySyncPluginKey, {
+					isChangeOrigin: true,
+					isUndoRedoOperation: transaction.origin instanceof UndoManager
+				});
+				if (this.beforeTransactionSelection !== null && this._isLocalCursorInView()) tr.scrollIntoView();
+				this.prosemirrorView.dispatch(tr);
+			});
+		}
+		_prosemirrorChanged(doc) {
+			this.doc.transact(() => {
+				updateYFragment(this.doc, this.type, doc, this.mapping);
+				this.beforeTransactionSelection = getRelativeSelection(this, this.prosemirrorView.state);
+			}, ySyncPluginKey);
+		}
+		destroy() {
+			this.isDestroyed = true;
+			this.type.unobserveDeep(this._observeFunction);
+			this.doc.off("beforeAllTransactions", this.beforeAllTransactions);
+			this.doc.off("afterAllTransactions", this.afterAllTransactions);
+		}
+	};
+	/**
+	* @private
+	* @param {Y.XmlElement | Y.XmlHook} el
+	* @param {PModel.Schema} schema
+	* @param {ProsemirrorMapping} mapping
+	* @param {Y.Snapshot} [snapshot]
+	* @param {Y.Snapshot} [prevSnapshot]
+	* @param {function('removed' | 'added', Y.ID):any} [computeYChange]
+	* @return {PModel.Node | null}
+	*/
+	var createNodeIfNotExists = (el, schema, mapping, snapshot, prevSnapshot, computeYChange) => {
+		const node = mapping.get(el);
+		if (node === void 0) if (el instanceof YXmlElement) return createNodeFromYElement(el, schema, mapping, snapshot, prevSnapshot, computeYChange);
+		else throw methodUnimplemented();
+		return node;
+	};
+	/**
+	* @private
+	* @param {Y.XmlElement} el
+	* @param {any} schema
+	* @param {ProsemirrorMapping} mapping
+	* @param {Y.Snapshot} [snapshot]
+	* @param {Y.Snapshot} [prevSnapshot]
+	* @param {function('removed' | 'added', Y.ID):any} [computeYChange]
+	* @return {PModel.Node | null} Returns node if node could be created. Otherwise it deletes the yjs type and returns null
+	*/
+	var createNodeFromYElement = (el, schema, mapping, snapshot, prevSnapshot, computeYChange) => {
+		const children = [];
+		const createChildren = (type) => {
+			if (type.constructor === YXmlElement) {
+				const n = createNodeIfNotExists(type, schema, mapping, snapshot, prevSnapshot, computeYChange);
+				if (n !== null) children.push(n);
+			} else {
+				const ns = createTextNodesFromYText(type, schema, mapping, snapshot, prevSnapshot, computeYChange);
+				if (ns !== null) ns.forEach((textchild) => {
+					if (textchild !== null) children.push(textchild);
+				});
+			}
+		};
+		if (snapshot === void 0 || prevSnapshot === void 0) el.toArray().forEach(createChildren);
+		else typeListToArraySnapshot(el, new Snapshot(prevSnapshot.ds, snapshot.sv)).forEach(createChildren);
+		try {
+			const attrs = el.getAttributes(snapshot);
+			if (snapshot !== void 0) {
+				if (!isVisible(el._item, snapshot)) attrs.ychange = computeYChange ? computeYChange(
+					"removed",
+					/** @type {Y.Item} */
+					el._item.id
+				) : { type: "removed" };
+				else if (!isVisible(el._item, prevSnapshot)) attrs.ychange = computeYChange ? computeYChange(
+					"added",
+					/** @type {Y.Item} */
+					el._item.id
+				) : { type: "added" };
+			}
+			const node = schema.node(el.nodeName, attrs, children);
+			mapping.set(el, node);
+			return node;
+		} catch (e) {
+			/** @type {Y.Doc} */ el.doc.transact((transaction) => {
+				/** @type {Y.Item} */ el._item.delete(transaction);
+			}, ySyncPluginKey);
+			mapping.delete(el);
+			return null;
+		}
+	};
+	/**
+	* @private
+	* @param {Y.XmlText} text
+	* @param {any} schema
+	* @param {ProsemirrorMapping} _mapping
+	* @param {Y.Snapshot} [snapshot]
+	* @param {Y.Snapshot} [prevSnapshot]
+	* @param {function('removed' | 'added', Y.ID):any} [computeYChange]
+	* @return {Array<PModel.Node>|null}
+	*/
+	var createTextNodesFromYText = (text, schema, _mapping, snapshot, prevSnapshot, computeYChange) => {
+		const nodes = [];
+		const deltas = text.toDelta(snapshot, prevSnapshot, computeYChange);
+		try {
+			for (let i = 0; i < deltas.length; i++) {
+				const delta = deltas[i];
+				const marks = [];
+				for (const markName in delta.attributes) marks.push(schema.mark(markName, delta.attributes[markName]));
+				nodes.push(schema.text(delta.insert, marks));
+			}
+		} catch (e) {
+			/** @type {Y.Doc} */ text.doc.transact((transaction) => {
+				/** @type {Y.Item} */ text._item.delete(transaction);
+			}, ySyncPluginKey);
+			return null;
+		}
+		return nodes;
+	};
+	/**
+	* @private
+	* @param {Array<any>} nodes prosemirror node
+	* @param {ProsemirrorMapping} mapping
+	* @return {Y.XmlText}
+	*/
+	var createTypeFromTextNodes = (nodes, mapping) => {
+		const type = new YXmlText();
+		const delta = nodes.map((node) => ({
+			insert: node.text,
+			attributes: marksToAttributes(node.marks)
+		}));
+		type.applyDelta(delta);
+		mapping.set(type, nodes);
+		return type;
+	};
+	/**
+	* @private
+	* @param {any} node prosemirror node
+	* @param {ProsemirrorMapping} mapping
+	* @return {Y.XmlElement}
+	*/
+	var createTypeFromElementNode = (node, mapping) => {
+		const type = new YXmlElement(node.type.name);
+		for (const key in node.attrs) {
+			const val = node.attrs[key];
+			if (val !== null && key !== "ychange") type.setAttribute(key, val);
+		}
+		type.insert(0, normalizePNodeContent(node).map((n) => createTypeFromTextOrElementNode(n, mapping)));
+		mapping.set(type, node);
+		return type;
+	};
+	/**
+	* @private
+	* @param {PModel.Node|Array<PModel.Node>} node prosemirror text node
+	* @param {ProsemirrorMapping} mapping
+	* @return {Y.XmlElement|Y.XmlText}
+	*/
+	var createTypeFromTextOrElementNode = (node, mapping) => node instanceof Array ? createTypeFromTextNodes(node, mapping) : createTypeFromElementNode(node, mapping);
+	var isObject = (val) => typeof val === "object" && val !== null;
+	var equalAttrs = (pattrs, yattrs) => {
+		const keys = Object.keys(pattrs).filter((key) => pattrs[key] !== null);
+		let eq = keys.length === Object.keys(yattrs).filter((key) => yattrs[key] !== null).length;
+		for (let i = 0; i < keys.length && eq; i++) {
+			const key = keys[i];
+			const l = pattrs[key];
+			const r = yattrs[key];
+			eq = key === "ychange" || l === r || isObject(l) && isObject(r) && equalAttrs(l, r);
+		}
+		return eq;
+	};
+	/**
+	* @typedef {Array<Array<PModel.Node>|PModel.Node>} NormalizedPNodeContent
+	*/
+	/**
+	* @param {any} pnode
+	* @return {NormalizedPNodeContent}
+	*/
+	var normalizePNodeContent = (pnode) => {
+		const c = pnode.content.content;
+		const res = [];
+		for (let i = 0; i < c.length; i++) {
+			const n = c[i];
+			if (n.isText) {
+				const textNodes = [];
+				for (let tnode = c[i]; i < c.length && tnode.isText; tnode = c[++i]) textNodes.push(tnode);
+				i--;
+				res.push(textNodes);
+			} else res.push(n);
+		}
+		return res;
+	};
+	/**
+	* @param {Y.XmlText} ytext
+	* @param {Array<any>} ptexts
+	*/
+	var equalYTextPText = (ytext, ptexts) => {
+		const delta = ytext.toDelta();
+		return delta.length === ptexts.length && delta.every((d, i) => d.insert === ptexts[i].text && keys(d.attributes || {}).length === ptexts[i].marks.length && ptexts[i].marks.every((mark) => equalAttrs(d.attributes[mark.type.name] || {}, mark.attrs)));
+	};
+	/**
+	* @param {Y.XmlElement|Y.XmlText|Y.XmlHook} ytype
+	* @param {any|Array<any>} pnode
+	*/
+	var equalYTypePNode = (ytype, pnode) => {
+		if (ytype instanceof YXmlElement && !(pnode instanceof Array) && matchNodeName(ytype, pnode)) {
+			const normalizedContent = normalizePNodeContent(pnode);
+			return ytype._length === normalizedContent.length && equalAttrs(ytype.getAttributes(), pnode.attrs) && ytype.toArray().every((ychild, i) => equalYTypePNode(ychild, normalizedContent[i]));
+		}
+		return ytype instanceof YXmlText && pnode instanceof Array && equalYTextPText(ytype, pnode);
+	};
+	/**
+	* @param {PModel.Node | Array<PModel.Node> | undefined} mapped
+	* @param {PModel.Node | Array<PModel.Node>} pcontent
+	*/
+	var mappedIdentity = (mapped, pcontent) => mapped === pcontent || mapped instanceof Array && pcontent instanceof Array && mapped.length === pcontent.length && mapped.every((a, i) => pcontent[i] === a);
+	/**
+	* @param {Y.XmlElement} ytype
+	* @param {PModel.Node} pnode
+	* @param {ProsemirrorMapping} mapping
+	* @return {{ foundMappedChild: boolean, equalityFactor: number }}
+	*/
+	var computeChildEqualityFactor = (ytype, pnode, mapping) => {
+		const yChildren = ytype.toArray();
+		const pChildren = normalizePNodeContent(pnode);
+		const pChildCnt = pChildren.length;
+		const yChildCnt = yChildren.length;
+		const minCnt = min(yChildCnt, pChildCnt);
+		let left = 0;
+		let right = 0;
+		let foundMappedChild = false;
+		for (; left < minCnt; left++) {
+			const leftY = yChildren[left];
+			const leftP = pChildren[left];
+			if (mappedIdentity(mapping.get(leftY), leftP)) foundMappedChild = true;
+			else if (!equalYTypePNode(leftY, leftP)) break;
+		}
+		for (; left + right < minCnt; right++) {
+			const rightY = yChildren[yChildCnt - right - 1];
+			const rightP = pChildren[pChildCnt - right - 1];
+			if (mappedIdentity(mapping.get(rightY), rightP)) foundMappedChild = true;
+			else if (!equalYTypePNode(rightY, rightP)) break;
+		}
+		return {
+			equalityFactor: left + right,
+			foundMappedChild
+		};
+	};
+	var ytextTrans = (ytext) => {
+		let str = "";
+		/**
+		* @type {Y.Item|null}
+		*/
+		let n = ytext._start;
+		const nAttrs = {};
+		while (n !== null) {
+			if (!n.deleted) {
+				if (n.countable && n.content instanceof ContentString) str += n.content.str;
+				else if (n.content instanceof ContentFormat) nAttrs[n.content.key] = null;
+			}
+			n = n.right;
+		}
+		return {
+			str,
+			nAttrs
+		};
+	};
+	/**
+	* @todo test this more
+	*
+	* @param {Y.Text} ytext
+	* @param {Array<any>} ptexts
+	* @param {ProsemirrorMapping} mapping
+	*/
+	var updateYText = (ytext, ptexts, mapping) => {
+		mapping.set(ytext, ptexts);
+		const { nAttrs, str } = ytextTrans(ytext);
+		const content = ptexts.map((p) => ({
+			insert: p.text,
+			attributes: Object.assign({}, nAttrs, marksToAttributes(p.marks))
+		}));
+		const { insert, remove, index } = simpleDiff(str, content.map((c) => c.insert).join(""));
+		ytext.delete(index, remove);
+		ytext.insert(index, insert);
+		ytext.applyDelta(content.map((c) => ({
+			retain: c.insert.length,
+			attributes: c.attributes
+		})));
+	};
+	var marksToAttributes = (marks) => {
+		const pattrs = {};
+		marks.forEach((mark) => {
+			if (mark.type.name !== "ychange") pattrs[mark.type.name] = mark.attrs;
+		});
+		return pattrs;
+	};
+	/**
+	* @private
+	* @param {{transact: Function}} y
+	* @param {Y.XmlFragment} yDomFragment
+	* @param {any} pNode
+	* @param {ProsemirrorMapping} mapping
+	*/
+	var updateYFragment = (y, yDomFragment, pNode, mapping) => {
+		if (yDomFragment instanceof YXmlElement && yDomFragment.nodeName !== pNode.type.name) throw new Error("node name mismatch!");
+		mapping.set(yDomFragment, pNode);
+		if (yDomFragment instanceof YXmlElement) {
+			const yDomAttrs = yDomFragment.getAttributes();
+			const pAttrs = pNode.attrs;
+			for (const key in pAttrs) if (pAttrs[key] !== null) {
+				if (yDomAttrs[key] !== pAttrs[key] && key !== "ychange") yDomFragment.setAttribute(key, pAttrs[key]);
+			} else yDomFragment.removeAttribute(key);
+			for (const key in yDomAttrs) if (pAttrs[key] === void 0) yDomFragment.removeAttribute(key);
+		}
+		const pChildren = normalizePNodeContent(pNode);
+		const pChildCnt = pChildren.length;
+		const yChildren = yDomFragment.toArray();
+		const yChildCnt = yChildren.length;
+		const minCnt = min(pChildCnt, yChildCnt);
+		let left = 0;
+		let right = 0;
+		for (; left < minCnt; left++) {
+			const leftY = yChildren[left];
+			const leftP = pChildren[left];
+			if (!mappedIdentity(mapping.get(leftY), leftP)) if (equalYTypePNode(leftY, leftP)) mapping.set(leftY, leftP);
+			else break;
+		}
+		for (; right + left + 1 < minCnt; right++) {
+			const rightY = yChildren[yChildCnt - right - 1];
+			const rightP = pChildren[pChildCnt - right - 1];
+			if (!mappedIdentity(mapping.get(rightY), rightP)) if (equalYTypePNode(rightY, rightP)) mapping.set(rightY, rightP);
+			else break;
+		}
+		y.transact(() => {
+			while (yChildCnt - left - right > 0 && pChildCnt - left - right > 0) {
+				const leftY = yChildren[left];
+				const leftP = pChildren[left];
+				const rightY = yChildren[yChildCnt - right - 1];
+				const rightP = pChildren[pChildCnt - right - 1];
+				if (leftY instanceof YXmlText && leftP instanceof Array) {
+					if (!equalYTextPText(leftY, leftP)) updateYText(leftY, leftP, mapping);
+					left += 1;
+				} else {
+					let updateLeft = leftY instanceof YXmlElement && matchNodeName(leftY, leftP);
+					let updateRight = rightY instanceof YXmlElement && matchNodeName(rightY, rightP);
+					if (updateLeft && updateRight) {
+						const equalityLeft = computeChildEqualityFactor(leftY, leftP, mapping);
+						const equalityRight = computeChildEqualityFactor(rightY, rightP, mapping);
+						if (equalityLeft.foundMappedChild && !equalityRight.foundMappedChild) updateRight = false;
+						else if (!equalityLeft.foundMappedChild && equalityRight.foundMappedChild) updateLeft = false;
+						else if (equalityLeft.equalityFactor < equalityRight.equalityFactor) updateLeft = false;
+						else updateRight = false;
+					}
+					if (updateLeft) {
+						updateYFragment(y, leftY, leftP, mapping);
+						left += 1;
+					} else if (updateRight) {
+						updateYFragment(y, rightY, rightP, mapping);
+						right += 1;
+					} else {
+						mapping.delete(yDomFragment.get(left));
+						yDomFragment.delete(left, 1);
+						yDomFragment.insert(left, [createTypeFromTextOrElementNode(leftP, mapping)]);
+						left += 1;
+					}
+				}
+			}
+			const yDelLen = yChildCnt - left - right;
+			if (yChildCnt === 1 && pChildCnt === 0 && yChildren[0] instanceof YXmlText) {
+				mapping.delete(yChildren[0]);
+				yChildren[0].delete(0, yChildren[0].length);
+			} else if (yDelLen > 0) {
+				yDomFragment.slice(left, left + yDelLen).forEach((type) => mapping.delete(type));
+				yDomFragment.delete(left, yDelLen);
+			}
+			if (left + right < pChildCnt) {
+				const ins = [];
+				for (let i = left; i < pChildCnt - right; i++) ins.push(createTypeFromTextOrElementNode(pChildren[i], mapping));
+				yDomFragment.insert(left, ins);
+			}
+		}, ySyncPluginKey);
+	};
+	/**
+	* @function
+	* @param {Y.XmlElement} yElement
+	* @param {any} pNode Prosemirror Node
+	*/
+	var matchNodeName = (yElement, pNode) => !(pNode instanceof Array) && yElement.nodeName === pNode.type.name;
+	//#endregion
+	//#region node_modules/y-prosemirror/src/lib.js
+	/**
+	* Either a node if type is YXmlElement or an Array of text nodes if YXmlText
+	* @typedef {Map<Y.AbstractType, Node | Array<Node>>} ProsemirrorMapping
+	*/
+	/**
+	* Is null if no timeout is in progress.
+	* Is defined if a timeout is in progress.
+	* Maps from view
+	* @type {Map<EditorView, Map<any, any>>|null}
+	*/
+	var viewsToUpdate = null;
+	var updateMetas = () => {
+		const ups = viewsToUpdate;
+		viewsToUpdate = null;
+		ups.forEach((metas, view) => {
+			const tr = view.state.tr;
+			const syncState = ySyncPluginKey.getState(view.state);
+			if (syncState && syncState.binding && !syncState.binding.isDestroyed) {
+				metas.forEach((val, key) => {
+					tr.setMeta(key, val);
+				});
+				view.dispatch(tr);
+			}
+		});
+	};
+	var setMeta = (view, key, value) => {
+		if (!viewsToUpdate) {
+			viewsToUpdate = /* @__PURE__ */ new Map();
+			timeout(0, updateMetas);
+		}
+		setIfUndefined(viewsToUpdate, view, create$5).set(key, value);
+	};
+	/**
+	* Transforms a Prosemirror based absolute position to a Yjs Cursor (relative position in the Yjs model).
+	*
+	* @param {number} pos
+	* @param {Y.XmlFragment} type
+	* @param {ProsemirrorMapping} mapping
+	* @return {any} relative position
+	*/
+	var absolutePositionToRelativePosition = (pos, type, mapping) => {
+		if (pos === 0) return createRelativePositionFromTypeIndex(type, 0);
+		/**
+		* @type {any}
+		*/
+		let n = type._first === null ? null : 		/** @type {Y.ContentType} */ type._first.content.type;
+		while (n !== null && type !== n) {
+			if (n instanceof YXmlText) {
+				if (n._length >= pos) return createRelativePositionFromTypeIndex(n, pos);
+				else pos -= n._length;
+				if (n._item !== null && n._item.next !== null) n = n._item.next.content.type;
+				else {
+					do {
+						n = n._item === null ? null : n._item.parent;
+						pos--;
+					} while (n !== type && n !== null && n._item !== null && n._item.next === null);
+					if (n !== null && n !== type) n = n._item === null ? null : 					/** @type {Y.ContentType} */ n._item.next.content.type;
+				}
+			} else {
+				const pNodeSize = (mapping.get(n) || { nodeSize: 0 }).nodeSize;
+				if (n._first !== null && pos < pNodeSize) {
+					n = n._first.content.type;
+					pos--;
+				} else {
+					if (pos === 1 && n._length === 0 && pNodeSize > 1) return new RelativePosition(n._item === null ? null : n._item.id, n._item === null ? findRootTypeKey(n) : null, null);
+					pos -= pNodeSize;
+					if (n._item !== null && n._item.next !== null) n = n._item.next.content.type;
+					else {
+						if (pos === 0) {
+							n = n._item === null ? n : n._item.parent;
+							return new RelativePosition(n._item === null ? null : n._item.id, n._item === null ? findRootTypeKey(n) : null, null);
+						}
+						do {
+							n = n._item.parent;
+							pos--;
+						} while (n !== type && n._item.next === null);
+						if (n !== type) n = n._item.next.content.type;
+					}
+				}
+			}
+			if (n === null) throw unexpectedCase();
+			if (pos === 0 && n.constructor !== YXmlText && n !== type) return createRelativePosition(n._item.parent, n._item);
+		}
+		return createRelativePositionFromTypeIndex(type, type._length);
+	};
+	var createRelativePosition = (type, item) => {
+		let typeid = null;
+		let tname = null;
+		if (type._item === null) tname = findRootTypeKey(type);
+		else typeid = createID(type._item.id.client, type._item.id.clock);
+		return new RelativePosition(typeid, tname, item.id);
+	};
+	/**
+	* @param {Y.Doc} y
+	* @param {Y.XmlFragment} documentType Top level type that is bound to pView
+	* @param {any} relPos Encoded Yjs based relative position
+	* @param {ProsemirrorMapping} mapping
+	* @return {null|number}
+	*/
+	var relativePositionToAbsolutePosition = (y, documentType, relPos, mapping) => {
+		const decodedPos = createAbsolutePositionFromRelativePosition(relPos, y);
+		if (decodedPos === null || decodedPos.type !== documentType && !isParentOf(documentType, decodedPos.type._item)) return null;
+		let type = decodedPos.type;
+		let pos = 0;
+		if (type.constructor === YXmlText) pos = decodedPos.index;
+		else if (type._item === null || !type._item.deleted) {
+			let n = type._first;
+			let i = 0;
+			while (i < type._length && i < decodedPos.index && n !== null) {
+				if (!n.deleted) {
+					const t = n.content.type;
+					i++;
+					if (t instanceof YXmlText) pos += t._length;
+					else pos += mapping.get(t).nodeSize;
+				}
+				n = n.right;
+			}
+			pos += 1;
+		}
+		while (type !== documentType && type._item !== null) {
+			const parent = type._item.parent;
+			if (parent._item === null || !parent._item.deleted) {
+				pos += 1;
+				let n = parent._first;
+				while (n !== null) {
+					const contentType = n.content.type;
+					if (contentType === type) break;
+					if (!n.deleted) if (contentType instanceof YXmlText) pos += contentType._length;
+					else pos += mapping.get(contentType).nodeSize;
+					n = n.right;
+				}
+			}
+			type = parent;
+		}
+		return pos - 1;
+	};
+	//#endregion
+	//#region node_modules/y-prosemirror/src/plugins/cursor-plugin.js
+	/**
+	* Default generator for a cursor element
+	*
+	* @param {any} user user data
+	* @return {HTMLElement}
+	*/
+	var defaultCursorBuilder = (user) => {
+		const cursor = document.createElement("span");
+		cursor.classList.add("ProseMirror-yjs-cursor");
+		cursor.setAttribute("style", `border-color: ${user.color}`);
+		const userDiv = document.createElement("div");
+		userDiv.setAttribute("style", `background-color: ${user.color}`);
+		userDiv.insertBefore(document.createTextNode(user.name), null);
+		const nonbreakingSpace1 = document.createTextNode("⁠");
+		const nonbreakingSpace2 = document.createTextNode("⁠");
+		cursor.insertBefore(nonbreakingSpace1, null);
+		cursor.insertBefore(userDiv, null);
+		cursor.insertBefore(nonbreakingSpace2, null);
+		return cursor;
+	};
+	/**
+	* Default generator for the selection attributes
+	*
+	* @param {any} user user data
+	* @return {import('prosemirror-view').DecorationAttrs}
+	*/
+	var defaultSelectionBuilder = (user) => {
+		return {
+			style: `background-color: ${user.color}70`,
+			class: "ProseMirror-yjs-selection"
+		};
+	};
+	var rxValidColor = /^#[0-9a-fA-F]{6}$/;
+	/**
+	* @param {any} state
+	* @param {Awareness} awareness
+	* @param {function({ name: string, color: string }):Element} createCursor
+	* @param {function({ name: string, color: string }):import('prosemirror-view').DecorationAttrs} createSelection
+	* @return {any} DecorationSet
+	*/
+	var createDecorations = (state, awareness, createCursor, createSelection) => {
+		const ystate = ySyncPluginKey.getState(state);
+		const y = ystate.doc;
+		const decorations = [];
+		if (ystate.snapshot != null || ystate.prevSnapshot != null || ystate.binding === null) return DecorationSet.create(state.doc, []);
+		awareness.getStates().forEach((aw, clientId) => {
+			if (clientId === y.clientID) return;
+			if (aw.cursor != null) {
+				const user = aw.user || {};
+				if (user.color == null) user.color = "#ffa500";
+				else if (!rxValidColor.test(user.color)) console.warn("A user uses an unsupported color format", user);
+				if (user.name == null) user.name = `User: ${clientId}`;
+				let anchor = relativePositionToAbsolutePosition(y, ystate.type, createRelativePositionFromJSON(aw.cursor.anchor), ystate.binding.mapping);
+				let head = relativePositionToAbsolutePosition(y, ystate.type, createRelativePositionFromJSON(aw.cursor.head), ystate.binding.mapping);
+				if (anchor !== null && head !== null) {
+					const maxsize = max(state.doc.content.size - 1, 0);
+					anchor = min(anchor, maxsize);
+					head = min(head, maxsize);
+					decorations.push(Decoration.widget(head, () => createCursor(user), {
+						key: clientId + "",
+						side: 10
+					}));
+					const from = min(anchor, head);
+					const to = max(anchor, head);
+					decorations.push(Decoration.inline(from, to, createSelection(user), {
+						inclusiveEnd: true,
+						inclusiveStart: false
+					}));
+				}
+			}
+		});
+		return DecorationSet.create(state.doc, decorations);
+	};
+	/**
+	* A prosemirror plugin that listens to awareness information on Yjs.
+	* This requires that a `prosemirrorPlugin` is also bound to the prosemirror.
+	*
+	* @public
+	* @param {Awareness} awareness
+	* @param {object} opts
+	* @param {function(any):HTMLElement} [opts.cursorBuilder]
+	* @param {function(any):import('prosemirror-view').DecorationAttrs} [opts.selectionBuilder]
+	* @param {function(any):any} [opts.getSelection]
+	* @param {string} [cursorStateField] By default all editor bindings use the awareness 'cursor' field to propagate cursor information.
+	* @return {any}
+	*/
+	var yCursorPlugin = (awareness, { cursorBuilder = defaultCursorBuilder, selectionBuilder = defaultSelectionBuilder, getSelection = (state) => state.selection } = {}, cursorStateField = "cursor") => new Plugin({
+		key: yCursorPluginKey,
+		state: {
+			init(_, state) {
+				return createDecorations(state, awareness, cursorBuilder, selectionBuilder);
+			},
+			apply(tr, prevState, _oldState, newState) {
+				const ystate = ySyncPluginKey.getState(newState);
+				const yCursorState = tr.getMeta(yCursorPluginKey);
+				if (ystate && ystate.isChangeOrigin || yCursorState && yCursorState.awarenessUpdated) return createDecorations(newState, awareness, cursorBuilder, selectionBuilder);
+				return prevState.map(tr.mapping, tr.doc);
+			}
+		},
+		props: { decorations: (state) => {
+			return yCursorPluginKey.getState(state);
+		} },
+		view: (view) => {
+			const awarenessListener = () => {
+				if (view.docView) setMeta(view, yCursorPluginKey, { awarenessUpdated: true });
+			};
+			const updateCursorInfo = () => {
+				const ystate = ySyncPluginKey.getState(view.state);
+				const current = awareness.getLocalState() || {};
+				if (ystate.binding == null) return;
+				if (view.hasFocus()) {
+					const selection = getSelection(view.state);
+					/**
+					* @type {Y.RelativePosition}
+					*/
+					const anchor = absolutePositionToRelativePosition(selection.anchor, ystate.type, ystate.binding.mapping);
+					/**
+					* @type {Y.RelativePosition}
+					*/
+					const head = absolutePositionToRelativePosition(selection.head, ystate.type, ystate.binding.mapping);
+					if (current.cursor == null || !compareRelativePositions(createRelativePositionFromJSON(current.cursor.anchor), anchor) || !compareRelativePositions(createRelativePositionFromJSON(current.cursor.head), head)) awareness.setLocalStateField(cursorStateField, {
+						anchor,
+						head
+					});
+				} else if (current.cursor != null && relativePositionToAbsolutePosition(ystate.doc, ystate.type, createRelativePositionFromJSON(current.cursor.anchor), ystate.binding.mapping) !== null) awareness.setLocalStateField(cursorStateField, null);
+			};
+			awareness.on("change", awarenessListener);
+			view.dom.addEventListener("focusin", updateCursorInfo);
+			view.dom.addEventListener("focusout", updateCursorInfo);
+			return {
+				update: updateCursorInfo,
+				destroy: () => {
+					view.dom.removeEventListener("focusin", updateCursorInfo);
+					view.dom.removeEventListener("focusout", updateCursorInfo);
+					awareness.off("change", awarenessListener);
+					awareness.setLocalStateField(cursorStateField, null);
+				}
+			};
+		}
+	});
+	//#endregion
 	//#region node_modules/lib0/websocket.js
 	/**
 	* Tiny websocket connection handler.
@@ -37514,47 +39613,6 @@
 		const c = getChannel(room);
 		c.bc.postMessage(data);
 		c.subs.forEach((sub) => sub(data, origin));
-	};
-	//#endregion
-	//#region node_modules/lib0/mutex.js
-	/**
-	* Mutual exclude for JavaScript.
-	*
-	* @module mutex
-	*/
-	/**
-	* @callback mutex
-	* @param {function():void} cb Only executed when this mutex is not in the current stack
-	* @param {function():void} [elseCb] Executed when this mutex is in the current stack
-	*/
-	/**
-	* Creates a mutual exclude function with the following property:
-	*
-	* ```js
-	* const mutex = createMutex()
-	* mutex(() => {
-	*   // This function is immediately executed
-	*   mutex(() => {
-	*     // This function is not executed, as the mutex is already active.
-	*   })
-	* })
-	* ```
-	*
-	* @return {mutex} A mutual exclude function
-	* @public
-	*/
-	var createMutex = () => {
-		let token = true;
-		return (f, g) => {
-			if (token) {
-				token = false;
-				try {
-					f();
-				} finally {
-					token = true;
-				}
-			} else if (g !== void 0) g();
-		};
 	};
 	/*!
 	* The buffer module from node.js, for the browser.
@@ -40636,241 +42694,6 @@
 		return messageType;
 	};
 	//#endregion
-	//#region node_modules/y-protocols/awareness.js
-	/**
-	* @module awareness-protocol
-	*/
-	var outdatedTimeout = 3e4;
-	/**
-	* @typedef {Object} MetaClientState
-	* @property {number} MetaClientState.clock
-	* @property {number} MetaClientState.lastUpdated unix timestamp
-	*/
-	/**
-	* The Awareness class implements a simple shared state protocol that can be used for non-persistent data like awareness information
-	* (cursor, username, status, ..). Each client can update its own local state and listen to state changes of
-	* remote clients. Every client may set a state of a remote peer to `null` to mark the client as offline.
-	*
-	* Each client is identified by a unique client id (something we borrow from `doc.clientID`). A client can override
-	* its own state by propagating a message with an increasing timestamp (`clock`). If such a message is received, it is
-	* applied if the known state of that client is older than the new state (`clock < newClock`). If a client thinks that
-	* a remote client is offline, it may propagate a message with
-	* `{ clock: currentClientClock, state: null, client: remoteClient }`. If such a
-	* message is received, and the known clock of that client equals the received clock, it will override the state with `null`.
-	*
-	* Before a client disconnects, it should propagate a `null` state with an updated clock.
-	*
-	* Awareness states must be updated every 30 seconds. Otherwise the Awareness instance will delete the client state.
-	*
-	* @extends {Observable<string>}
-	*/
-	var Awareness = class extends Observable {
-		/**
-		* @param {Y.Doc} doc
-		*/
-		constructor(doc) {
-			super();
-			this.doc = doc;
-			/**
-			* @type {number}
-			*/
-			this.clientID = doc.clientID;
-			/**
-			* Maps from client id to client state
-			* @type {Map<number, Object<string, any>>}
-			*/
-			this.states = /* @__PURE__ */ new Map();
-			/**
-			* @type {Map<number, MetaClientState>}
-			*/
-			this.meta = /* @__PURE__ */ new Map();
-			this._checkInterval = setInterval(() => {
-				const now = getUnixTime();
-				if (this.getLocalState() !== null && 3e4 / 2 <= now - this.meta.get(this.clientID).lastUpdated) this.setLocalState(this.getLocalState());
-				/**
-				* @type {Array<number>}
-				*/
-				const remove = [];
-				this.meta.forEach((meta, clientid) => {
-					if (clientid !== this.clientID && 3e4 <= now - meta.lastUpdated && this.states.has(clientid)) remove.push(clientid);
-				});
-				if (remove.length > 0) removeAwarenessStates(this, remove, "timeout");
-			}, floor(outdatedTimeout / 10));
-			doc.on("destroy", () => {
-				this.destroy();
-			});
-			this.setLocalState({});
-		}
-		destroy() {
-			this.emit("destroy", [this]);
-			this.setLocalState(null);
-			super.destroy();
-			clearInterval(this._checkInterval);
-		}
-		/**
-		* @return {Object<string,any>|null}
-		*/
-		getLocalState() {
-			return this.states.get(this.clientID) || null;
-		}
-		/**
-		* @param {Object<string,any>|null} state
-		*/
-		setLocalState(state) {
-			const clientID = this.clientID;
-			const currLocalMeta = this.meta.get(clientID);
-			const clock = currLocalMeta === void 0 ? 0 : currLocalMeta.clock + 1;
-			const prevState = this.states.get(clientID);
-			if (state === null) this.states.delete(clientID);
-			else this.states.set(clientID, state);
-			this.meta.set(clientID, {
-				clock,
-				lastUpdated: getUnixTime()
-			});
-			const added = [];
-			const updated = [];
-			const filteredUpdated = [];
-			const removed = [];
-			if (state === null) removed.push(clientID);
-			else if (prevState == null) {
-				if (state != null) added.push(clientID);
-			} else {
-				updated.push(clientID);
-				if (!equalityDeep(prevState, state)) filteredUpdated.push(clientID);
-			}
-			if (added.length > 0 || filteredUpdated.length > 0 || removed.length > 0) this.emit("change", [{
-				added,
-				updated: filteredUpdated,
-				removed
-			}, "local"]);
-			this.emit("update", [{
-				added,
-				updated,
-				removed
-			}, "local"]);
-		}
-		/**
-		* @param {string} field
-		* @param {any} value
-		*/
-		setLocalStateField(field, value) {
-			const state = this.getLocalState();
-			if (state !== null) this.setLocalState({
-				...state,
-				[field]: value
-			});
-		}
-		/**
-		* @return {Map<number,Object<string,any>>}
-		*/
-		getStates() {
-			return this.states;
-		}
-	};
-	/**
-	* Mark (remote) clients as inactive and remove them from the list of active peers.
-	* This change will be propagated to remote clients.
-	*
-	* @param {Awareness} awareness
-	* @param {Array<number>} clients
-	* @param {any} origin
-	*/
-	var removeAwarenessStates = (awareness, clients, origin) => {
-		const removed = [];
-		for (let i = 0; i < clients.length; i++) {
-			const clientID = clients[i];
-			if (awareness.states.has(clientID)) {
-				awareness.states.delete(clientID);
-				if (clientID === awareness.clientID) {
-					const curMeta = awareness.meta.get(clientID);
-					awareness.meta.set(clientID, {
-						clock: curMeta.clock + 1,
-						lastUpdated: getUnixTime()
-					});
-				}
-				removed.push(clientID);
-			}
-		}
-		if (removed.length > 0) {
-			awareness.emit("change", [{
-				added: [],
-				updated: [],
-				removed
-			}, origin]);
-			awareness.emit("update", [{
-				added: [],
-				updated: [],
-				removed
-			}, origin]);
-		}
-	};
-	/**
-	* @param {Awareness} awareness
-	* @param {Array<number>} clients
-	* @return {Uint8Array}
-	*/
-	var encodeAwarenessUpdate = (awareness, clients, states = awareness.states) => {
-		const len = clients.length;
-		const encoder = createEncoder();
-		writeVarUint(encoder, len);
-		for (let i = 0; i < len; i++) {
-			const clientID = clients[i];
-			const state = states.get(clientID) || null;
-			const clock = awareness.meta.get(clientID).clock;
-			writeVarUint(encoder, clientID);
-			writeVarUint(encoder, clock);
-			writeVarString(encoder, JSON.stringify(state));
-		}
-		return toUint8Array(encoder);
-	};
-	/**
-	* @param {Awareness} awareness
-	* @param {Uint8Array} update
-	* @param {any} origin This will be added to the emitted change event
-	*/
-	var applyAwarenessUpdate = (awareness, update, origin) => {
-		const decoder = createDecoder(update);
-		const timestamp = getUnixTime();
-		const added = [];
-		const updated = [];
-		const filteredUpdated = [];
-		const removed = [];
-		const len = readVarUint(decoder);
-		for (let i = 0; i < len; i++) {
-			const clientID = readVarUint(decoder);
-			let clock = readVarUint(decoder);
-			const state = JSON.parse(readVarString(decoder));
-			const clientMeta = awareness.meta.get(clientID);
-			const prevState = awareness.states.get(clientID);
-			const currClock = clientMeta === void 0 ? 0 : clientMeta.clock;
-			if (currClock < clock || currClock === clock && state === null && awareness.states.has(clientID)) {
-				if (state === null) if (clientID === awareness.clientID && awareness.getLocalState() != null) clock++;
-				else awareness.states.delete(clientID);
-				else awareness.states.set(clientID, state);
-				awareness.meta.set(clientID, {
-					clock,
-					lastUpdated: timestamp
-				});
-				if (clientMeta === void 0 && state !== null) added.push(clientID);
-				else if (clientMeta !== void 0 && state === null) removed.push(clientID);
-				else if (state !== null) {
-					if (!equalityDeep(state, prevState)) filteredUpdated.push(clientID);
-					updated.push(clientID);
-				}
-			}
-		}
-		if (added.length > 0 || filteredUpdated.length > 0 || removed.length > 0) awareness.emit("change", [{
-			added,
-			updated: filteredUpdated,
-			removed
-		}, origin]);
-		if (added.length > 0 || updated.length > 0 || removed.length > 0) awareness.emit("update", [{
-			added,
-			updated,
-			removed
-		}, origin]);
-	};
-	//#endregion
 	//#region node_modules/y-webrtc/src/crypto.js
 	/**
 	* @param {string} secret
@@ -41743,6 +43566,9 @@
 		toggleMark,
 		wrapIn,
 		setBlockType,
+		lift,
+		ySyncPlugin,
+		yCursorPlugin,
 		ydoc,
 		provider,
 		yXmlFragment
