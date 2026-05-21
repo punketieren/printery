@@ -14,7 +14,7 @@
             return;
         }
 
-        const { EditorState, EditorView, mySchema } = window.ProseMirror;
+        const { EditorState, EditorView, mySchema, keymap, baseKeymap, history } = window.ProseMirror;
 
         // Начальный документ
         const initialDoc = mySchema.node('doc', null, [
