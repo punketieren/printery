@@ -20,7 +20,15 @@
 })();
 
 // Сворачивание левой панели
-// Ресайзер (с блокировкой iframe и кликом для сворачивания)
+(function() {
+    const panel = document.getElementById('editor-panel');
+    const btn = document.getElementById('collapse-editor');
+    if (!panel || !btn) return;
+    btn.addEventListener('click', () => {
+        panel.classList.toggle('collapsed');
+        btn.textContent = panel.classList.contains('collapsed') ? '▶' : '◀';
+    }); })(); 
+// Ресайзер (с блокировкой iframe)
 (function() {
     const resizer = document.getElementById('resizer');
     const leftPanel = document.getElementById('editor-panel');
@@ -29,60 +37,32 @@
 
     let startX, startWidth;
     let isDragging = false;
-    let clickTimer = null;
-    let dragStarted = false;
 
     resizer.addEventListener('mousedown', (e) => {
         e.preventDefault();
         startX = e.clientX;
         startWidth = leftPanel.offsetWidth;
-        isDragging = false;
-        dragStarted = false;
-        if (clickTimer) clearTimeout(clickTimer);
-        
+        isDragging = true;
         if (iframe) iframe.style.pointerEvents = 'none';
         leftPanel.style.transition = 'none';
         document.body.style.cursor = 'ew-resize';
         document.body.style.userSelect = 'none';
-    });
-
+    }); 
     window.addEventListener('mousemove', (e) => {
-        if (!isDragging && (Math.abs(e.clientX - startX) > 5)) {
-            isDragging = true;
-            dragStarted = true;
-        }
-        if (isDragging) {
-            let newWidth = startWidth + (e.clientX - startX);
-            newWidth = Math.min(Math.max(newWidth, 200), window.innerWidth * 0.9);
-            leftPanel.style.width = newWidth + 'px';
-            localStorage.setItem('panelWidth', newWidth);
-        }
-    });
-
+        if (!isDragging) return;
+        let newWidth = startWidth + (e.clientX - startX);
+        newWidth = Math.min(Math.max(newWidth, 200), window.innerWidth * 0.9);
+        leftPanel.style.width = newWidth + 'px';
+        localStorage.setItem('panelWidth', newWidth);
+    }); 
     window.addEventListener('mouseup', () => {
         if (isDragging) {
-            // Ресайз завершён
             isDragging = false;
             if (iframe) iframe.style.pointerEvents = 'auto';
             leftPanel.style.transition = '';
             document.body.style.cursor = '';
             document.body.style.userSelect = '';
-        } else {
-            // Без движения — это клик, сворачиваем панель
-            leftPanel.classList.toggle('collapsed');
-            const isCollapsed = leftPanel.classList.contains('collapsed');
-            localStorage.setItem('panelCollapsed', isCollapsed);
-            const btn = document.getElementById('collapse-editor');
-            if (btn) btn.textContent = isCollapsed ? '▶' : '◀';
-            // Восстанавливаем указатели (на случай, если они были изменены)
-            if (iframe) iframe.style.pointerEvents = 'auto';
-            leftPanel.style.transition = '';
-            document.body.style.cursor = '';
-            document.body.style.userSelect = '';
-        }
-    });
-})();
-
+    }   }); })(); 
 // Управление картой (кнопки collapse / expand)
 (function() {
     const iframe = document.getElementById('mapFrame');
@@ -97,12 +77,10 @@
         }
         const span = document.getElementById('map-level');
         if (span) span.textContent = currentLevel;
-    }
-
+    } 
     if (collapseBtn) collapseBtn.onclick = () => setLevel(-1);
     if (expandBtn) expandBtn.onclick = () => setLevel(+1);
-})();
-
+})(); 
 // Кнопка Fit
 (function() {
     const iframe = document.getElementById('mapFrame');
@@ -111,11 +89,7 @@
         fitBtn.onclick = () => {
             if (iframe?.contentWindow?.currentMap) {
                 iframe.contentWindow.currentMap.fit();
-            }
-        };
-    }
-})();
-
+   }     };  } })(); 
 // Кнопка Fullscreen (развернуть правую панель)
 (function() {
     const iframe = document.getElementById('mapFrame');
@@ -127,8 +101,4 @@
             setTimeout(() => {
                 if (iframe?.contentWindow?.currentMap) {
                     iframe.contentWindow.currentMap.fit();
-                }
-            }, 100);
-        };
-    }
-})();
+   }    }, 100);  };  } })();
