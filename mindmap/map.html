@@ -53,8 +53,8 @@
             try {
                 // Загружаем зависимости
                 await loadScript('d3.js');
-                await loadScript('markmap-lib.umd.js');
-                await loadScript('markmap-view.umd.js');
+                await loadScript('markmap-lib.js');
+                await loadScript('markmap-view.js');
 
                 const container = document.getElementById('markmap-container');
                 const transformer = new window.markmapLib.Transformer();
