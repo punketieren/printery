@@ -27,6 +27,7 @@
 (function() {
     const resizer = document.getElementById('resizer');
     const leftPanel = document.getElementById('editor-panel');
+    const iframe = document.getElementById('mapFrame'); // ДОБАВЛЕНО
     if (!resizer || !leftPanel) return;
 
     let startX, startWidth;
@@ -66,6 +67,10 @@
         isDragging = false;
         dragStarted = false;
 
+        // ДОБАВЛЕНО: блокируем iframe и отключаем transition
+        if (iframe) iframe.style.pointerEvents = 'none';
+        leftPanel.style.transition = 'none';
+
         document.body.style.cursor = 'ew-resize';
         document.body.style.userSelect = 'none';
 
@@ -95,6 +100,10 @@
             document.removeEventListener('mouseup', onMouseUp);
             document.body.style.cursor = '';
             document.body.style.userSelect = '';
+
+            // ДОБАВЛЕНО: возвращаем iframe и transition
+            if (iframe) iframe.style.pointerEvents = 'auto';
+            leftPanel.style.transition = '';
 
             if (!isDragging) {
                 togglePanel();
