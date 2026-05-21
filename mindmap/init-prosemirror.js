@@ -26,9 +26,10 @@
             state: EditorState.create({
                 schema: mySchema,
                 doc: initialDoc,
-        plugins: [
-            history(),
-            keymap(baseKeymap)  
+				plugins: [
+				history(),
+				keymap(baseKeymap)
+				]
             })
         });
 
