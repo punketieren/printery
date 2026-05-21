@@ -145,6 +145,11 @@ document.getElementById('fullscreen-map').addEventListener('click', () => {
 const iframe = document.getElementById('mapFrame');
 let currentLevel = 10; // начальный уровень (всё развёрнуто)
 
+function updateLevelDisplay() {
+    const levelSpan = document.getElementById('map-level');
+    if (levelSpan) levelSpan.textContent = currentLevel;
+}
+
 // Функция изменения уровня (delta: +1 – свернуть, -1 – развернуть)
 function setLevel(delta) {
     let newLevel = currentLevel + delta;
@@ -167,3 +172,5 @@ const btnExpand = document.getElementById('expand');
 if (btnExpand) {
     btnExpand.addEventListener('click', () => setLevel(+1));
 }
+// Начальное отображение
+updateLevelDisplay();
