@@ -85,56 +85,8 @@
 </div>
 <div class="global-status" id="global-status">Готов</div>
 
-<script  src="view.js"></script>
-<script>
-// Ждём полной загрузки DOM
-document.addEventListener('DOMContentLoaded', () => {
-    const iframe = document.getElementById('mapFrame');
-
-    if (iframe) {
-        // Функция для отправки данных
-        const sendMarkdownToMap = (markdown) => {
-            if (iframe.contentWindow) {
-                iframe.contentWindow.postMessage({
-                    type: 'updateMap',
-                    markdown: markdown
-                }, '*');
-            }
-        };
-
-        // Ждём, когда iframe загрузится и скажет, что он готов
-        window.addEventListener('message', (event) => {
-            // Проверяем, что сообщение пришло именно из нашего iframe
-            if (event.source === iframe.contentWindow && event.data.type === 'mapReady') {
-                console.log('Карта готова, отправляю данные...');
-                // Отправляем пример Markdown
-                sendMarkdownToMap('# Главная идея\n## Первая ветка\n### Подпункт 1.1\n## Вторая ветка');
-            }
-        });
-    } else {
-        console.error('Элемент с id "mapFrame" не найден.');
-    }
-});
-</script>
-<script>const { Schema } = ProseMirror.model;
-const { EditorState } = ProseMirror.state;
-const { EditorView } = ProseMirror.view;
-const { schema } = ProseMirror.schemaBasic;
-const { keymap } = ProseMirror.keymap;
-const { history, undo, redo } = ProseMirror.history;
-const { baseKeymap } = ProseMirror.commands;
-
-const mySchema = new Schema({
-    nodes: schema.spec.nodes,
-    marks: schema.spec.marks
-});
-
-const view = new EditorView(document.getElementById('editor-container'), {
-    state: EditorState.create({
-        schema: mySchema,
-        plugins: [history(), keymap(baseKeymap), keymap({ "Mod-z": undo, "Mod-y": redo })]
-    })
-});</script>
 <script src="prosemirror.bundle.js"></script>
+<script src="init-prosemirror.js"></script> 
+<script  src="view.js"></script>
 </body>
 </html>
