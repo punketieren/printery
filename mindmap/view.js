@@ -158,6 +158,7 @@ function setLevel(delta) {
     if (newLevel !== currentLevel) {
         currentLevel = newLevel;
         iframe.contentWindow?.collapseLevel?.(currentLevel);
+        updateLevelDisplay();
     }
 }
 
