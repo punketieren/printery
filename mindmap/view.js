@@ -122,7 +122,11 @@
             setTimeout(() => {
                 if (iframe?.contentWindow?.currentMap) {
                     iframe.contentWindow.currentMap.fit();
-   }    }, 100);  };  } });
+                }
+            }, 100);
+        };
+    }
+})();
    // Сохранение PNG из карты
 const savePngBtn = document.getElementById('save-png');
 if (savePngBtn) {
