@@ -150,6 +150,16 @@ document.getElementById('fullscreen-map').addEventListener('click', () => {
         setTimeout(() => iframe.contentWindow.currentMap.fit(), 100);
     }
 });
+const fitBtn = document.getElementById('fit-btn');
+const iframe = document.getElementById('mapFrame');
+
+fitBtn?.addEventListener('click', () => {
+    if (iframe && iframe.contentWindow && iframe.contentWindow.currentMap) {
+        iframe.contentWindow.currentMap.fit();
+    } else {
+        console.warn('Карта не готова или нет метода fit');
+    }
+});
 
 const iframe = document.getElementById('mapFrame');
 let currentLevel = 9;
