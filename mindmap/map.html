@@ -19,34 +19,39 @@
 
     <script>
         function renderMap(markdown) {
-            const container = document.getElementById('markmap-container');
-            if (!container) return;
+    const container = document.getElementById('markmap-container');
+    if (!container) return;
 
-            container.innerHTML = '';
-            const div = document.createElement('div');
-            div.className = 'markmap';
-            const script = document.createElement('script');
-            script.type = 'text/template';
-            script.textContent = markdown || '# Пустой документ\n## Нет данных';
-            div.appendChild(script);
-            container.appendChild(div);
+    // Находим существующий элемент .markmap или создаём новый
+    let markmapDiv = container.querySelector('.markmap');
+    if (!markmapDiv) {
+        markmapDiv = document.createElement('div');
+        markmapDiv.className = 'markmap';
+        container.appendChild(markmapDiv);
+    }
 
-            // Ждём реальных размеров контейнера, а не просто таймаута
-            function waitForSize(callback) {
-                const rect = container.getBoundingClientRect();
-                if (rect.width > 0 && rect.height > 0) {
-                    callback();
-                } else {
-                    requestAnimationFrame(() => waitForSize(callback));
-                }
-            }
+    // Обновляем содержимое скрипта
+    let script = markmapDiv.querySelector('script[type="text/template"]');
+    if (!script) {
+        script = document.createElement('script');
+        script.type = 'text/template';
+        markmapDiv.appendChild(script);
+    }
+    script.textContent = markdown || '# Пустой документ\n## Нет данных';
 
-            waitForSize(() => {
-                if (window.markmap?.autoLoader) {
-                    window.markmap.autoLoader.renderAll();
-                }
-            });
+    // Функция безопасного рендеринга
+    const tryRender = () => {
+        if (!window.markmap?.autoLoader) return;
+        const rect = container.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+            window.markmap.autoLoader.renderAll();
+        } else {
+            requestAnimationFrame(tryRender);
         }
+    };
+
+    tryRender();
+}
 
         window.updateMarkmap = renderMap;
         window.addEventListener('message', (e) => {
