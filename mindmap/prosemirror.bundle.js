@@ -36531,13 +36531,10 @@
 	};
 	//#endregion
 	//#region src/editor.js
-	window.ProseMirror.wrapIn = wrapIn;
-	window.ProseMirror.setBlockType = setBlockType;
 	var mySchema = new Schema$1({
 		nodes: addListNodes(schema$1.spec.nodes, "paragraph block*", "block"),
 		marks: schema$1.spec.marks
 	});
-	window.ProseMirror.toggleMark = toggleMark;
 	var ydoc = new Doc();
 	var provider = new WebrtcProvider("prosemirror-room", ydoc);
 	var yXmlFragment = ydoc.getXmlFragment("prosemirror");
@@ -36553,6 +36550,9 @@
 		keymap,
 		history,
 		baseKeymap,
+		toggleMark,
+		wrapIn,
+		setBlockType,
 		ydoc,
 		provider,
 		yXmlFragment
