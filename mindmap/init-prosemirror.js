@@ -1,26 +1,20 @@
 // Инициализация ProseMirror и связь с картой
-(function() {
-    // Ждём загрузки DOM и бандла
+(function() { 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);
-    } else {
-        init();
-    }
-
+    } else {      init();
+    } 
     function init() {
         // Проверяем, что бандл загрузился
         if (!window.ProseMirror) {
             console.error('prosemirror.bundle.js не загружен');
             return;
-        }
-
-        const { EditorState, EditorView, mySchema, keymap, baseKeymap, history } = window.ProseMirror;
-
+        } 
+        const { EditorState, EditorView, mySchema, keymap, baseKeymap, history } = window.ProseMirror; 
         // Начальный документ
         const initialDoc = mySchema.node('doc', null, [
             mySchema.node('paragraph', null, mySchema.text('Начните писать...'))
-        ]);
-
+        ]); 
         // Создаём редактор
         const view = new EditorView(document.getElementById('editor'), {
             state: EditorState.create({
@@ -30,12 +24,9 @@
 				history(),
 				keymap(baseKeymap)
 				]
-            })
-        });
-
+    })   }); 
         // Сохраняем глобально (для доступа из других скриптов)
-        window.editorView = view;
-
+        window.editorView = view; 
         // ---- Отправка Markdown в карту ----
         const iframe = document.getElementById('mapFrame');
         if (!iframe) return;
@@ -45,20 +36,13 @@
                 iframe.contentWindow.postMessage({
                     type: 'updateMap',
                     markdown: markdown
-                }, '*');
-            }
-        }
-
+      }, '*');  } } 
         // Ждём готовности карты
         window.addEventListener('message', function(event) {
             if (event.source === iframe.contentWindow && event.data.type === 'mapReady') {
-                console.log('Карта готова, отправляем Markdown...');
-                // TODO: заменить на реальный Markdown из редактора
+                console.log('Карта готова, отправляем Markdown...'); 
                 sendMarkdownToMap('# Главная идея\n## Первая ветка\n### Подпункт 1.1');
-            }
-        });
-    }
-})();
+   }  });  } })();
 // Выпадающие меню по клику
 (function() {
     const dropdowns = document.querySelectorAll('.dropdown');
@@ -78,6 +62,4 @@
     document.addEventListener('click', (e) => {
         if (!e.target.closest('.dropdown')) {
             document.querySelectorAll('.dropdown-content.show').forEach(c => c.classList.remove('show'));
-        }
-    });
-})();
+  }  }); })(); 
