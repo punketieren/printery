@@ -30,22 +30,23 @@
                 const container = document.getElementById('markmap-container');
                 const transformer = new window.markmap.Transformer();
                 
-                // Глобальные переменные
+                // Глобальные переменные для управления извне
                 window.currentMap = null;
                 window.currentSvg = null;
-                window.expandLevel = 6;  // можно менять из консоли
+                window.currentMarkdown = '';
 
                 async function render(markdownText) {
                     if (!container) return;
+                    window.currentMarkdown = markdownText;
 
-                    // Передаём текущий уровень раскрытия
-                    const { root } = transformer.transform(markdownText || '# Пустой документ\n## Нет данных', {
-                        initialExpandLevel: window.expandLevel
-                    });
+                    // Парсим Markdown в дерево
+                    const { root } = transformer.transform(markdownText || '# Пустой документ\n## Нет данных');
 
                     if (window.currentMap && window.currentSvg && window.currentSvg.parentNode === container) {
+                        // Обновляем существующую карту
                         window.currentMap.setData(root);
                     } else {
+                        // Создаём новую карту
                         const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
                         svg.style.width = '100%';
                         svg.style.height = '100%';
@@ -59,8 +60,46 @@
                 }
 
                 window.updateMarkmap = render;
+
+                // Функция для сворачивания узлов глубже определённого уровня
+                window.collapseLevel = (level) => {
+                    if (!window.currentMap || !window.currentMap.state || !window.currentMap.state.root) return;
+
+                    function setFold(node, currentDepth = 1) {
+                        if (!node) return;
+                        if (node.children && node.children.length) {
+                            node.payload = node.payload || {};
+                            // fold: 1 — свёрнут, 0 — развёрнут
+                            node.payload.fold = (currentDepth >= level) ? 1 : 0;
+                            node.children.forEach(child => setFold(child, currentDepth + 1));
+                        }
+                    }
+
+                    setFold(window.currentMap.state.root);
+                    window.currentMap.setData(window.currentMap.state.root);
+                };
+
+                // Функция для разворачивания всех узлов
+                window.expandAll = () => {
+                    if (!window.currentMap || !window.currentMap.state || !window.currentMap.state.root) return;
+
+                    function unfold(node) {
+                        if (!node) return;
+                        if (node.children && node.children.length) {
+                            node.payload = node.payload || {};
+                            node.payload.fold = 0;
+                            node.children.forEach(unfold);
+                        }
+                    }
+
+                    unfold(window.currentMap.state.root);
+                    window.currentMap.setData(window.currentMap.state.root);
+                };
+
+                // Сигнал родительскому окну, что карта готова
                 window.parent.postMessage({ type: 'mapReady' }, '*');
 
+                // Стартовая отрисовка
                 await render('# Загрузка...\n## Карта готова');
             } catch (err) {
                 console.error(err);

@@ -131,3 +131,13 @@
     });
 })(); 
 
+document.getElementById('fullscreen-map').addEventListener('click', () => {
+    const panel = document.getElementById('viewer-panel');
+    panel.classList.toggle('fullscreen');
+    
+    // После изменения размера — подогнать карту
+    const iframe = document.getElementById('mapFrame');
+    if (iframe && iframe.contentWindow && iframe.contentWindow.currentMap) {
+        setTimeout(() => iframe.contentWindow.currentMap.fit(), 100);
+    }
+});
