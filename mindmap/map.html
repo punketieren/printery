@@ -101,7 +101,7 @@
                 window.parent.postMessage({ type: 'mapReady' }, '*');
 
                 // Стартовая отрисовка
-                await render('# Загрузка...\n## Карта готова');
+                await render('# Загру\n## зка...\n### Карта\n#### готова');
             } catch (err) {
                 console.error(err);
                 document.body.innerHTML = `<div style="color:red;padding:20px;">Ошибка: ${err.message}</div>`;
