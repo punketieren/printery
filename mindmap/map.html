@@ -108,5 +108,13 @@
             }
         })();
     </script>
+	<script>
+    // Обработчик сообщений от родительского окна
+    window.addEventListener('message', (e) => {
+        if (e.data.type === 'updateMap' && window.updateMarkmap) {
+            window.updateMarkmap(e.data.markdown);
+        }
+    });
+</script>
 </body>
 </html>
