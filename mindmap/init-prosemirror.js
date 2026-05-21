@@ -25,7 +25,10 @@
         const view = new EditorView(document.getElementById('editor'), {
             state: EditorState.create({
                 schema: mySchema,
-                doc: initialDoc
+                doc: initialDoc,
+        plugins: [
+            history(),
+            keymap(baseKeymap)  
             })
         });
 
