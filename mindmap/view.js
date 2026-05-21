@@ -141,3 +141,29 @@ document.getElementById('fullscreen-map').addEventListener('click', () => {
         setTimeout(() => iframe.contentWindow.currentMap.fit(), 100);
     }
 });
+
+const iframe = document.getElementById('mapFrame');
+let currentLevel = 6; // начальный уровень (всё развёрнуто)
+
+// Функция изменения уровня (delta: +1 – свернуть, -1 – развернуть)
+function setLevel(delta) {
+    let newLevel = currentLevel + delta;
+    if (newLevel < 1) newLevel = 1;
+    if (newLevel > 6) newLevel = 6;
+    if (newLevel !== currentLevel) {
+        currentLevel = newLevel;
+        iframe.contentWindow?.collapseLevel?.(currentLevel);
+    }
+}
+
+// Кнопка "свернуть" (увеличиваем уровень сворачивания)
+const btnCollapse = document.getElementById('collapse');
+if (btnCollapse) {
+    btnCollapse.addEventListener('click', () => setLevel(+1));
+}
+
+// Кнопка "развернуть" (уменьшаем уровень сворачивания)
+const btnExpand = document.getElementById('expand');
+if (btnExpand) {
+    btnExpand.addEventListener('click', () => setLevel(-1));
+}
