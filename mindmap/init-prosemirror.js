@@ -207,4 +207,47 @@ if (loadBtn) {
     document.addEventListener('click', (e) => {
         if (!e.target.closest('.dropdown')) {
             document.querySelectorAll('.dropdown-content.show').forEach(c => c.classList.remove('show'));
-  }  }); })(); 
+  }  }); // ==== ПЕРЕКЛЮЧЕНИЕ РЕЖИМОВ WYSIWYG / MARKDOWN ====
+const editorContainer = document.getElementById('editor');
+const wysiwygRadio = document.querySelector('input[value="wysiwyg"]');
+const markdownRadio = document.querySelector('input[value="markdown"]');
+let textarea = null;
+
+function switchToWysiwyg() {
+    if (!textarea) return;
+    const markdown = textarea.value;
+    // Парсим Markdown в документ ProseMirror
+    const doc = window.ProseMirror.defaultMarkdownParser.parse(markdown);
+    // Восстанавливаем редактор
+    editorContainer.style.display = 'block';
+    if (textarea.parentNode) textarea.parentNode.removeChild(textarea);
+    textarea = null;
+    // Обновляем состояние редактора
+    const tr = window.editorView.state.tr.replaceWith(0, window.editorView.state.doc.content.size, doc);
+    window.editorView.dispatch(tr);
+}
+
+function switchToMarkdown() {
+    if (textarea) return;
+    // Получаем Markdown из редактора
+    const markdown = window.ProseMirror.defaultMarkdownSerializer.serialize(window.editorView.state.doc);
+    // Создаём textarea
+    textarea = document.createElement('textarea');
+    textarea.style.width = '100%';
+    textarea.style.height = '100%';
+    textarea.style.padding = '10px';
+    textarea.style.fontFamily = 'monospace';
+    textarea.value = markdown;
+    // Прячем редактор и показываем textarea
+    editorContainer.style.display = 'none';
+    editorContainer.parentNode.appendChild(textarea);
+}
+
+if (wysiwygRadio && markdownRadio) {
+    wysiwygRadio.addEventListener('change', () => {
+        if (wysiwygRadio.checked) switchToWysiwyg();
+    });
+    markdownRadio.addEventListener('change', () => {
+        if (markdownRadio.checked) switchToMarkdown();
+    });
+}})(); 
