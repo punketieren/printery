@@ -63,6 +63,28 @@
             document.body.style.cursor = '';
             document.body.style.userSelect = '';
     }   }); })(); 
+	// Клик по ресайзеру для сворачивания  панели (добавлено после тестов)
+(function() {
+    const resizer = document.getElementById('resizer');
+    const leftPanel = document.getElementById('editor-panel');
+    if (!resizer || !leftPanel) return;
+
+    let mouseDownTime = 0;
+    let dragHappened = false;
+
+    resizer.addEventListener('mousedown', () => {
+        mouseDownTime = Date.now();
+        dragHappened = false;   }); 
+    resizer.addEventListener('mousemove', () => {
+        dragHappened = true;  }); 
+    resizer.addEventListener('mouseup', () => {
+        if (!dragHappened && (Date.now() - mouseDownTime < 200)) {
+            leftPanel.classList.toggle('collapsed');
+            const isCollapsed = leftPanel.classList.contains('collapsed');
+            localStorage.setItem('panelCollapsed', isCollapsed);
+            const btn = document.getElementById('collapse-editor');
+            if (btn) btn.textContent = isCollapsed ? '▶' : '◀';
+    }   }); })();
 // Управление картой (кнопки collapse / expand)
 (function() {
     const iframe = document.getElementById('mapFrame');
