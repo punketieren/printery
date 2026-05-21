@@ -135,17 +135,14 @@ if (loadBtn) {
             const text = await file.text();
             const { defaultMarkdownParser, mySchema } = window.ProseMirror;
             
-            // Пробуем распарсить
+            // Парсим напрямую — теперь парсер работает с твоей схемой
             let doc = defaultMarkdownParser.parse(text);
             
-            // Если парсер вернул пустой документ — вставляем текст как параграф
+            // Если документ всё же пустой (например, файл пуст) — вставляем заглушку
             if (!doc || doc.content.size === 0) {
-                const lines = text.split('\n');
-                const paragraphs = lines.filter(l => l.trim()).map(line => 
-                    mySchema.node('paragraph', null, mySchema.text(line))
-                );
-                if (paragraphs.length === 0) paragraphs.push(mySchema.node('paragraph', null, mySchema.text('')));
-                doc = mySchema.node('doc', null, paragraphs);
+                doc = mySchema.node('doc', null, [
+                    mySchema.node('paragraph', null, mySchema.text('Файл пуст или не удалось разобрать Markdown'))
+                ]);
             }
             
             const tr = window.editorView.state.tr.replaceWith(0, window.editorView.state.doc.content.size, doc);
