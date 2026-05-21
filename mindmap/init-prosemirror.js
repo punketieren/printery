@@ -27,6 +27,71 @@
     })   }); 
         // Сохраняем глобально (для доступа из других скриптов)
         window.editorView = view; 
+		// Привязка кнопок форматирования
+const formatBtn = (id, cmd, markName = null) => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+        const { state, dispatch } = window.editorView;
+        if (cmd === 'toggleMark' && markName) {
+            const mark = state.schema.marks[markName];
+            if (mark) window.ProseMirror.toggleMark(mark)(state, dispatch);
+        } else if (cmd === 'wrapIn') {
+            const nodeType = state.schema.nodes[markName];
+            if (nodeType) window.ProseMirror.wrapIn(nodeType)(state, dispatch);
+        } else if (cmd === 'setBlockType') {
+            const nodeType = state.schema.nodes[markName];
+            if (nodeType) window.ProseMirror.setBlockType(nodeType)(state, dispatch);
+        }
+        window.editorView.focus();
+    });
+};
+
+// Жирный Курсив Зачёркнутый Код Подсветка
+formatBtn('bold', 'toggleMark', 'strong'); 
+formatBtn('italic', 'toggleMark', 'em'); 
+formatBtn('strike', 'toggleMark', 'strike'); 
+formatBtn('code-inline', 'toggleMark', 'code'); 
+formatBtn('highlight', 'toggleMark', 'mark'); 
+// Маркированный список Нумерованный список Цитата Блок кода
+formatBtn('ul', 'wrapIn', 'bullet_list'); 
+formatBtn('ol', 'wrapIn', 'ordered_list'); 
+formatBtn('quote', 'wrapIn', 'blockquote'); 
+formatBtn('code-block', 'setBlockType', 'code_block');
+// Параграф
+formatBtn('paragraph', 'setBlockType', 'paragraph'); 
+// Кнопки изменения уровня заголовка (отдельно, потому что нужно передать атрибут level)
+const headingUpBtn = document.getElementById('heading-up');
+const headingDownBtn = document.getElementById('heading-down'); 
+if (headingUpBtn) {
+    headingUpBtn.addEventListener('click', () => {
+        const { state, dispatch } = window.editorView;
+        const { $from } = state.selection;
+        const node = $from.node($from.depth);
+        if (node.type.name === 'heading') {
+            const newLevel = Math.min(6, node.attrs.level + 1);
+            window.ProseMirror.setBlockType(state.schema.nodes.heading, { level: newLevel })(state, dispatch);
+        } else if (node.type.name === 'paragraph') {
+            window.ProseMirror.setBlockType(state.schema.nodes.heading, { level: 2 })(state, dispatch);
+        }
+        window.editorView.focus();
+    }); } 
+if (headingDownBtn) {
+    headingDownBtn.addEventListener('click', () => {
+        const { state, dispatch } = window.editorView;
+        const { $from } = state.selection;
+        const node = $from.node($from.depth);
+        if (node.type.name === 'heading') {
+            const newLevel = Math.max(1, node.attrs.level - 1);
+            if (newLevel === 1) {
+                window.ProseMirror.setBlockType(state.schema.nodes.paragraph)(state, dispatch);
+            } else {
+                window.ProseMirror.setBlockType(state.schema.nodes.heading, { level: newLevel })(state, dispatch);
+            }
+        }
+        window.editorView.focus();
+    });
+}
 		// Undo / Redo (если кнопки существуют)
 const undoBtn = document.getElementById('undo');
 const redoBtn = document.getElementById('redo');
