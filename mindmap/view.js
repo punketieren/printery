@@ -153,13 +153,13 @@ document.getElementById('fullscreen-map').addEventListener('click', () => {
 const fitBtn = document.getElementById('fit-btn');
 const iframe = document.getElementById('mapFrame');
 
-fitBtn?.addEventListener('click', () => {
-    if (iframe && iframe.contentWindow && iframe.contentWindow.currentMap) {
-        iframe.contentWindow.currentMap.fit();
-    } else {
-        console.warn('Карта не готова или нет метода fit');
-    }
-});
+//fitBtn?.addEventListener('click', () => {
+  //  if (iframe && iframe.contentWindow && iframe.contentWindow.currentMap) {
+    //    iframe.contentWindow.currentMap.fit();
+   // } else {
+    //    console.warn('Карта не готова или нет метода fit');
+   // }
+//});
 
 const iframe = document.getElementById('mapFrame');
 let currentLevel = 9;
