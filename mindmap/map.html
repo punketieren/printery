@@ -117,30 +117,41 @@
     });
 
     function saveAsPNG() {
-        const svg = document.querySelector('#markmap-container svg');
-        if (!svg) return;
+    const svg = document.querySelector('#markmap-container svg');
+    if (!svg) return;
 
-        const serializer = new XMLSerializer();
-        const source = serializer.serializeToString(svg);
+    const clone = svg.cloneNode(true);
+    const container = document.getElementById('markmap-container');
+    const width = container.clientWidth;
+    const height = container.clientHeight;
+    
+    clone.setAttribute('width', width);
+    clone.setAttribute('height', height);
+    
+    const transform = svg.getAttribute('transform') || '';
+    clone.setAttribute('transform', transform);
+    
+    const serializer = new XMLSerializer();
+    const source = serializer.serializeToString(clone);
+    
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    
+    const img = new Image();
+    img.onload = () => {
+        ctx.drawImage(img, 0, 0, width, height);
+        const png = canvas.toDataURL('image/png');
+        const a = document.createElement('a');
+        a.href = png;
+        a.download = 'mindmap.png';
+        a.click();
+    };
+    img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(source);
+}
 
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        const img = new Image();
-
-        img.onload = () => {
-            canvas.width = img.width;
-            canvas.height = img.height;
-            ctx.drawImage(img, 0, 0);
-            const png = canvas.toDataURL('image/png');
-            const a = document.createElement('a');
-            a.href = png;
-            a.download = 'mindmap.png';
-            a.click();
-        };
-        img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(source);
-    }
-
-    window.saveAsPNG = saveAsPNG;
+window.saveAsPNG = saveAsPNG;
 </script>
 </body>
 </html>
