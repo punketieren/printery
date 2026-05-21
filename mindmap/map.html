@@ -29,19 +29,23 @@
 
                 const container = document.getElementById('markmap-container');
                 const transformer = new window.markmap.Transformer();
-                let currentMap = null;
-                let currentSvg = null;
+                
+                // Глобальные переменные
+                window.currentMap = null;
+                window.currentSvg = null;
+                window.expandLevel = 6;  // можно менять из консоли
 
                 async function render(markdownText) {
                     if (!container) return;
 
-                    const { root } = transformer.transform(markdownText || '# Пустой документ\n## Нет данных');
+                    // Передаём текущий уровень раскрытия
+                    const { root } = transformer.transform(markdownText || '# Пустой документ\n## Нет данных', {
+                        initialExpandLevel: window.expandLevel
+                    });
 
-                    if (currentMap && currentSvg && currentSvg.parentNode === container) {
-                        // Обновляем существующую карту
-                        currentMap.setData(root);
+                    if (window.currentMap && window.currentSvg && window.currentSvg.parentNode === container) {
+                        window.currentMap.setData(root);
                     } else {
-                        // Создаём новую карту в первый раз
                         const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
                         svg.style.width = '100%';
                         svg.style.height = '100%';
@@ -49,13 +53,12 @@
 
                         container.innerHTML = '';
                         container.appendChild(svg);
-                        currentSvg = svg;
-                        currentMap = window.markmap.Markmap.create(svg, null, root);
+                        window.currentSvg = svg;
+                        window.currentMap = window.markmap.Markmap.create(svg, null, root);
                     }
                 }
 
                 window.updateMarkmap = render;
-
                 window.parent.postMessage({ type: 'mapReady' }, '*');
 
                 await render('# Загрузка...\n## Карта готова');
