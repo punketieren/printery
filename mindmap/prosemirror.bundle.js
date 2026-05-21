@@ -43549,7 +43549,11 @@
 		}
 	});
 	var ydoc = new Doc();
-	var provider = new WebrtcProvider("prosemirror-room", ydoc);
+	var provider = new WebrtcProvider("prosemirror-room", ydoc, { signaling: [
+		"wss://y-webrtc-eu.fly.dev",
+		"wss://signaling.yjs.dev",
+		"wss://y-webrtc-signaling.herokuapp.com"
+	] });
 	var yXmlFragment = ydoc.getXmlFragment("prosemirror");
 	window.ProseMirror = {
 		Schema: Schema$1,
