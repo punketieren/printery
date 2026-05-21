@@ -68,7 +68,21 @@ if (loadBtn) {
             const file = e.target.files[0];
             if (!file) return;
             const text = await file.text();
-            const doc = window.ProseMirror.defaultMarkdownParser.parse(text);
+            const { defaultMarkdownParser, mySchema } = window.ProseMirror;
+            
+            // Пробуем распарсить
+            let doc = defaultMarkdownParser.parse(text);
+            
+            // Если парсер вернул пустой документ — вставляем текст как параграф
+            if (!doc || doc.content.size === 0) {
+                const lines = text.split('\n');
+                const paragraphs = lines.filter(l => l.trim()).map(line => 
+                    mySchema.node('paragraph', null, mySchema.text(line))
+                );
+                if (paragraphs.length === 0) paragraphs.push(mySchema.node('paragraph', null, mySchema.text('')));
+                doc = mySchema.node('doc', null, paragraphs);
+            }
+            
             const tr = window.editorView.state.tr.replaceWith(0, window.editorView.state.doc.content.size, doc);
             window.editorView.dispatch(tr);
         };
