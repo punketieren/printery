@@ -27,7 +27,7 @@
     })   }); 
         // Сохраняем глобально (для доступа из других скриптов)
         window.editorView = view; 
-		const { ydoc, yXmlFragment, provider, ySyncPlugin, yCursorPlugin } = window.ProseMirror;
+	//	const { ydoc, yXmlFragment, provider, ySyncPlugin, yCursorPlugin } = window.ProseMirror;
 
 
 		// Привязка кнопок форматирования
