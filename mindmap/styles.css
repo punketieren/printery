@@ -149,6 +149,25 @@ body {
     height: 10px;
 }
 
+.collapse-stack {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 1px;
+    margin: 0 4px 0 1px;
+}
+
+.collapse-stack button {
+    padding: 1px 4px;
+    min-width: 22px;
+    height: 10px;
+    line-height: 1;
+}
+
+.collapse-stack button img {
+    width: 10px;
+    height: 10px;
+}
+
 .dropdown {
     position: relative;
     display: inline-block;
