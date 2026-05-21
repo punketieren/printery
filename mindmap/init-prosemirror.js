@@ -29,18 +29,7 @@
         window.editorView = view; 
 		const { ydoc, yXmlFragment, provider, ySyncPlugin, yCursorPlugin } = window.ProseMirror;
 
-const view = new EditorView(document.getElementById('editor'), {
-    state: EditorState.create({
-        schema: mySchema,
-        doc: initialDoc,
-        plugins: [
-            ySyncPlugin(yXmlFragment),
-            yCursorPlugin(provider.awareness),
-            history(),
-            keymap(baseKeymap)
-        ]
-    })
-});
+
 		// Привязка кнопок форматирования
 const formatBtn = (id, cmd, markName = null) => {
     const btn = document.getElementById(id);
