@@ -257,15 +257,15 @@ if (loadBtn) {
     }, 500)
  
         ;  } })();
-		const savePngBtn = document.getElementById('save-png');
-if (savePngBtn) {
-    savePngBtn.addEventListener('click', () => {
-        const iframe = document.getElementById('mapFrame');
-        if (iframe && iframe.contentWindow && iframe.contentWindow.saveAsPNG) {
-            iframe.contentWindow.saveAsPNG();
-        }
-    });
-};
+//		const savePngBtn = document.getElementById('save-png');
+//if (savePngBtn) {
+//    savePngBtn.addEventListener('click', () => {
+ //       const iframe = document.getElementById('mapFrame');
+ //       if (iframe && iframe.contentWindow && iframe.contentWindow.saveAsPNG) {
+//            iframe.contentWindow.saveAsPNG();
+//        }
+//    });
+//};
 // Выпадающие меню по клику
 (function() {
     const dropdowns = document.querySelectorAll('.dropdown');
