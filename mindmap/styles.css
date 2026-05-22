@@ -115,7 +115,9 @@ body {
 }
 
 .editor-toolbar button.active {
-    background: #3b82f6;
+    background: #e0e0e0;           /* серый фон */
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1); /* тень */
+    border-radius: 4px;
 }
 
 .editor-toolbar button.active img {
