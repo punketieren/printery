@@ -28740,6 +28740,40 @@
 	};
 	//#endregion
 	//#region src/editor.js
+	var buttonStatePlugin = new Plugin({ view(editorView) {
+		const updateButtons = () => {
+			const { state } = editorView;
+			if (!state || !state.selection) return;
+			const { $from } = state.selection;
+			for (const [markName, btnId] of Object.entries({
+				strong: "bold",
+				em: "italic",
+				strike: "strike",
+				code: "code-inline",
+				mark: "highlight"
+			})) {
+				const mark = state.schema.marks[markName];
+				const hasMark = mark && $from.marks().some((m) => m.type === mark);
+				const btn = document.getElementById(btnId);
+				if (btn) btn.classList.toggle("active", hasMark);
+			}
+			const parent = $from.node($from.depth);
+			for (const [nodeName, btnId] of Object.entries({
+				bullet_list: "ul",
+				ordered_list: "ol",
+				blockquote: "quote",
+				code_block: "code-block"
+			})) {
+				const isActive = parent.type.name === nodeName;
+				const btn = document.getElementById(btnId);
+				if (btn) btn.classList.toggle("active", isActive);
+			}
+		};
+		updateButtons();
+		return { update(view, prevState) {
+			if (view.state.selection !== prevState.selection) updateButtons();
+		} };
+	} });
 	var pmu = new ProseMirrorUnified([new GFMExtension()]);
 	function markdownToProseMirror(markdown) {
 		return pmu.parse(markdown);
@@ -28763,6 +28797,7 @@
 		lift,
 		mySchema,
 		markdownToProseMirror,
+		buttonStatePlugin,
 		proseMirrorToMarkdown
 	};
 	//#endregion
