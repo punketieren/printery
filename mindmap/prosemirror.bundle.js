@@ -38816,15 +38816,23 @@
 			doc: { content: "block+" },
 			paragraph: {
 				group: "block",
-				content: "inline*"
+				content: "inline*",
+				toDOM: () => ["p", 0]
 			},
 			text: { group: "inline" }
 		},
 		marks: {
-			em: {},
-			strong: {},
-			strike: {},
-			link: { attrs: { href: {} } }
+			em: { toDOM: () => ["em", 0] },
+			strong: { toDOM: () => ["strong", 0] },
+			strike: { toDOM: () => ["del", 0] },
+			link: {
+				attrs: { href: {} },
+				toDOM: (node) => [
+					"a",
+					{ href: node.attrs.href },
+					0
+				]
+			}
 		}
 	});
 	async function markdownToProseMirror(markdown) {
