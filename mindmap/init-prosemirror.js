@@ -286,8 +286,7 @@ setTimeout(async () => {
     
     if (ulBtn) ulBtn.classList.toggle('active', parent.type.name === 'bullet_list');
     if (olBtn) olBtn.classList.toggle('active', parent.type.name === 'ordered_list');
-    if (quoteBtn) quoteBtn.classList.toggle('active', parent.type.name === 'blockquote'); 
-	updateHeadingLevel(); // ← ДОБАВИТЬ ЭТУ СТРОКУ
+    if (quoteBtn) quoteBtn.classList.toggle('active', parent.type.name === 'blockquote');
 };
 
 // Только изменение позиции курсора (не клики по кнопкам)
