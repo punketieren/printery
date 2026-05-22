@@ -134,7 +134,7 @@ if (quoteBtn) {
             const quoteRange = state.doc.resolve(quotePos).blockRange(
                 state.doc.resolve(quotePos + quoteNode.content.size)
             );
-            window.ProseMirrorBundle.lift(quoteRange)(state, dispatch);
+            window.ProseMirrorBundle.lift(state, dispatch);
         } else {
             // Применяем цитату
             window.ProseMirrorBundle.wrapIn(state.schema.nodes.blockquote)(state, dispatch);
