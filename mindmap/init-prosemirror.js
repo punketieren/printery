@@ -6,7 +6,7 @@
     } 
     function init() {
         // Проверяем, что бандл загрузился
-        if (!window.ProseMirror) {
+        if (!window.ProseMirrorBundle) {
             console.error('prosemirror.bundle.js не загружен');
             return;
         } 
