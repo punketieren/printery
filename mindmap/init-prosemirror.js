@@ -115,7 +115,7 @@ if (quoteBtn) {
         if (range) {
             const parent = state.doc.resolve(range.start).node();
             if (parent.type.name === 'blockquote') {
-                window.ProseMirrorBundle.lift(range)(state, dispatch);
+                window.ProseMirrorBundle.lift(state, dispatch);  // ← убрали range
             } else {
                 window.ProseMirrorBundle.wrapIn(state.schema.nodes.blockquote)(state, dispatch);
             }
