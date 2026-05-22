@@ -10,7 +10,7 @@
             console.error('prosemirror.bundle.js не загружен');
             return;
         } 
-        const { EditorState, EditorView, mySchema, keymap, baseKeymap, history } = window.ProseMirror; 
+        const { EditorState, EditorView, mySchema, keymap, baseKeymap, history } = window.ProseMirrorBundle; 
         // Начальный документ
         const initialDoc = mySchema.node('doc', null, [
             mySchema.node('paragraph', null, mySchema.text('Начните писать...'))
@@ -27,7 +27,7 @@
     })   }); 
         // Сохраняем глобально (для доступа из других скриптов)
         window.editorView = view; 
-	//	const { ydoc, yXmlFragment, provider, ySyncPlugin, yCursorPlugin } = window.ProseMirror;
+	//	const { ydoc, yXmlFragment, provider, ySyncPlugin, yCursorPlugin } = window.ProseMirrorBundle;
 
 
 		// Привязка кнопок форматирования
@@ -38,13 +38,13 @@ const formatBtn = (id, cmd, markName = null) => {
         const { state, dispatch } = window.editorView;
         if (cmd === 'toggleMark' && markName) {
             const mark = state.schema.marks[markName];
-            if (mark) window.ProseMirror.toggleMark(mark)(state, dispatch);
+            if (mark) window.ProseMirrorBundle.toggleMark(mark)(state, dispatch);
         } else if (cmd === 'wrapIn') {
             const nodeType = state.schema.nodes[markName];
-            if (nodeType) window.ProseMirror.wrapIn(nodeType)(state, dispatch);
+            if (nodeType) window.ProseMirrorBundle.wrapIn(nodeType)(state, dispatch);
         } else if (cmd === 'setBlockType') {
             const nodeType = state.schema.nodes[markName];
-            if (nodeType) window.ProseMirror.setBlockType(nodeType)(state, dispatch);
+            if (nodeType) window.ProseMirrorBundle.setBlockType(nodeType)(state, dispatch);
         }
         window.editorView.focus();
     });
@@ -78,9 +78,9 @@ if (ulBtn) {
         if (range) {
             const parent = state.doc.resolve(range.start).node();
             if (parent.type.name === 'bullet_list') {
-                window.ProseMirror.lift(range)(state, dispatch);
+                window.ProseMirrorBundle.lift(range)(state, dispatch);
             } else {
-                window.ProseMirror.wrapIn(state.schema.nodes.bullet_list)(state, dispatch);
+                window.ProseMirrorBundle.wrapIn(state.schema.nodes.bullet_list)(state, dispatch);
             }
         }
     });
@@ -96,9 +96,9 @@ if (olBtn) {
         if (range) {
             const parent = state.doc.resolve(range.start).node();
             if (parent.type.name === 'ordered_list') {
-                window.ProseMirror.lift(range)(state, dispatch);
+                window.ProseMirrorBundle.lift(range)(state, dispatch);
             } else {
-                window.ProseMirror.wrapIn(state.schema.nodes.ordered_list)(state, dispatch);
+                window.ProseMirrorBundle.wrapIn(state.schema.nodes.ordered_list)(state, dispatch);
             }
         }
     });
@@ -114,9 +114,9 @@ if (quoteBtn) {
         if (range) {
             const parent = state.doc.resolve(range.start).node();
             if (parent.type.name === 'blockquote') {
-                window.ProseMirror.lift(range)(state, dispatch);
+                window.ProseMirrorBundle.lift(range)(state, dispatch);
             } else {
-                window.ProseMirror.wrapIn(state.schema.nodes.blockquote)(state, dispatch);
+                window.ProseMirrorBundle.wrapIn(state.schema.nodes.blockquote)(state, dispatch);
             }
         }
     });
@@ -132,9 +132,9 @@ if (codeBlockBtn) {
         if (range) {
             const parent = state.doc.resolve(range.start).node();
             if (parent.type.name === 'code_block') {
-                window.ProseMirror.setBlockType(state.schema.nodes.paragraph)(state, dispatch);
+                window.ProseMirrorBundle.setBlockType(state.schema.nodes.paragraph)(state, dispatch);
             } else {
-                window.ProseMirror.setBlockType(state.schema.nodes.code_block)(state, dispatch);
+                window.ProseMirrorBundle.setBlockType(state.schema.nodes.code_block)(state, dispatch);
             }
         }
     });
@@ -151,9 +151,9 @@ if (headingUpBtn) {
         const node = $from.node($from.depth);
         if (node.type.name === 'heading') {
             const newLevel = Math.min(6, node.attrs.level + 1);
-            window.ProseMirror.setBlockType(state.schema.nodes.heading, { level: newLevel })(state, dispatch);
+            window.ProseMirrorBundle.setBlockType(state.schema.nodes.heading, { level: newLevel })(state, dispatch);
         } else if (node.type.name === 'paragraph') {
-            window.ProseMirror.setBlockType(state.schema.nodes.heading, { level: 2 })(state, dispatch);
+            window.ProseMirrorBundle.setBlockType(state.schema.nodes.heading, { level: 2 })(state, dispatch);
         }
         window.editorView.focus();
     }); } 
@@ -165,9 +165,9 @@ if (headingDownBtn) {
         if (node.type.name === 'heading') {
             const newLevel = Math.max(1, node.attrs.level - 1);
             if (newLevel === 1) {
-                window.ProseMirror.setBlockType(state.schema.nodes.paragraph)(state, dispatch);
+                window.ProseMirrorBundle.setBlockType(state.schema.nodes.paragraph)(state, dispatch);
             } else {
-                window.ProseMirror.setBlockType(state.schema.nodes.heading, { level: newLevel })(state, dispatch);
+                window.ProseMirrorBundle.setBlockType(state.schema.nodes.heading, { level: newLevel })(state, dispatch);
             }
         }
         window.editorView.focus();
@@ -179,12 +179,12 @@ const redoBtn = document.getElementById('redo');
 
 if (undoBtn) {
     undoBtn.addEventListener('click', () => {
-        if (window.ProseMirror.undo) window.ProseMirror.undo(window.editorView.state, window.editorView.dispatch);
+        if (window.ProseMirrorBundle.undo) window.ProseMirrorBundle.undo(window.editorView.state, window.editorView.dispatch);
     });
 }
 if (redoBtn) {
     redoBtn.addEventListener('click', () => {
-        if (window.ProseMirror.redo) window.ProseMirror.redo(window.editorView.state, window.editorView.dispatch);
+        if (window.ProseMirrorBundle.redo) window.ProseMirrorBundle.redo(window.editorView.state, window.editorView.dispatch);
     });
 }
 
@@ -192,7 +192,7 @@ if (redoBtn) {
 const saveBtn = document.getElementById('save-btn');
 if (saveBtn) {
     saveBtn.addEventListener('click', () => {
-        const markdown = window.ProseMirror.defaultMarkdownSerializer.serialize(window.editorView.state.doc);
+        const markdown = window.ProseMirrorBundle.defaultMarkdownSerializer.serialize(window.editorView.state.doc);
         const blob = new Blob([markdown], { type: 'text/markdown' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -214,7 +214,7 @@ if (loadBtn) {
             const file = e.target.files[0];
             if (!file) return;
             const text = await file.text();
-            const { defaultMarkdownParser, mySchema } = window.ProseMirror;
+            const { defaultMarkdownParser, mySchema } = window.ProseMirrorBundle;
             
             // Парсим напрямую — теперь парсер работает с твоей схемой
             let doc = defaultMarkdownParser.parse(text);
@@ -237,7 +237,7 @@ if (loadBtn) {
         const originalDispatch = window.editorView.dispatch;
         window.editorView.dispatch = (tr) => {
             originalDispatch(tr);
-            const markdown = window.ProseMirror.defaultMarkdownSerializer.serialize(window.editorView.state.doc);
+            const markdown = window.ProseMirrorBundle.defaultMarkdownSerializer.serialize(window.editorView.state.doc);
             const iframe = document.getElementById('mapFrame');
             if (iframe && iframe.contentWindow) {
                 iframe.contentWindow.postMessage({ type: 'updateMap', markdown }, '*');
@@ -248,7 +248,7 @@ if (loadBtn) {
     // ---- ОТПРАВКА НАЧАЛЬНОГО MARKDOWN (ДЛЯ СТРАХОВКИ) ----
     setTimeout(() => {
         if (window.editorView) {
-            const markdown = window.ProseMirror.defaultMarkdownSerializer.serialize(window.editorView.state.doc);
+            const markdown = window.ProseMirrorBundle.defaultMarkdownSerializer.serialize(window.editorView.state.doc);
             const iframe = document.getElementById('mapFrame');
             if (iframe && iframe.contentWindow) {
                 iframe.contentWindow.postMessage({ type: 'updateMap', markdown }, '*');
@@ -295,7 +295,7 @@ function switchToWysiwyg() {
     if (!textarea) return;
     const markdown = textarea.value;
     // Парсим Markdown в документ ProseMirror
-    const doc = window.ProseMirror.defaultMarkdownParser.parse(markdown);
+    const doc = window.ProseMirrorBundle.defaultMarkdownParser.parse(markdown);
     // Восстанавливаем редактор
     editorContainer.style.display = 'block';
     if (textarea.parentNode) textarea.parentNode.removeChild(textarea);
@@ -308,7 +308,7 @@ function switchToWysiwyg() {
 function switchToMarkdown() {
     if (textarea) return;
     // Получаем Markdown из редактора
-    const markdown = window.ProseMirror.defaultMarkdownSerializer.serialize(window.editorView.state.doc);
+    const markdown = window.ProseMirrorBundle.defaultMarkdownSerializer.serialize(window.editorView.state.doc);
     // Создаём textarea
     textarea = document.createElement('textarea');
     textarea.style.width = '100%';
