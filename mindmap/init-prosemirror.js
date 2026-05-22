@@ -110,15 +110,34 @@ const quoteBtn = document.getElementById('quote');
 if (quoteBtn) {
     quoteBtn.addEventListener('click', () => {
         const { state, dispatch } = window.editorView;
-        const { $from, $to } = state.selection;
-        const range = $from.blockRange($to);
-        if (range) {
-            const parent = state.doc.resolve(range.start).node();
-            if (parent.type.name === 'blockquote') {
-                window.ProseMirrorBundle.lift(state, dispatch);  // ← убрали range
-            } else {
-                window.ProseMirrorBundle.wrapIn(state.schema.nodes.blockquote)(state, dispatch);
+        
+        // Находим блок под курсором
+        const { $from } = state.selection;
+        const range = $from.blockRange($from);
+        if (!range) return;
+        
+        // Проверяем, находится ли курсор внутри blockquote (поднимаемся по дереву)
+        let depth = $from.depth;
+        let isInBlockquote = false;
+        while (depth >= 0) {
+            if ($from.node(depth).type.name === 'blockquote') {
+                isInBlockquote = true;
+                break;
             }
+            depth--;
+        }
+        
+        if (isInBlockquote) {
+            // Отмена цитаты — поднимаем всю цитату
+            const quoteNode = $from.node(depth);
+            const quotePos = $from.start(depth);
+            const quoteRange = state.doc.resolve(quotePos).blockRange(
+                state.doc.resolve(quotePos + quoteNode.content.size)
+            );
+            window.ProseMirrorBundle.lift(quoteRange)(state, dispatch);
+        } else {
+            // Применяем цитату
+            window.ProseMirrorBundle.wrapIn(state.schema.nodes.blockquote)(state, dispatch);
         }
     });
 }
