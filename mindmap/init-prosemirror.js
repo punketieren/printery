@@ -22,7 +22,8 @@
                 doc: initialDoc,
 				plugins: [
 				history(),
-				keymap(baseKeymap)
+				keymap(baseKeymap),
+            window.ProseMirrorBundle.buttonStatePlugin 
 				]
     })   }); 
         // Сохраняем глобально (для доступа из других скриптов)
