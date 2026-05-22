@@ -260,7 +260,35 @@ setTimeout(async () => {
         ;  } })();
 		
 		//Подсветка кнопок
-		
+		function updateButtonState() {
+    const { state } = window.editorView;
+    const { from, to } = state.selection;
+    
+    // Марки (жирный, курсив, зачёркивание)
+    const marks = ['strong', 'em', 'strike'];
+    marks.forEach(markName => {
+        const mark = state.schema.marks[markName];
+        const isActive = mark && state.doc.rangeHasMark(from, to, mark);
+        const btn = document.getElementById(markName);
+        if (btn) btn.classList.toggle('active', isActive);
+    });
+    
+    // Узлы (списки, цитаты)
+    const { $from } = state.selection;
+    const parent = $from.node($from.depth);
+    
+    const ulBtn = document.getElementById('ul');
+    const olBtn = document.getElementById('ol');
+    const quoteBtn = document.getElementById('quote');
+    
+    if (ulBtn) ulBtn.classList.toggle('active', parent.type.name === 'bullet_list');
+    if (olBtn) olBtn.classList.toggle('active', parent.type.name === 'ordered_list');
+    if (quoteBtn) quoteBtn.classList.toggle('active', parent.type.name === 'blockquote');
+};
+
+// Только изменение позиции курсора (не клики по кнопкам)
+window.editorView.dom.addEventListener('selectionchange', updateButtonState);
+window.editorView.dom.addEventListener('keyup', updateButtonState);
 		
 		
 //		const savePngBtn = document.getElementById('save-png');
