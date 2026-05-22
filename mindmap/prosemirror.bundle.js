@@ -38862,7 +38862,7 @@
 		});
 		return unified().use(remarkStringify).stringify(mdast);
 	}
-	window.ProseMirror = {
+	window.ProseMirrorBundle = {
 		Schema: Schema$1,
 		EditorState,
 		EditorView,
@@ -38891,5 +38891,3 @@
 	};
 	//#endregion
 })();
-
-//# sourceMappingURL=prosemirror.bundle.js.map
