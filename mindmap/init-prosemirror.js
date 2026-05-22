@@ -191,8 +191,8 @@ if (redoBtn) {
 // Сохранение в файл .md
 const saveBtn = document.getElementById('save-btn');
 if (saveBtn) {
-    saveBtn.addEventListener('click', () => {
-        const markdown = window.ProseMirrorBundle.defaultMarkdownSerializer.serialize(window.editorView.state.doc);
+    saveBtn.addEventListener('click', async () => {
+        const markdown = await window.ProseMirrorBundle.proseMirrorToMarkdown(window.editorView.state.doc);
         const blob = new Blob([markdown], { type: 'text/markdown' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -214,10 +214,10 @@ if (loadBtn) {
             const file = e.target.files[0];
             if (!file) return;
             const text = await file.text();
-            const { defaultMarkdownParser, mySchema } = window.ProseMirrorBundle;
+            const { mySchema } = window.ProseMirrorBundle;
             
             // Парсим напрямую — теперь парсер работает с твоей схемой
-            let doc = defaultMarkdownParser.parse(text);
+            let doc = await window.ProseMirrorBundle.markdownToProseMirror(text);
             
             // Если документ всё же пустой (например, файл пуст) — вставляем заглушку
             if (!doc || doc.content.size === 0) {
@@ -232,29 +232,30 @@ if (loadBtn) {
         input.click();
     });
 }
-            // ---- ОТПРАВКА MARKDOWN В КАРТУ ПРИ ИЗМЕНЕНИЯХ ----
-    if (window.editorView) {
-        const originalDispatch = window.editorView.dispatch;
-        window.editorView.dispatch = (tr) => {
-            originalDispatch(tr);
-            const markdown = window.ProseMirrorBundle.defaultMarkdownSerializer.serialize(window.editorView.state.doc);
-            const iframe = document.getElementById('mapFrame');
-            if (iframe && iframe.contentWindow) {
-                iframe.contentWindow.postMessage({ type: 'updateMap', markdown }, '*');
-            }
-        };
-    }
 
-    // ---- ОТПРАВКА НАЧАЛЬНОГО MARKDOWN (ДЛЯ СТРАХОВКИ) ----
-    setTimeout(() => {
-        if (window.editorView) {
-            const markdown = window.ProseMirrorBundle.defaultMarkdownSerializer.serialize(window.editorView.state.doc);
-            const iframe = document.getElementById('mapFrame');
-            if (iframe && iframe.contentWindow) {
-                iframe.contentWindow.postMessage({ type: 'updateMap', markdown }, '*');
-            }
+// ---- ОТПРАВКА MARKDOWN В КАРТУ ПРИ ИЗМЕНЕНИЯХ ----
+if (window.editorView) {
+    const originalDispatch = window.editorView.dispatch;
+    window.editorView.dispatch = async (tr) => {
+        originalDispatch(tr);
+        const markdown = await window.ProseMirrorBundle.proseMirrorToMarkdown(window.editorView.state.doc);
+        const iframe = document.getElementById('mapFrame');
+        if (iframe && iframe.contentWindow) {
+            iframe.contentWindow.postMessage({ type: 'updateMap', markdown }, '*');
         }
-    }, 500)
+    };
+}
+
+// ---- ОТПРАВКА НАЧАЛЬНОГО MARKDOWN (ДЛЯ СТРАХОВКИ) ----
+setTimeout(async () => {
+    if (window.editorView) {
+        const markdown = await window.ProseMirrorBundle.proseMirrorToMarkdown(window.editorView.state.doc);
+        const iframe = document.getElementById('mapFrame');
+        if (iframe && iframe.contentWindow) {
+            iframe.contentWindow.postMessage({ type: 'updateMap', markdown }, '*');
+        }
+    }
+}, 500)
  
         ;  } })();
 //		const savePngBtn = document.getElementById('save-png');
@@ -291,11 +292,11 @@ const wysiwygRadio = document.querySelector('input[value="wysiwyg"]');
 const markdownRadio = document.querySelector('input[value="markdown"]');
 let textarea = null;
 
-function switchToWysiwyg() {
+async function switchToWysiwyg() {
     if (!textarea) return;
     const markdown = textarea.value;
     // Парсим Markdown в документ ProseMirror
-    const doc = window.ProseMirrorBundle.defaultMarkdownParser.parse(markdown);
+    const doc = await window.ProseMirrorBundle.markdownToProseMirror(markdown);
     // Восстанавливаем редактор
     editorContainer.style.display = 'block';
     if (textarea.parentNode) textarea.parentNode.removeChild(textarea);
@@ -305,10 +306,10 @@ function switchToWysiwyg() {
     window.editorView.dispatch(tr);
 }
 
-function switchToMarkdown() {
+async function switchToMarkdown() {
     if (textarea) return;
     // Получаем Markdown из редактора
-    const markdown = window.ProseMirrorBundle.defaultMarkdownSerializer.serialize(window.editorView.state.doc);
+    const markdown = await window.ProseMirrorBundle.proseMirrorToMarkdown(window.editorView.state.doc);
     // Создаём textarea
     textarea = document.createElement('textarea');
     textarea.style.width = '100%';
@@ -328,4 +329,4 @@ if (wysiwygRadio && markdownRadio) {
     markdownRadio.addEventListener('change', () => {
         if (markdownRadio.checked) switchToMarkdown();
     });
-}})(); 
+}})();
