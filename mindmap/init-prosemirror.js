@@ -74,15 +74,25 @@ const ulBtn = document.getElementById('ul');
 if (ulBtn) {
     ulBtn.addEventListener('click', () => {
         const { state, dispatch } = window.editorView;
-        const { $from, $to } = state.selection;
-        const range = $from.blockRange($to);
-        if (range) {
-            const parent = state.doc.resolve(range.start).node();
-            if (parent.type.name === 'bullet_list') {
-                window.ProseMirrorBundle.lift(range)(state, dispatch);
-            } else {
-                window.ProseMirrorBundle.wrapIn(state.schema.nodes.bullet_list)(state, dispatch);
+        const { $from } = state.selection;
+        
+        // Проверяем, находимся ли мы внутри bullet_list
+        let depth = $from.depth;
+        let isInBulletList = false;
+        while (depth >= 0) {
+            if ($from.node(depth).type.name === 'bullet_list') {
+                isInBulletList = true;
+                break;
             }
+            depth--;
+        }
+        
+        if (isInBulletList) {
+            // Отмена списка
+            window.ProseMirrorBundle.lift(state, dispatch);
+        } else {
+            // Применяем список
+            window.ProseMirrorBundle.wrapIn(state.schema.nodes.bullet_list)(state, dispatch);
         }
     });
 }
@@ -92,15 +102,25 @@ const olBtn = document.getElementById('ol');
 if (olBtn) {
     olBtn.addEventListener('click', () => {
         const { state, dispatch } = window.editorView;
-        const { $from, $to } = state.selection;
-        const range = $from.blockRange($to);
-        if (range) {
-            const parent = state.doc.resolve(range.start).node();
-            if (parent.type.name === 'ordered_list') {
-                window.ProseMirrorBundle.lift(range)(state, dispatch);
-            } else {
-                window.ProseMirrorBundle.wrapIn(state.schema.nodes.ordered_list)(state, dispatch);
+        const { $from } = state.selection;
+        
+        // Проверяем, находимся ли мы внутри ordered_list
+        let depth = $from.depth;
+        let isInOrderedList = false;
+        while (depth >= 0) {
+            if ($from.node(depth).type.name === 'ordered_list') {
+                isInOrderedList = true;
+                break;
             }
+            depth--;
+        }
+        
+        if (isInOrderedList) {
+            // Отмена списка
+            window.ProseMirrorBundle.lift(state, dispatch);
+        } else {
+            // Применяем список
+            window.ProseMirrorBundle.wrapIn(state.schema.nodes.ordered_list)(state, dispatch);
         }
     });
 }
@@ -110,13 +130,9 @@ const quoteBtn = document.getElementById('quote');
 if (quoteBtn) {
     quoteBtn.addEventListener('click', () => {
         const { state, dispatch } = window.editorView;
-        
-        // Находим блок под курсором
         const { $from } = state.selection;
-        const range = $from.blockRange($from);
-        if (!range) return;
         
-        // Проверяем, находится ли курсор внутри blockquote (поднимаемся по дереву)
+        // Проверяем, находимся ли мы внутри blockquote
         let depth = $from.depth;
         let isInBlockquote = false;
         while (depth >= 0) {
@@ -128,12 +144,7 @@ if (quoteBtn) {
         }
         
         if (isInBlockquote) {
-            // Отмена цитаты — поднимаем всю цитату
-            const quoteNode = $from.node(depth);
-            const quotePos = $from.start(depth);
-            const quoteRange = state.doc.resolve(quotePos).blockRange(
-                state.doc.resolve(quotePos + quoteNode.content.size)
-            );
+            // Отмена цитаты
             window.ProseMirrorBundle.lift(state, dispatch);
         } else {
             // Применяем цитату
@@ -147,15 +158,25 @@ const codeBlockBtn = document.getElementById('code-block');
 if (codeBlockBtn) {
     codeBlockBtn.addEventListener('click', () => {
         const { state, dispatch } = window.editorView;
-        const { $from, $to } = state.selection;
-        const range = $from.blockRange($to);
-        if (range) {
-            const parent = state.doc.resolve(range.start).node();
-            if (parent.type.name === 'code_block') {
-                window.ProseMirrorBundle.setBlockType(state.schema.nodes.paragraph)(state, dispatch);
-            } else {
-                window.ProseMirrorBundle.setBlockType(state.schema.nodes.code_block)(state, dispatch);
+        const { $from } = state.selection;
+        
+        // Проверяем, находимся ли мы внутри code_block
+        let depth = $from.depth;
+        let isInCodeBlock = false;
+        while (depth >= 0) {
+            if ($from.node(depth).type.name === 'code_block') {
+                isInCodeBlock = true;
+                break;
             }
+            depth--;
+        }
+        
+        if (isInCodeBlock) {
+            // Отмена блока кода — превращаем в параграф
+            window.ProseMirrorBundle.setBlockType(state.schema.nodes.paragraph)(state, dispatch);
+        } else {
+            // Применяем блок кода
+            window.ProseMirrorBundle.setBlockType(state.schema.nodes.code_block)(state, dispatch);
         }
     });
 }
