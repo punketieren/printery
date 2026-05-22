@@ -123,7 +123,7 @@ body {
 }
 
 .editor-toolbar button.active img {
-    filter: brightness(0) invert(1);
+    filter: invert(40%) sepia(93%) saturate(1352%) hue-rotate(196deg) brightness(95%) contrast(101%);
 }
 .editor-status-bar {
     margin-top: auto;
