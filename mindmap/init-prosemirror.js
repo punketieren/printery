@@ -156,7 +156,9 @@ if (headingUpBtn) {
             window.ProseMirrorBundle.setBlockType(state.schema.nodes.heading, { level: 2 })(state, dispatch);
         }
         window.editorView.focus();
-    }); } 
+        updateHeadingLevel(); // ← ДОБАВИТЬ
+    }); 
+} 
 if (headingDownBtn) {
     headingDownBtn.addEventListener('click', () => {
         const { state, dispatch } = window.editorView;
@@ -171,8 +173,9 @@ if (headingDownBtn) {
             }
         }
         window.editorView.focus();
+        updateHeadingLevel(); // ← ДОБАВИТЬ
     });
-}
+};
 		// Undo / Redo (если кнопки существуют)
 const undoBtn = document.getElementById('undo');
 const redoBtn = document.getElementById('redo');
