@@ -115,7 +115,10 @@
             window.updateMarkmap(e.data.markdown);
         }
     });
-
+// После генерации Markmap
+document.querySelectorAll('a').forEach(link => {
+    link.setAttribute('target', '_blank');
+});
     function saveAsPNG() {
     const svg = document.querySelector('#markmap-container svg');
     if (!svg) return;
