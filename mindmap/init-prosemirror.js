@@ -31,7 +31,7 @@
 		
 		async function loadDefaultFile() {
     try {
-        const response = await fetch('to-do.md');
+        const response = await fetch('/to-do.md');
         if (!response.ok) throw new Error();
         const markdown = await response.text();
         const doc = await window.ProseMirrorBundle.markdownToProseMirror(markdown);
