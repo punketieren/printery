@@ -30,18 +30,42 @@
         window.editorView = view; 
 		
 		async function loadDefaultFile() {
+    // Ждём, пока редактор и парсер будут готовы
+    if (!window.editorView || !window.ProseMirrorBundle?.markdownToProseMirror) {
+        console.log('Редактор или парсер ещё не готовы, повтор через 100ms');
+        setTimeout(loadDefaultFile, 100);
+        return;
+    }
+    
     try {
         const response = await fetch('/to-do.md');
-        if (!response.ok) throw new Error();
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
         const markdown = await response.text();
+        
+        // Проверка, что вернулся не HTML (например, страница 404)
+        if (markdown.trim().startsWith('<!DOCTYPE') || markdown.trim().startsWith('<html')) {
+            throw new Error('Сервер вернул HTML вместо .md файла');
+        }
+        
         const doc = await window.ProseMirrorBundle.markdownToProseMirror(markdown);
         const tr = window.editorView.state.tr.replaceWith(0, window.editorView.state.doc.content.size, doc);
         window.editorView.dispatch(tr);
+        console.log('✅ Загружен /to-do.md');
     } catch (error) {
-        // Файл не загрузился — оставляем initialDoc
-        console.log('Использую initialDoc');
+        console.warn('❌ Не удалось загрузить /to-do.md:', error.message);
+        // Оставляем initialDoc
     }
-};
+}
+
+// ВЫЗВАТЬ ПОСЛЕ СОЗДАНИЯ EDITORVIEW:
+window.editorView = view; // после этой строки
+loadDefaultFile();        // добавить эту строку
+
+
+
+
 	//	const { ydoc, yXmlFragment, provider, ySyncPlugin, yCursorPlugin } = window.ProseMirrorBundle;
 
 
