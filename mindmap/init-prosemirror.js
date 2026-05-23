@@ -276,14 +276,21 @@ if (loadBtn) {
         input.click();
     });
 };
+
+//Кнопка ссылки
 const linkBtn = document.getElementById('link');
 if (linkBtn) {
     linkBtn.addEventListener('click', () => {
         const { state, dispatch } = window.editorView;
         const { from, to } = state.selection;
         
-        // Запрашиваем URL
-        let url = prompt('Введите ссылку (http:// или https://):', 'https://');
+        // Если ничего не выделено — не делаем ничего (или можно вставить placeholder)
+        if (from === to) {
+            alert('Выделите текст, который нужно превратить в ссылку');
+            return;
+        }
+        
+        let url = prompt('Введите URL:', 'https://');
         if (!url) return;
         
         // Если не введён протокол, добавляем https://
@@ -291,18 +298,11 @@ if (linkBtn) {
             url = 'https://' + url;
         }
         
-        // Определяем текст ссылки
-        let linkText = 'ссылка';
-        const selectedText = state.doc.textBetween(from, to);
-        if (selectedText && selectedText.trim()) {
-            linkText = selectedText;
-        }
+        // Создаём марку ссылки
+        const mark = state.schema.marks.link.create({ href: url });
         
-        // Формируем Markdown-ссылку
-        const markdownLink = `[${linkText}](${url})`;
-        
-        // Заменяем выделение или вставляем в позицию курсора
-        const tr = state.tr.replaceWith(from, to, state.schema.text(markdownLink));
+        // Применяем марку к выделенному тексту
+        const tr = state.tr.addMark(from, to, mark);
         dispatch(tr);
         window.editorView.focus();
     });
