@@ -28,6 +28,20 @@
     })   }); 
         // Сохраняем глобально (для доступа из других скриптов)
         window.editorView = view; 
+		
+		async function loadDefaultFile() {
+    try {
+        const response = await fetch('to-do.md');
+        if (!response.ok) throw new Error();
+        const markdown = await response.text();
+        const doc = await window.ProseMirrorBundle.markdownToProseMirror(markdown);
+        const tr = window.editorView.state.tr.replaceWith(0, window.editorView.state.doc.content.size, doc);
+        window.editorView.dispatch(tr);
+    } catch (error) {
+        // Файл не загрузился — оставляем initialDoc
+        console.log('Использую initialDoc');
+    }
+};
 	//	const { ydoc, yXmlFragment, provider, ySyncPlugin, yCursorPlugin } = window.ProseMirrorBundle;
 
 
