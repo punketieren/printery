@@ -307,14 +307,16 @@ if (linkBtn) {
         window.editorView.focus();
     });
 };
-//horisontal rule
+// Горизонтальная линия
 const hrBtn = document.getElementById('hr');
 if (hrBtn) {
-    hrBtn.addEventListener('click', () => {
+    // Убираем все старые обработчики
+    const newHrBtn = hrBtn.cloneNode(true);
+    hrBtn.parentNode.replaceChild(newHrBtn, hrBtn);
+    
+    newHrBtn.addEventListener('click', () => {
         const { state, dispatch } = window.editorView;
-        const { schema } = state;
-        const hrNode = schema.nodes.horizontal_rule.create();
-        const tr = state.tr.replaceSelectionWith(hrNode);
+        const tr = state.tr.replaceSelectionWith(state.schema.nodes.horizontal_rule.create());
         dispatch(tr);
         window.editorView.focus();
     });
