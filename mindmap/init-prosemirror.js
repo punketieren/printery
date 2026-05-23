@@ -307,7 +307,18 @@ if (linkBtn) {
         window.editorView.focus();
     });
 };
-
+//horisontal rule
+const hrBtn = document.getElementById('hr');
+if (hrBtn) {
+    hrBtn.addEventListener('click', () => {
+        const { state, dispatch } = window.editorView;
+        const { schema } = state;
+        const hrNode = schema.nodes.horizontal_rule.create();
+        const tr = state.tr.replaceSelectionWith(hrNode);
+        dispatch(tr);
+        window.editorView.focus();
+    });
+};
 // ---- ОТПРАВКА MARKDOWN В КАРТУ ПРИ ИЗМЕНЕНИЯХ ----
 if (window.editorView) {
     const originalDispatch = window.editorView.dispatch;
