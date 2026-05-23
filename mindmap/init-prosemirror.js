@@ -268,8 +268,67 @@ if (redoBtn) {
     redoBtn.addEventListener('click', () => {
         if (window.ProseMirrorBundle.redo) window.ProseMirrorBundle.redo(window.editorView.state, window.editorView.dispatch);
     });
+};
+// Всплывающее меню для марок (bubble menu)
+const bubbleMenu = document.getElementById('bubble-menu');
+
+function showBubbleMenu(x, y) {
+    bubbleMenu.style.display = 'flex';
+    bubbleMenu.style.left = x + 'px';
+    bubbleMenu.style.top = y + 'px';
 }
 
+function hideBubbleMenu() {
+    bubbleMenu.style.display = 'none';
+}
+
+// Обработчик выделения текста
+function onSelectionChange() {
+    const selection = window.getSelection();
+    if (selection.isCollapsed || selection.toString().trim() === '') {
+        hideBubbleMenu();
+        return;
+    }
+    
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    showBubbleMenu(rect.left + window.scrollX, rect.top + window.scrollY - 50);
+}
+
+// Подписка на события
+document.addEventListener('selectionchange', onSelectionChange);
+
+// Применение марок к выделенному тексту (по id кнопок)
+const markButtons = {
+    'bold': 'strong',
+    'italic': 'em',
+    'code-inline': 'code',
+    'highlight': 'mark'
+};
+
+for (const [btnId, markName] of Object.entries(markButtons)) {
+    const btn = document.getElementById(btnId);
+    if (btn) {
+        btn.addEventListener('click', () => {
+            const { state, dispatch } = window.editorView;
+            const { from, to } = state.selection;
+            const mark = state.schema.marks[markName];
+            
+            if (mark && from !== to) {
+                const tr = state.tr.addMark(from, to, mark.create());
+                dispatch(tr);
+                window.editorView.focus();
+                hideBubbleMenu();
+            }
+        });
+    }
+}
+
+// Скрываем меню при прокрутке или клике вне редактора
+window.addEventListener('scroll', hideBubbleMenu);
+document.addEventListener('mousedown', (e) => {
+    if (!bubbleMenu.contains(e.target)) hideBubbleMenu();
+});
 // Сохранение в файл .md
 const saveBtn = document.getElementById('save-btn');
 if (saveBtn) {
