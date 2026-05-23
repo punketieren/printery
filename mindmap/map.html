@@ -96,7 +96,27 @@
                     unfold(root);
                     window.currentMap.setData(root);
                 };
-
+// После определения функции collapseLevel, добавить отправку уровня
+window.collapseLevel = function(level) {
+    if (!window.currentMap || !window.currentMap.state || !window.currentMap.state.data) return;
+    
+    const root = window.currentMap.state.data;
+    
+    function setFold(node, currentDepth = 1) {
+        if (!node) return;
+        if (node.children && node.children.length) {
+            node.payload = node.payload || {};
+            node.payload.fold = (currentDepth >= level) ? 1 : 0;
+            node.children.forEach(child => setFold(child, currentDepth + 1));
+        }
+    }
+    
+    setFold(root);
+    window.currentMap.setData(root);
+    
+    // Отправляем уровень в родительское окно
+    window.parent.postMessage({ type: 'levelChanged', level: level }, '*');
+};
                 // Сигнал родительскому окну, что карта готова
                 window.parent.postMessage({ type: 'mapReady' }, '*');
 

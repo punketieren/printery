@@ -406,7 +406,36 @@ setTimeout(async () => {
     document.addEventListener('click', (e) => {
         if (!e.target.closest('.dropdown')) {
             document.querySelectorAll('.dropdown-content.show').forEach(c => c.classList.remove('show'));
-  }  }); // ==== ПЕРЕКЛЮЧЕНИЕ РЕЖИМОВ WYSIWYG / MARKDOWN ====
+  }  });
+// Превращаем спан уровня карты в кнопку
+const mapLevelSpan = document.getElementById('map-level');
+if (mapLevelSpan) {
+    // Делаем похожим на кнопку
+    mapLevelSpan.style.cursor = 'pointer';
+    mapLevelSpan.style.padding = '4px 8px';
+    mapLevelSpan.style.borderRadius = '4px';
+    mapLevelSpan.style.backgroundColor = '#f0f0f0';
+    mapLevelSpan.style.border = '1px solid #ccc';
+    
+    mapLevelSpan.addEventListener('click', () => {
+        const level = parseInt(mapLevelSpan.textContent, 10);
+        if (isNaN(level)) return;
+        
+        const iframe = document.getElementById('mapFrame');
+        if (iframe && iframe.contentWindow && iframe.contentWindow.collapseLevel) {
+            iframe.contentWindow.collapseLevel(level);
+        }
+    });
+}
+
+// Слушаем изменения уровня из iframe
+window.addEventListener('message', (e) => {
+    if (e.data.type === 'levelChanged') {
+        const mapLevelSpan = document.getElementById('map-level');
+        if (mapLevelSpan) mapLevelSpan.textContent = e.data.level;
+    }
+});
+  // ==== ПЕРЕКЛЮЧЕНИЕ РЕЖИМОВ WYSIWYG / MARKDOWN ====
 const editorContainer = document.getElementById('editor');
 const wysiwygRadio = document.querySelector('input[value="wysiwyg"]');
 const markdownRadio = document.querySelector('input[value="markdown"]');
