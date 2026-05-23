@@ -347,6 +347,22 @@ body {
   width: 8px;  
 height: 8px;}
 
+#bubble-menu {
+    display: none;
+    position: absolute;
+    background: white;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 4px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    z-index: 1000;
+}
+
+#bubble-menu button {
+    margin: 0 2px;
+    cursor: pointer;
+}
+
 #editor {
     display: flex;
     flex: 1;
