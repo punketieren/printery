@@ -194,7 +194,7 @@ if (headingUpBtn) {
             const newLevel = Math.min(6, node.attrs.level + 1);
             window.ProseMirrorBundle.setBlockType(state.schema.nodes.heading, { level: newLevel })(state, dispatch);
         } else if (node.type.name === 'paragraph') {
-            window.ProseMirrorBundle.setBlockType(state.schema.nodes.heading, { level: 2 })(state, dispatch);
+            window.ProseMirrorBundle.setBlockType(state.schema.nodes.heading, { level: 1 })(state, dispatch);
         }
         window.editorView.focus();
         updateHeadingLevel(); // ← ДОБАВИТЬ
