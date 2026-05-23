@@ -275,7 +275,38 @@ if (loadBtn) {
         };
         input.click();
     });
-}
+};
+const linkBtn = document.getElementById('link');
+if (linkBtn) {
+    linkBtn.addEventListener('click', () => {
+        const { state, dispatch } = window.editorView;
+        const { from, to } = state.selection;
+        
+        // Запрашиваем URL
+        let url = prompt('Введите ссылку (http:// или https://):', 'https://');
+        if (!url) return;
+        
+        // Если не введён протокол, добавляем https://
+        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+            url = 'https://' + url;
+        }
+        
+        // Определяем текст ссылки
+        let linkText = 'ссылка';
+        const selectedText = state.doc.textBetween(from, to);
+        if (selectedText && selectedText.trim()) {
+            linkText = selectedText;
+        }
+        
+        // Формируем Markdown-ссылку
+        const markdownLink = `[${linkText}](${url})`;
+        
+        // Заменяем выделение или вставляем в позицию курсора
+        const tr = state.tr.replaceWith(from, to, state.schema.text(markdownLink));
+        dispatch(tr);
+        window.editorView.focus();
+    });
+};
 
 // ---- ОТПРАВКА MARKDOWN В КАРТУ ПРИ ИЗМЕНЕНИЯХ ----
 if (window.editorView) {
