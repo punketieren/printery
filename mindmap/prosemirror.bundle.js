@@ -29549,6 +29549,9 @@
 		proseMirrorNodes() {
 			return { yaml: {
 				group: "block",
+				content: "text*",
+				marks: "",
+				code: true,
 				attrs: { value: { default: "" } },
 				toDOM: (node) => [
 					"pre",
@@ -29556,7 +29559,7 @@
 						class: "markmap-config",
 						style: "display:none;"
 					},
-					node.attrs.value
+					0
 				],
 				parseDOM: [{
 					tag: "pre.markmap-config",
@@ -29564,13 +29567,16 @@
 				}]
 			} };
 		}
+		toMarkdown(state, node) {
+			state.write(node.attrs.value + "\n\n");
+		}
 	};
 	var pmu = new ProseMirrorUnified([new GFMExtension(), new FrontmatterExtension()]);
 	function markdownToProseMirror(markdown) {
 		return pmu.parse(markdown);
 	}
 	function proseMirrorToMarkdown(doc) {
-		return pmu.serialize(doc).replace(/\u00a0/g, " ");
+		return pmu.serialize(doc);
 	}
 	var mySchema = pmu.schema();
 	window.ProseMirrorBundle = {
