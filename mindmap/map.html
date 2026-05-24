@@ -37,7 +37,13 @@
 
                 async function render(markdownText) {
     if (!container) return;
-    window.currentMarkdown = markdownText;
+    
+    // 👇 ВОТ ЭТИ ДВЕ СТРОЧКИ СПАСУТ КАРТУ ОТ СБРОСА ПРИ КЛИКАХ:
+    if (window.currentMarkdown === markdownText) {
+        return; // Если текст абсолютно такой же, ничего не перерисовываем
+    }
+    
+	window.currentMarkdown = markdownText;
 
     // 1. Извлекаем и структуру дерева (root), и объект настроек (frontmatter)
     const { root, frontmatter } = transformer.transform(markdownText || '# Пустой документ\n## Нет данных');
