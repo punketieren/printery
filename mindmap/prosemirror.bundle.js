@@ -46329,7 +46329,7 @@
 	//#region src/editor.js
 	var ydoc = new Doc();
 	var ytext = ydoc.getText("shared-markdown");
-	var provider = new WebrtcProvider("markmap-collaboration-room", ydoc, { signaling: ["wss://y-webrtc-eu.fly.dev", "wss://signaling.yjs.dev"] });
+	var provider = new WebrtcProvider("YnpvlB-mrkmp-collab-id-8874", ydoc, { signaling: ["wss://signaling.space-invaders.su", "wss://y-webrtc.commmunity.ru"] });
 	function initMarkdownEditor(containerElement) {
 		if (!containerElement) return console.error("Контейнер для CodeMirror не найден!");
 		new EditorView({
