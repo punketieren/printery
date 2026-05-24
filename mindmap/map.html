@@ -36,25 +36,38 @@
                 window.currentMarkdown = '';
 
                 async function render(markdownText) {
-                    if (!container) return;
-                    window.currentMarkdown = markdownText;
+    if (!container) return;
+    window.currentMarkdown = markdownText;
 
-                    const { root } = transformer.transform(markdownText || '# Пустой документ\n## Нет данных');
+    // 1. Извлекаем и структуру дерева (root), и объект настроек (frontmatter)
+    const { root, frontmatter } = transformer.transform(markdownText || '# Пустой документ\n## Нет данных');
 
-                    if (window.currentMap && window.currentSvg && window.currentSvg.parentNode === container) {
-                        window.currentMap.setData(root);
-                    } else {
-                        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-                        svg.style.width = '100%';
-                        svg.style.height = '100%';
-                        svg.style.display = 'block';
+    // Вытаскиваем параметры markmap из фронтматтера, если они там есть
+    const options = frontmatter && frontmatter.markmap ? frontmatter.markmap : null;
 
-                        container.innerHTML = '';
-                        container.appendChild(svg);
-                        window.currentSvg = svg;
-                        window.currentMap = window.markmap.Markmap.create(svg, null, root);
-                    }
-                }
+    if (window.currentMap && window.currentSvg && window.currentSvg.parentNode === container) {
+        // 2. Если карта уже создана, обновляем её настройки динамически, а затем данные
+        if (options) {
+            window.currentMap.setOptions(options);
+        } else {
+            // Сбрасываем на дефолтные опции, если блок настроек удалили из редактора
+            window.currentMap.setOptions(window.markmap.deriveOptions(null));
+        }
+        window.currentMap.setData(root);
+    } else {
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.style.width = '100%';
+        svg.style.height = '100%';
+        svg.style.display = 'block';
+
+        container.innerHTML = '';
+        container.appendChild(svg);
+        window.currentSvg = svg;
+        
+        // 3. При первой отрисовке передаем опции вторым аргументом вместо null
+        window.currentMap = window.markmap.Markmap.create(svg, options, root);
+    }
+}
 
                 window.updateMarkmap = render;
 
