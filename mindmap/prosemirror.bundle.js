@@ -697,13 +697,13 @@
 		if (index == $to.index(depth) && depth < $from.depth - slice.openStart) {
 			let inner = replaceOuter($from, $to, slice, depth + 1);
 			return node.copy(node.content.replaceChild(index, inner));
-		} else if (!slice.content.size) return close(node, replaceTwoWay($from, $to, depth));
+		} else if (!slice.content.size) return close$1(node, replaceTwoWay($from, $to, depth));
 		else if (!slice.openStart && !slice.openEnd && $from.depth == depth && $to.depth == depth) {
 			let parent = $from.parent, content = parent.content;
-			return close(parent, content.cut(0, $from.parentOffset).append(slice.content).append(content.cut($to.parentOffset)));
+			return close$1(parent, content.cut(0, $from.parentOffset).append(slice.content).append(content.cut($to.parentOffset)));
 		} else {
 			let { start, end } = prepareSliceForReplace(slice, $from);
-			return close(node, replaceThreeWay($from, start, end, $to, depth));
+			return close$1(node, replaceThreeWay($from, start, end, $to, depth));
 		}
 	}
 	function checkJoin(main, sub) {
@@ -733,7 +733,7 @@
 		for (let i = startIndex; i < endIndex; i++) addNode(node.child(i), target);
 		if ($end && $end.depth == depth && $end.textOffset) addNode($end.nodeBefore, target);
 	}
-	function close(node, content) {
+	function close$1(node, content) {
 		node.type.checkContent(content);
 		return node.copy(content);
 	}
@@ -744,11 +744,11 @@
 		addRange(null, $from, depth, content);
 		if (openStart && openEnd && $start.index(depth) == $end.index(depth)) {
 			checkJoin(openStart, openEnd);
-			addNode(close(openStart, replaceThreeWay($from, $start, $end, $to, depth + 1)), content);
+			addNode(close$1(openStart, replaceThreeWay($from, $start, $end, $to, depth + 1)), content);
 		} else {
-			if (openStart) addNode(close(openStart, replaceTwoWay($from, $start, depth + 1)), content);
+			if (openStart) addNode(close$1(openStart, replaceTwoWay($from, $start, depth + 1)), content);
 			addRange($start, $end, depth, content);
-			if (openEnd) addNode(close(openEnd, replaceTwoWay($end, $to, depth + 1)), content);
+			if (openEnd) addNode(close$1(openEnd, replaceTwoWay($end, $to, depth + 1)), content);
 		}
 		addRange($to, null, depth, content);
 		return new Fragment(content);
@@ -756,7 +756,7 @@
 	function replaceTwoWay($from, $to, depth) {
 		let content = [];
 		addRange(null, $from, depth, content);
-		if ($from.depth > depth) addNode(close(joinable$1($from, $to, depth + 1), replaceTwoWay($from, $to, depth + 1)), content);
+		if ($from.depth > depth) addNode(close$1(joinable$1($from, $to, depth + 1), replaceTwoWay($from, $to, depth + 1)), content);
 		addRange($to, null, depth, content);
 		return new Fragment(content);
 	}
@@ -13461,7 +13461,7 @@
 	*   be stored on the `result` field of {@linkcode VFile}.
 	*/
 	var import_extend = /* @__PURE__ */ __toESM(require_extend(), 1);
-	var own$3 = {}.hasOwnProperty;
+	var own$4 = {}.hasOwnProperty;
 	/**
 	* Create a new processor.
 	*
@@ -13668,7 +13668,7 @@
 					this.namespace[key] = value;
 					return this;
 				}
-				return own$3.call(this.namespace, key) && this.namespace[key] || void 0;
+				return own$4.call(this.namespace, key) && this.namespace[key] || void 0;
 			}
 			if (key) {
 				assertUnfrozen("data", this.frozen);
@@ -14503,7 +14503,7 @@
 	*   Whether to use `value` of HTML (default: `true`).
 	*/
 	/** @type {Options} */
-	var emptyOptions$1 = {};
+	var emptyOptions$2 = {};
 	/**
 	* Get the text content of a node or list of nodes.
 	*
@@ -14518,7 +14518,7 @@
 	*   Serialized `value`.
 	*/
 	function toString$1(value, options) {
-		const settings = options || emptyOptions$1;
+		const settings = options || emptyOptions$2;
 		return one$1(value, typeof settings.includeImageAlt === "boolean" ? settings.includeImageAlt : true, typeof settings.includeHtml === "boolean" ? settings.includeHtml : true);
 	}
 	/**
@@ -21984,7 +21984,7 @@
 	*   Options
 	* } from './types.js'
 	*/
-	var own$2 = {}.hasOwnProperty;
+	var own$3 = {}.hasOwnProperty;
 	/**
 	* Turn markdown into a syntax tree.
 	*
@@ -22163,7 +22163,7 @@
 			index = -1;
 			while (++index < events.length) {
 				const handler = config[events[index][0]];
-				if (own$2.call(handler, events[index][1].type)) handler[events[index][1].type].call(Object.assign({ sliceSerialize: events[index][2].sliceSerialize }, context), events[index][1]);
+				if (own$3.call(handler, events[index][1].type)) handler[events[index][1].type].call(Object.assign({ sliceSerialize: events[index][2].sliceSerialize }, context), events[index][1]);
 			}
 			if (context.tokenStack.length > 0) {
 				const tail = context.tokenStack[context.tokenStack.length - 1];
@@ -22875,7 +22875,7 @@
 	function extension(combined, extension) {
 		/** @type {keyof Extension} */
 		let key;
-		for (key in extension) if (own$2.call(extension, key)) switch (key) {
+		for (key in extension) if (own$3.call(extension, key)) switch (key) {
 			case "canContainEols": {
 				const right = extension[key];
 				if (right) combined[key].push(...right);
@@ -22990,7 +22990,7 @@
 	* @property {Handlers} [handlers]
 	*   Handlers to use.
 	*/
-	var own$1 = {}.hasOwnProperty;
+	var own$2 = {}.hasOwnProperty;
 	/**
 	* Handle values based on a field.
 	*
@@ -23037,9 +23037,9 @@
 			/** @type {Handler|undefined} */
 			let fn = one.invalid;
 			const handlers = one.handlers;
-			if (value && own$1.call(value, key)) {
+			if (value && own$2.call(value, key)) {
 				const id = String(value[key]);
-				fn = own$1.call(handlers, id) ? handlers[id] : one.unknown;
+				fn = own$2.call(handlers, id) ? handlers[id] : one.unknown;
 			}
 			if (fn) return fn.call(this, value, ...parameters);
 		}
@@ -23053,7 +23053,7 @@
 	/**
 	* @import {Options, State} from './types.js'
 	*/
-	var own = {}.hasOwnProperty;
+	var own$1 = {}.hasOwnProperty;
 	/**
 	* @param {State} base
 	* @param {Options} extension
@@ -23064,7 +23064,7 @@
 		/** @type {keyof Options} */
 		let key;
 		if (extension.extensions) while (++index < extension.extensions.length) configure(base, extension.extensions[index]);
-		for (key in extension) if (own.call(extension, key)) switch (key) {
+		for (key in extension) if (own$1.call(extension, key)) switch (key) {
 			case "extensions": break;
 			/* c8 ignore next 4 */
 			case "unsafe":
@@ -26887,7 +26887,7 @@
 			return code2 !== null && code2 > -1 && regex.test(String.fromCharCode(code2));
 		}
 	}
-	function escapeStringRegexp(string) {
+	function escapeStringRegexp$1(string) {
 		if (typeof string !== "string") throw new TypeError("Expected a string");
 		return string.replace(/[|\\{}()[\]^$+*?.]/g, "\\$&").replace(/-/g, "\\x2d");
 	}
@@ -27068,7 +27068,7 @@
 		return result;
 	}
 	function toExpression(find) {
-		return typeof find === "string" ? new RegExp(escapeStringRegexp(find), "g") : find;
+		return typeof find === "string" ? new RegExp(escapeStringRegexp$1(find), "g") : find;
 	}
 	function toFunction(replace) {
 		return typeof replace === "function" ? replace : function() {
@@ -28015,9 +28015,9 @@
 			return visitor(node2, index, parent);
 		}
 	}
-	var emptyOptions = {};
+	var emptyOptions$1 = {};
 	function toString(value, options) {
-		const settings = emptyOptions;
+		const settings = emptyOptions$1;
 		return one(value, typeof settings.includeImageAlt === "boolean" ? settings.includeImageAlt : true, typeof settings.includeHtml === "boolean" ? settings.includeHtml : true);
 	}
 	function one(value, includeImageAlt, includeHtml) {
@@ -28739,6 +28739,774 @@
 		}
 	};
 	//#endregion
+	//#region node_modules/fault/index.js
+	var import_format = /* @__PURE__ */ __toESM((/* @__PURE__ */ __commonJSMin(((exports, module) => {
+		(function() {
+			var namespace;
+			if (typeof module !== "undefined") namespace = module.exports = format;
+			else namespace = function() {
+				return this || (0, eval)("this");
+			}();
+			namespace.format = format;
+			namespace.vsprintf = vsprintf;
+			if (typeof console !== "undefined" && typeof console.log === "function") namespace.printf = printf;
+			function printf() {
+				console.log(format.apply(null, arguments));
+			}
+			function vsprintf(fmt, replacements) {
+				return format.apply(null, [fmt].concat(replacements));
+			}
+			function format(fmt) {
+				var argIndex = 1, args = [].slice.call(arguments), i = 0, n = fmt.length, result = "", c, escaped = false, arg, tmp, leadingZero = false, precision, nextArg = function() {
+					return args[argIndex++];
+				}, slurpNumber = function() {
+					var digits = "";
+					while (/\d/.test(fmt[i])) {
+						digits += fmt[i++];
+						c = fmt[i];
+					}
+					return digits.length > 0 ? parseInt(digits) : null;
+				};
+				for (; i < n; ++i) {
+					c = fmt[i];
+					if (escaped) {
+						escaped = false;
+						if (c == ".") {
+							leadingZero = false;
+							c = fmt[++i];
+						} else if (c == "0" && fmt[i + 1] == ".") {
+							leadingZero = true;
+							i += 2;
+							c = fmt[i];
+						} else leadingZero = true;
+						precision = slurpNumber();
+						switch (c) {
+							case "b":
+								result += parseInt(nextArg(), 10).toString(2);
+								break;
+							case "c":
+								arg = nextArg();
+								if (typeof arg === "string" || arg instanceof String) result += arg;
+								else result += String.fromCharCode(parseInt(arg, 10));
+								break;
+							case "d":
+								result += parseInt(nextArg(), 10);
+								break;
+							case "f":
+								tmp = String(parseFloat(nextArg()).toFixed(precision || 6));
+								result += leadingZero ? tmp : tmp.replace(/^0/, "");
+								break;
+							case "j":
+								result += JSON.stringify(nextArg());
+								break;
+							case "o":
+								result += "0" + parseInt(nextArg(), 10).toString(8);
+								break;
+							case "s":
+								result += nextArg();
+								break;
+							case "x":
+								result += "0x" + parseInt(nextArg(), 10).toString(16);
+								break;
+							case "X":
+								result += "0x" + parseInt(nextArg(), 10).toString(16).toUpperCase();
+								break;
+							default:
+								result += c;
+								break;
+						}
+					} else if (c === "%") escaped = true;
+					else result += c;
+				}
+				return result;
+			}
+		})();
+	})))(), 1);
+	var fault = Object.assign(create(Error), {
+		eval: create(EvalError),
+		range: create(RangeError),
+		reference: create(ReferenceError),
+		syntax: create(SyntaxError),
+		type: create(TypeError),
+		uri: create(URIError)
+	});
+	/**
+	* Create a new `EConstructor`, with the formatted `format` as a first argument.
+	*
+	* @template {Error} Fault
+	* @template {new (reason: string) => Fault} Class
+	* @param {Class} Constructor
+	*/
+	function create(Constructor) {
+		/** @type {string} */
+		FormattedError.displayName = Constructor.displayName || Constructor.name;
+		return FormattedError;
+		/**
+		* Create an error with a printf-like formatted message.
+		*
+		* @param {string|null} [format]
+		*   Template string.
+		* @param {...unknown} values
+		*   Values to render in `format`.
+		* @returns {Fault}
+		*/
+		function FormattedError(format, ...values) {
+			return new Constructor(format ? (0, import_format.default)(format, ...values) : format);
+		}
+	}
+	//#endregion
+	//#region node_modules/micromark-extension-frontmatter/lib/to-matters.js
+	/**
+	* @typedef {'toml' | 'yaml'} Preset
+	*   Known name of a frontmatter style.
+	*
+	* @typedef Info
+	*   Sequence.
+	*
+	*   Depending on how this structure is used, it reflects a marker or a fence.
+	* @property {string} close
+	*   Closing.
+	* @property {string} open
+	*   Opening.
+	*
+	* @typedef MatterProps
+	*   Fields describing a kind of matter.
+	* @property {string} type
+	*   Node type to tokenize as.
+	* @property {boolean | null | undefined} [anywhere=false]
+	*   Whether matter can be found anywhere in the document, normally, only matter
+	*   at the start of the document is recognized.
+	*
+	*   > 👉 **Note**: using this is a terrible idea.
+	*   > It’s called frontmatter, not matter-in-the-middle or so.
+	*   > This makes your markdown less portable.
+	*
+	* @typedef MarkerProps
+	*   Marker configuration.
+	* @property {Info | string} marker
+	*   Character repeated 3 times, used as complete fences.
+	*
+	*   For example the character `'-'` will result in `'---'` being used as the
+	*   fence
+	*   Pass `open` and `close` to specify different characters for opening and
+	*   closing fences.
+	* @property {never} [fence]
+	*   If `marker` is set, `fence` must not be set.
+	*
+	* @typedef FenceProps
+	*   Fence configuration.
+	* @property {Info | string} fence
+	*   Complete fences.
+	*
+	*   This can be used when fences contain different characters or lengths
+	*   other than 3.
+	*   Pass `open` and `close` to interface to specify different characters for opening and
+	*   closing fences.
+	* @property {never} [marker]
+	*   If `fence` is set, `marker` must not be set.
+	*
+	* @typedef {(MatterProps & FenceProps) | (MatterProps & MarkerProps)} Matter
+	*   Fields describing a kind of matter.
+	*
+	*   > 👉 **Note**: using `anywhere` is a terrible idea.
+	*   > It’s called frontmatter, not matter-in-the-middle or so.
+	*   > This makes your markdown less portable.
+	*
+	*   > 👉 **Note**: `marker` and `fence` are mutually exclusive.
+	*   > If `marker` is set, `fence` must not be set, and vice versa.
+	*
+	* @typedef {Matter | Preset | Array<Matter | Preset>} Options
+	*   Configuration.
+	*/
+	var own = {}.hasOwnProperty;
+	var markers = {
+		yaml: "-",
+		toml: "+"
+	};
+	/**
+	* Simplify options by normalizing them to an array of matters.
+	*
+	* @param {Options | null | undefined} [options='yaml']
+	*   Configuration (default: `'yaml'`).
+	* @returns {Array<Matter>}
+	*   List of matters.
+	*/
+	function toMatters(options) {
+		/** @type {Array<Matter>} */
+		const result = [];
+		let index = -1;
+		/** @type {Array<Matter | Preset>} */
+		const presetsOrMatters = Array.isArray(options) ? options : options ? [options] : ["yaml"];
+		while (++index < presetsOrMatters.length) result[index] = matter(presetsOrMatters[index]);
+		return result;
+	}
+	/**
+	* Simplify an option.
+	*
+	* @param {Matter | Preset} option
+	*   Configuration.
+	* @returns {Matter}
+	*   Matter.
+	*/
+	function matter(option) {
+		let result = option;
+		if (typeof result === "string") {
+			if (!own.call(markers, result)) throw fault("Missing matter definition for `%s`", result);
+			result = {
+				type: result,
+				marker: markers[result]
+			};
+		} else if (typeof result !== "object") throw fault("Expected matter to be an object, not `%j`", result);
+		if (!own.call(result, "type")) throw fault("Missing `type` in matter `%j`", result);
+		if (!own.call(result, "fence") && !own.call(result, "marker")) throw fault("Missing `marker` or `fence` in matter `%j`", result);
+		return result;
+	}
+	//#endregion
+	//#region node_modules/micromark-extension-frontmatter/lib/syntax.js
+	/**
+	* @typedef {import('micromark-util-types').Construct} Construct
+	* @typedef {import('micromark-util-types').ConstructRecord} ConstructRecord
+	* @typedef {import('micromark-util-types').Extension} Extension
+	* @typedef {import('micromark-util-types').State} State
+	* @typedef {import('micromark-util-types').TokenType} TokenType
+	* @typedef {import('micromark-util-types').TokenizeContext} TokenizeContext
+	* @typedef {import('micromark-util-types').Tokenizer} Tokenizer
+	*
+	* @typedef {import('./to-matters.js').Info} Info
+	* @typedef {import('./to-matters.js').Matter} Matter
+	* @typedef {import('./to-matters.js').Options} Options
+	*/
+	/**
+	* Create an extension for `micromark` to enable frontmatter syntax.
+	*
+	* @param {Options | null | undefined} [options='yaml']
+	*   Configuration (default: `'yaml'`).
+	* @returns {Extension}
+	*   Extension for `micromark` that can be passed in `extensions`, to
+	*   enable frontmatter syntax.
+	*/
+	function frontmatter(options) {
+		const matters = toMatters(options);
+		/** @type {ConstructRecord} */
+		const flow = {};
+		let index = -1;
+		while (++index < matters.length) {
+			const matter = matters[index];
+			const code = fence$1(matter, "open").charCodeAt(0);
+			const construct = createConstruct(matter);
+			const existing = flow[code];
+			if (Array.isArray(existing)) existing.push(construct);
+			else flow[code] = [construct];
+		}
+		return { flow };
+	}
+	/**
+	* @param {Matter} matter
+	* @returns {Construct}
+	*/
+	function createConstruct(matter) {
+		const anywhere = matter.anywhere;
+		const frontmatterType = matter.type;
+		const fenceType = frontmatterType + "Fence";
+		const sequenceType = fenceType + "Sequence";
+		const valueType = frontmatterType + "Value";
+		const closingFenceConstruct = {
+			tokenize: tokenizeClosingFence,
+			partial: true
+		};
+		/**
+		* Fence to look for.
+		*
+		* @type {string}
+		*/
+		let buffer;
+		let bufferIndex = 0;
+		return {
+			tokenize: tokenizeFrontmatter,
+			concrete: true
+		};
+		/**
+		* @this {TokenizeContext}
+		* @type {Tokenizer}
+		*/
+		function tokenizeFrontmatter(effects, ok, nok) {
+			const self = this;
+			return start;
+			/**
+			* Start of frontmatter.
+			*
+			* ```markdown
+			* > | ---
+			*     ^
+			*   | title: "Venus"
+			*   | ---
+			* ```
+			*
+			* @type {State}
+			*/
+			function start(code) {
+				const position = self.now();
+				if (position.column === 1 && (position.line === 1 || anywhere)) {
+					buffer = fence$1(matter, "open");
+					bufferIndex = 0;
+					if (code === buffer.charCodeAt(bufferIndex)) {
+						effects.enter(frontmatterType);
+						effects.enter(fenceType);
+						effects.enter(sequenceType);
+						return openSequence(code);
+					}
+				}
+				return nok(code);
+			}
+			/**
+			* In open sequence.
+			*
+			* ```markdown
+			* > | ---
+			*     ^
+			*   | title: "Venus"
+			*   | ---
+			* ```
+			*
+			* @type {State}
+			*/
+			function openSequence(code) {
+				if (bufferIndex === buffer.length) {
+					effects.exit(sequenceType);
+					if (markdownSpace$1(code)) {
+						effects.enter("whitespace");
+						return openSequenceWhitespace(code);
+					}
+					return openAfter(code);
+				}
+				if (code === buffer.charCodeAt(bufferIndex++)) {
+					effects.consume(code);
+					return openSequence;
+				}
+				return nok(code);
+			}
+			/**
+			* In whitespace after open sequence.
+			*
+			* ```markdown
+			* > | ---␠
+			*        ^
+			*   | title: "Venus"
+			*   | ---
+			* ```
+			*
+			* @type {State}
+			*/
+			function openSequenceWhitespace(code) {
+				if (markdownSpace$1(code)) {
+					effects.consume(code);
+					return openSequenceWhitespace;
+				}
+				effects.exit("whitespace");
+				return openAfter(code);
+			}
+			/**
+			* After open sequence.
+			*
+			* ```markdown
+			* > | ---
+			*        ^
+			*   | title: "Venus"
+			*   | ---
+			* ```
+			*
+			* @type {State}
+			*/
+			function openAfter(code) {
+				if (markdownLineEnding$1(code)) {
+					effects.exit(fenceType);
+					effects.enter("lineEnding");
+					effects.consume(code);
+					effects.exit("lineEnding");
+					buffer = fence$1(matter, "close");
+					bufferIndex = 0;
+					return effects.attempt(closingFenceConstruct, after, contentStart);
+				}
+				return nok(code);
+			}
+			/**
+			* Start of content chunk.
+			*
+			* ```markdown
+			*   | ---
+			* > | title: "Venus"
+			*     ^
+			*   | ---
+			* ```
+			*
+			* @type {State}
+			*/
+			function contentStart(code) {
+				if (code === null || markdownLineEnding$1(code)) return contentEnd(code);
+				effects.enter(valueType);
+				return contentInside(code);
+			}
+			/**
+			* In content chunk.
+			*
+			* ```markdown
+			*   | ---
+			* > | title: "Venus"
+			*     ^
+			*   | ---
+			* ```
+			*
+			* @type {State}
+			*/
+			function contentInside(code) {
+				if (code === null || markdownLineEnding$1(code)) {
+					effects.exit(valueType);
+					return contentEnd(code);
+				}
+				effects.consume(code);
+				return contentInside;
+			}
+			/**
+			* End of content chunk.
+			*
+			* ```markdown
+			*   | ---
+			* > | title: "Venus"
+			*                   ^
+			*   | ---
+			* ```
+			*
+			* @type {State}
+			*/
+			function contentEnd(code) {
+				if (code === null) return nok(code);
+				effects.enter("lineEnding");
+				effects.consume(code);
+				effects.exit("lineEnding");
+				return effects.attempt(closingFenceConstruct, after, contentStart);
+			}
+			/**
+			* After frontmatter.
+			*
+			* ```markdown
+			*   | ---
+			*   | title: "Venus"
+			* > | ---
+			*        ^
+			* ```
+			*
+			* @type {State}
+			*/
+			function after(code) {
+				effects.exit(frontmatterType);
+				return ok(code);
+			}
+		}
+		/** @type {Tokenizer} */
+		function tokenizeClosingFence(effects, ok, nok) {
+			let bufferIndex = 0;
+			return closeStart;
+			/**
+			* Start of close sequence.
+			*
+			* ```markdown
+			*   | ---
+			*   | title: "Venus"
+			* > | ---
+			*     ^
+			* ```
+			*
+			* @type {State}
+			*/
+			function closeStart(code) {
+				if (code === buffer.charCodeAt(bufferIndex)) {
+					effects.enter(fenceType);
+					effects.enter(sequenceType);
+					return closeSequence(code);
+				}
+				return nok(code);
+			}
+			/**
+			* In close sequence.
+			*
+			* ```markdown
+			*   | ---
+			*   | title: "Venus"
+			* > | ---
+			*     ^
+			* ```
+			*
+			* @type {State}
+			*/
+			function closeSequence(code) {
+				if (bufferIndex === buffer.length) {
+					effects.exit(sequenceType);
+					if (markdownSpace$1(code)) {
+						effects.enter("whitespace");
+						return closeSequenceWhitespace(code);
+					}
+					return closeAfter(code);
+				}
+				if (code === buffer.charCodeAt(bufferIndex++)) {
+					effects.consume(code);
+					return closeSequence;
+				}
+				return nok(code);
+			}
+			/**
+			* In whitespace after close sequence.
+			*
+			* ```markdown
+			* > | ---
+			*   | title: "Venus"
+			*   | ---␠
+			*        ^
+			* ```
+			*
+			* @type {State}
+			*/
+			function closeSequenceWhitespace(code) {
+				if (markdownSpace$1(code)) {
+					effects.consume(code);
+					return closeSequenceWhitespace;
+				}
+				effects.exit("whitespace");
+				return closeAfter(code);
+			}
+			/**
+			* After close sequence.
+			*
+			* ```markdown
+			*   | ---
+			*   | title: "Venus"
+			* > | ---
+			*        ^
+			* ```
+			*
+			* @type {State}
+			*/
+			function closeAfter(code) {
+				if (code === null || markdownLineEnding$1(code)) {
+					effects.exit(fenceType);
+					return ok(code);
+				}
+				return nok(code);
+			}
+		}
+	}
+	/**
+	* @param {Matter} matter
+	* @param {'close' | 'open'} prop
+	* @returns {string}
+	*/
+	function fence$1(matter, prop) {
+		return matter.marker ? pick$1(matter.marker, prop).repeat(3) : pick$1(matter.fence, prop);
+	}
+	/**
+	* @param {Info | string} schema
+	* @param {'close' | 'open'} prop
+	* @returns {string}
+	*/
+	function pick$1(schema, prop) {
+		return typeof schema === "string" ? schema : schema[prop];
+	}
+	//#endregion
+	//#region node_modules/escape-string-regexp/index.js
+	function escapeStringRegexp(string) {
+		if (typeof string !== "string") throw new TypeError("Expected a string");
+		return string.replace(/[|\\{}()[\]^$+*?.]/g, "\\$&").replace(/-/g, "\\x2d");
+	}
+	//#endregion
+	//#region node_modules/mdast-util-frontmatter/lib/index.js
+	/**
+	* @typedef {import('mdast').Literal} Literal
+	*
+	* @typedef {import('mdast-util-from-markdown').CompileContext} CompileContext
+	* @typedef {import('mdast-util-from-markdown').Extension} FromMarkdownExtension
+	* @typedef {import('mdast-util-from-markdown').Handle} FromMarkdownHandle
+	* @typedef {import('mdast-util-to-markdown').Options} ToMarkdownExtension
+	*
+	* @typedef {import('micromark-extension-frontmatter').Info} Info
+	* @typedef {import('micromark-extension-frontmatter').Matter} Matter
+	* @typedef {import('micromark-extension-frontmatter').Options} Options
+	*/
+	/**
+	* Create an extension for `mdast-util-from-markdown`.
+	*
+	* @param {Options | null | undefined} [options]
+	*   Configuration (optional).
+	* @returns {FromMarkdownExtension}
+	*   Extension for `mdast-util-from-markdown`.
+	*/
+	function frontmatterFromMarkdown(options) {
+		const matters = toMatters(options);
+		/** @type {FromMarkdownExtension['enter']} */
+		const enter = {};
+		/** @type {FromMarkdownExtension['exit']} */
+		const exit = {};
+		let index = -1;
+		while (++index < matters.length) {
+			const matter = matters[index];
+			enter[matter.type] = opener(matter);
+			exit[matter.type] = close;
+			exit[matter.type + "Value"] = value;
+		}
+		return {
+			enter,
+			exit
+		};
+	}
+	/**
+	* @param {Matter} matter
+	* @returns {FromMarkdownHandle} enter
+	*/
+	function opener(matter) {
+		return open;
+		/**
+		* @this {CompileContext}
+		* @type {FromMarkdownHandle}
+		*/
+		function open(token) {
+			this.enter({
+				type: matter.type,
+				value: ""
+			}, token);
+			this.buffer();
+		}
+	}
+	/**
+	* @this {CompileContext}
+	* @type {FromMarkdownHandle}
+	*/
+	function close(token) {
+		const data = this.resume();
+		const node = this.stack[this.stack.length - 1];
+		"value" in node;
+		this.exit(token);
+		node.value = data.replace(/^(\r?\n|\r)|(\r?\n|\r)$/g, "");
+	}
+	/**
+	* @this {CompileContext}
+	* @type {FromMarkdownHandle}
+	*/
+	function value(token) {
+		this.config.enter.data.call(this, token);
+		this.config.exit.data.call(this, token);
+	}
+	/**
+	* Create an extension for `mdast-util-to-markdown`.
+	*
+	* @param {Options | null | undefined} [options]
+	*   Configuration (optional).
+	* @returns {ToMarkdownExtension}
+	*   Extension for `mdast-util-to-markdown`.
+	*/
+	function frontmatterToMarkdown(options) {
+		/** @type {ToMarkdownExtension['unsafe']} */
+		const unsafe = [];
+		/** @type {ToMarkdownExtension['handlers']} */
+		const handlers = {};
+		const matters = toMatters(options);
+		let index = -1;
+		while (++index < matters.length) {
+			const matter = matters[index];
+			handlers[matter.type] = handler(matter);
+			const open = fence(matter, "open");
+			unsafe.push({
+				atBreak: true,
+				character: open.charAt(0),
+				after: escapeStringRegexp(open.charAt(1))
+			});
+		}
+		return {
+			unsafe,
+			handlers
+		};
+	}
+	/**
+	* Create a handle that can serialize a frontmatter node as markdown.
+	*
+	* @param {Matter} matter
+	*   Structure.
+	* @returns {(node: Literal) => string} enter
+	*   Handler.
+	*/
+	function handler(matter) {
+		const open = fence(matter, "open");
+		const close = fence(matter, "close");
+		return handle;
+		/**
+		* Serialize a frontmatter node as markdown.
+		*
+		* @param {Literal} node
+		*   Node to serialize.
+		* @returns {string}
+		*   Serialized node.
+		*/
+		function handle(node) {
+			return open + (node.value ? "\n" + node.value : "") + "\n" + close;
+		}
+	}
+	/**
+	* Get an `open` or `close` fence.
+	*
+	* @param {Matter} matter
+	*   Structure.
+	* @param {'close' | 'open'} prop
+	*   Field to get.
+	* @returns {string}
+	*   Fence.
+	*/
+	function fence(matter, prop) {
+		return matter.marker ? pick(matter.marker, prop).repeat(3) : pick(matter.fence, prop);
+	}
+	/**
+	* Take `open` or `close` fields when schema is an info object, or use the
+	* given value when it is a string.
+	*
+	* @param {Info | string} schema
+	*   Info object or value.
+	* @param {'close' | 'open'} prop
+	*   Field to get.
+	* @returns {string}
+	*   Thing to use for the opening or closing.
+	*/
+	function pick(schema, prop) {
+		return typeof schema === "string" ? schema : schema[prop];
+	}
+	//#endregion
+	//#region node_modules/remark-frontmatter/lib/index.js
+	/**
+	* @typedef {import('mdast').Root} Root
+	* @typedef {import('micromark-extension-frontmatter').Options} Options
+	* @typedef {import('unified').Processor<Root>} Processor
+	*/
+	/** @type {Options} */
+	var emptyOptions = "yaml";
+	/**
+	* Add support for frontmatter.
+	*
+	* ###### Notes
+	*
+	* Doesn’t parse the data inside them: create your own plugin to do that.
+	*
+	* @param {Options | null | undefined} [options='yaml']
+	*   Configuration (default: `'yaml'`).
+	* @returns {undefined}
+	*   Nothing.
+	*/
+	function remarkFrontmatter(options) {
+		const self = this;
+		const settings = options || emptyOptions;
+		const data = self.data();
+		const micromarkExtensions = data.micromarkExtensions || (data.micromarkExtensions = []);
+		const fromMarkdownExtensions = data.fromMarkdownExtensions || (data.fromMarkdownExtensions = []);
+		const toMarkdownExtensions = data.toMarkdownExtensions || (data.toMarkdownExtensions = []);
+		micromarkExtensions.push(frontmatter(settings));
+		fromMarkdownExtensions.push(frontmatterFromMarkdown(settings));
+		toMarkdownExtensions.push(frontmatterToMarkdown(settings));
+	}
+	//#endregion
 	//#region src/editor.js
 	var buttonStatePlugin = new Plugin({ view(editorView) {
 		const updateButtons = () => {
@@ -28774,7 +29542,30 @@
 			if (view.state.selection !== prevState.selection) updateButtons();
 		} };
 	} });
-	var pmu = new ProseMirrorUnified([new GFMExtension()]);
+	var FrontmatterExtension = class extends Extension {
+		remarkPlugins() {
+			return [remarkFrontmatter];
+		}
+		proseMirrorNodes() {
+			return { yaml: {
+				group: "block",
+				attrs: { value: { default: "" } },
+				toDOM: (node) => [
+					"pre",
+					{
+						class: "markmap-config",
+						style: "display:none;"
+					},
+					node.attrs.value
+				],
+				parseDOM: [{
+					tag: "pre.markmap-config",
+					getAttrs: (dom) => ({ value: dom.textContent })
+				}]
+			} };
+		}
+	};
+	var pmu = new ProseMirrorUnified([new GFMExtension(), new FrontmatterExtension()]);
 	function markdownToProseMirror(markdown) {
 		return pmu.parse(markdown);
 	}
