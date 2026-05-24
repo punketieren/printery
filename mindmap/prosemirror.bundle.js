@@ -46330,7 +46330,7 @@
 	var ydoc = new Doc();
 	var ytext = ydoc.getText("shared-markdown");
 	var provider = new WebrtcProvider("YnpvlB-mrkmp-collab-id-8874", ydoc, {
-		signaling: ["wss://://onrender.com"],
+		signaling: ["wss://y-webrtc-eu.fly.dev"],
 		peerOpts: { config: { iceServers: [{ urls: "stun:://google.com" }, { urls: "stun:://google.com" }] } }
 	});
 	function initMarkdownEditor(containerElement) {
