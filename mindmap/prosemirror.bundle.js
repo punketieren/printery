@@ -46329,7 +46329,10 @@
 	//#region src/editor.js
 	var ydoc = new Doc();
 	var ytext = ydoc.getText("shared-markdown");
-	var provider = new WebrtcProvider("YnpvlB-mrkmp-collab-id-8874", ydoc, { signaling: ["wss://signaling.space-invaders.su", "wss://y-webrtc.commmunity.ru"] });
+	var provider = new WebrtcProvider("YnpvlB-mrkmp-collab-id-8874", ydoc, {
+		signaling: ["wss://y-webrtc-eu.fly.dev"],
+		peerOpts: { config: { iceServers: [{ urls: "stun:://google.com" }, { urls: "stun:://google.com" }] } }
+	});
 	function initMarkdownEditor(containerElement) {
 		if (!containerElement) return console.error("Контейнер для CodeMirror не найден!");
 		new EditorView({
