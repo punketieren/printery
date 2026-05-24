@@ -29546,6 +29546,9 @@
 		remarkPlugins() {
 			return [remarkFrontmatter];
 		}
+		toMarkdownExtensions() {
+			return [frontmatterToMarkdown(["yaml"])];
+		}
 		proseMirrorNodes() {
 			return { yaml: {
 				group: "block",
@@ -29566,9 +29569,6 @@
 					getAttrs: (dom) => ({ value: dom.textContent })
 				}]
 			} };
-		}
-		toMarkdown(state, node) {
-			state.write(node.attrs.value + "\n\n");
 		}
 	};
 	var pmu = new ProseMirrorUnified([new GFMExtension(), new FrontmatterExtension()]);
