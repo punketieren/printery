@@ -29570,7 +29570,7 @@
 		return pmu.parse(markdown);
 	}
 	function proseMirrorToMarkdown(doc) {
-		return pmu.serialize(doc);
+		return pmu.serialize(doc).replace(/\u00a0/g, " ");
 	}
 	var mySchema = pmu.schema();
 	window.ProseMirrorBundle = {
