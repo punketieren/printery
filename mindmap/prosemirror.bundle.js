@@ -87146,7 +87146,7 @@
 	ydoc.clientID = Math.floor(Math.random() * 1e9);
 	var p2pNode = null;
 	var isNetworkReady = false;
-	function pushToMapFrame(markdownText) {
+	function sendToMapFrame(markdownText) {
 		const mapFrame = document.getElementById("mapFrame");
 		if (mapFrame && mapFrame.contentWindow) mapFrame.contentWindow.postMessage({
 			type: "updateMap",
@@ -87173,10 +87173,18 @@
 			});
 			await p2pNode.start();
 			console.log("🚀 Децентрализованный P2P узел успешно запущен внутри бандла!");
+			console.log("⏳ Устанавливаем физическое соединение с релеем...");
+			try {
+				await p2pNode.dial(multiaddr(CIRCUIT_RELAY_ADDRESS));
+				console.log("🔌 Физический WebSocket сокет до релея успешно открыт!");
+			} catch (dialErr) {
+				console.warn("⚠️ Предупреждение прямого диала:", dialErr);
+			}
 			if (p2pNode?.services?.pubsub) {
 				p2pNode.services.pubsub.addEventListener("message", (evt) => {
 					if (evt.detail.topic !== P2P_TOPIC) return;
-					applyUpdate(ydoc, evt.detail.data, "remote");
+					const update = evt.detail.data;
+					applyUpdate(ydoc, update, "remote");
 				});
 				await p2pNode.services.pubsub.subscribe(P2P_TOPIC);
 				console.log(`📡 Успешно подписались на P2P комнату: ${P2P_TOPIC}`);
@@ -87198,7 +87206,7 @@
 	}
 	initP2PNetwork();
 	ytext.observe(() => {
-		pushToMapFrame(ytext.toString());
+		sendToMapFrame(ytext.toString());
 	});
 	function extractYaml(text) {
 		if (!text) return "";
@@ -87226,21 +87234,23 @@
 			plugins: [history(), keymap(baseKeymap)]
 		}) });
 	}
+	function toMarkdown(pmStateDoc) {
+		return defaultMarkdownSerializer.serialize(pmStateDoc);
+	}
+	function parseMarkdown(markdownText) {
+		return defaultMarkdownParser.parse(markdownText);
+	}
 	window.ProseMirrorBundle = {
 		ydoc,
 		ytext,
 		extractYaml,
 		createCodeMirror,
 		createProseMirror,
-		toMarkdown: function(pmStateDoc) {
-			return defaultMarkdownSerializer.serialize(pmStateDoc);
-		},
-		parseMarkdown: function(markdownText) {
-			return defaultMarkdownParser.parse(markdownText);
-		},
+		toMarkdown,
+		parseMarkdown,
 		initMarkdownEditor: function(container) {
 			if (!container) return;
-			if (!ytext.toString()) ytext.insert(0, "# Онлайн Коллаборация\n\n- Введите текст здесь...");
+			if (!ytext.toString()) ytext.insert(0, "# Онлайн Коллаборация\n\n- Связь налажена штатно.");
 			const pmView = createProseMirror(container, ytext.toString());
 			const originalDispatch = pmView.dispatchTransaction.bind(pmView);
 			pmView.setProps({ dispatchTransaction(tr) {
@@ -87254,7 +87264,13 @@
 					});
 				}
 			} });
-			pushToMapFrame(ytext.toString());
+			window.addEventListener("message", (e) => {
+				if (e.data && e.data.type === "mapReady") {
+					console.log("🗺️ Сигнал mapReady получен бандлом. Отправляем стартовые данные!");
+					sendToMapFrame(ytext.toString());
+				}
+			});
+			sendToMapFrame(ytext.toString());
 			return pmView;
 		}
 	};
