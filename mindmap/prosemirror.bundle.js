@@ -87146,6 +87146,13 @@
 	ydoc.clientID = Math.floor(Math.random() * 1e9);
 	var p2pNode = null;
 	var isNetworkReady = false;
+	function pushToMapFrame(markdownText) {
+		const mapFrame = document.getElementById("mapFrame");
+		if (mapFrame && mapFrame.contentWindow) mapFrame.contentWindow.postMessage({
+			type: "updateMap",
+			markdown: markdownText
+		}, "*");
+	}
 	async function initP2PNetwork() {
 		try {
 			p2pNode = await createLibp2p({
@@ -87161,23 +87168,15 @@
 						allowPublishToZeroTopicPeers: true
 					}),
 					identify: identify(),
-					bootstrap: bootstrap({ list: [CIRCUIT_RELAY_ADDRESS] })
+					bootstrap: bootstrap({ list: [multiaddr(CIRCUIT_RELAY_ADDRESS)] })
 				}
 			});
 			await p2pNode.start();
 			console.log("🚀 Децентрализованный P2P узел успешно запущен внутри бандла!");
-			console.log("⏳ Устанавливаем физическое соединение с релеем...");
-			try {
-				await p2pNode.dial(CIRCUIT_RELAY_ADDRESS);
-				console.log("🔌 Физический WebSocket сокет до релея успешно открыт!");
-			} catch (dialErr) {
-				console.warn("⚠️ Предупреждение прямого диала (возможно, bootstrap уже успел соединить):", dialErr);
-			}
 			if (p2pNode?.services?.pubsub) {
 				p2pNode.services.pubsub.addEventListener("message", (evt) => {
 					if (evt.detail.topic !== P2P_TOPIC) return;
-					const update = evt.detail.data;
-					applyUpdate(ydoc, update, "remote");
+					applyUpdate(ydoc, evt.detail.data, "remote");
 				});
 				await p2pNode.services.pubsub.subscribe(P2P_TOPIC);
 				console.log(`📡 Успешно подписались на P2P комнату: ${P2P_TOPIC}`);
@@ -87185,12 +87184,13 @@
 			}
 			ydoc.on("update", async (update, origin) => {
 				if (origin === "remote" || !isNetworkReady) return;
-				if (p2pNode?.services?.pubsub) if (p2pNode.services.pubsub.getSubscribers(P2P_TOPIC).length > 0) try {
-					await p2pNode.services.pubsub.publish(P2P_TOPIC, update);
-				} catch (err) {
-					console.error("Ошибка публикации апдейта в PubSub:", err);
+				if (p2pNode?.services?.pubsub) {
+					if (p2pNode.services.pubsub.getSubscribers(P2P_TOPIC).length > 0) try {
+						await p2pNode.services.pubsub.publish(P2P_TOPIC, update);
+					} catch (err) {
+						console.error("Ошибка публикации апдейта в PubSub:", err);
+					}
 				}
-				else console.log("📭 В комнате пока нет других пиров. Изменения сохранены локально.");
 			});
 		} catch (error) {
 			console.error("Критическая ошибка инициализации сети libp2p:", error);
@@ -87198,8 +87198,7 @@
 	}
 	initP2PNetwork();
 	ytext.observe(() => {
-		const mapFrame = document.getElementById("mapFrame");
-		if (mapFrame && mapFrame.contentWindow && typeof mapFrame.contentWindow.updateMarkmap === "function") mapFrame.contentWindow.updateMarkmap(ytext.toString());
+		pushToMapFrame(ytext.toString());
 	});
 	function extractYaml(text) {
 		if (!text) return "";
@@ -87227,23 +87226,36 @@
 			plugins: [history(), keymap(baseKeymap)]
 		}) });
 	}
-	function toMarkdown(pmStateDoc) {
-		return defaultMarkdownSerializer.serialize(pmStateDoc);
-	}
-	function parseMarkdown(markdownText) {
-		return defaultMarkdownParser.parse(markdownText);
-	}
 	window.ProseMirrorBundle = {
 		ydoc,
 		ytext,
 		extractYaml,
 		createCodeMirror,
 		createProseMirror,
-		toMarkdown,
-		parseMarkdown,
+		toMarkdown: function(pmStateDoc) {
+			return defaultMarkdownSerializer.serialize(pmStateDoc);
+		},
+		parseMarkdown: function(markdownText) {
+			return defaultMarkdownParser.parse(markdownText);
+		},
 		initMarkdownEditor: function(container) {
 			if (!container) return;
-			return createProseMirror(container, ytext.toString());
+			if (!ytext.toString()) ytext.insert(0, "# Онлайн Коллаборация\n\n- Введите текст здесь...");
+			const pmView = createProseMirror(container, ytext.toString());
+			const originalDispatch = pmView.dispatchTransaction.bind(pmView);
+			pmView.setProps({ dispatchTransaction(tr) {
+				originalDispatch(tr);
+				if (tr.docChanged) {
+					const currentYaml = extractYaml(ytext.toString());
+					const bodyText = defaultMarkdownSerializer.serialize(pmView.state.doc);
+					ydoc.transact(() => {
+						ytext.delete(0, ytext.length);
+						ytext.insert(0, currentYaml + bodyText);
+					});
+				}
+			} });
+			pushToMapFrame(ytext.toString());
+			return pmView;
 		}
 	};
 	//#endregion
