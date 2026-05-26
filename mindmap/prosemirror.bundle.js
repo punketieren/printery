@@ -1,4 +1,4 @@
-(function() {
+(function(_libp2p_websockets_filters) {
 	//#region \0rolldown/runtime.js
 	var __create = Object.create;
 	var __defProp = Object.defineProperty;
@@ -27463,7 +27463,7 @@
 	function isAsyncIterable$4(thing) {
 		return thing[Symbol.asyncIterator] != null;
 	}
-	function all(source) {
+	function all$1(source) {
 		if (isAsyncIterable$4(source)) return (async () => {
 			const arr = [];
 			for await (const entry of source) arr.push(entry);
@@ -29622,7 +29622,7 @@
 			for await (const peer of this.store.all(query)) fn(peer);
 		}
 		async all(query) {
-			return all(this.store.all(query));
+			return all$1(this.store.all(query));
 		}
 		async delete(peerId, options) {
 			const release = await this.store.getReadLock(peerId, options);
@@ -29965,10 +29965,10 @@
 	}
 	function sort(source, sorter) {
 		if (isAsyncIterable$1(source)) return (async function* () {
-			yield* (await all(source)).sort(sorter);
+			yield* (await all$1(source)).sort(sorter);
 		})();
 		return (function* () {
-			yield* all(source).sort(sorter);
+			yield* all$1(source).sort(sorter);
 		})();
 	}
 	//#endregion
@@ -87150,7 +87150,7 @@
 			p2pNode = await createLibp2p({
 				addresses: { listen: ["/p2p-circuit"] },
 				transports: [
-					webSockets(),
+					webSockets({ filter: _libp2p_websockets_filters.all }),
 					webRTC(),
 					circuitRelayTransport()
 				],
@@ -87230,4 +87230,4 @@
 		parseMarkdown
 	};
 	//#endregion
-})();
+})(_libp2p_websockets_filters);
