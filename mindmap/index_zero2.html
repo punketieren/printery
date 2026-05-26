@@ -80,13 +80,23 @@
  <script src="prosemirror.bundle.js"></script>  
 <!--script src="init-prosemirror.js"></script--> 	
 <script  src="view.js"></script>
-<script>document.addEventListener("DOMContentLoaded", () => {
+<script>
+document.addEventListener("DOMContentLoaded", () => {
     const container = document.getElementById('editor');
     
-    // Запускаем инициализацию совместного Markdown-редактора
     if (window.ProseMirrorBundle && window.ProseMirrorBundle.initMarkdownEditor) {
+        // Проверяем: если соавторы еще ничего не написали в ytext,
+        // принудительно закидываем туда стартовую строчку, чтобы редактор ожил
+        const currentText = window.ProseMirrorBundle.ytext.toString();
+        if (!currentText) {
+            window.ProseMirrorBundle.ytext.insert(0, "# Тестовый заголовок\n\nНачните писать здесь...");
+        }
+
+        // Запускаем ваш штатный редактор
         window.ProseMirrorBundle.initMarkdownEditor(container);
     }
-});</script>
+});
+</script>
+
 </body>
 </html>

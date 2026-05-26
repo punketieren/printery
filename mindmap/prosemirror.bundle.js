@@ -1,4 +1,4 @@
-(function(_libp2p_websockets_filters) {
+(function() {
 	//#region \0rolldown/runtime.js
 	var __create = Object.create;
 	var __defProp = Object.defineProperty;
@@ -27463,7 +27463,7 @@
 	function isAsyncIterable$4(thing) {
 		return thing[Symbol.asyncIterator] != null;
 	}
-	function all$1(source) {
+	function all(source) {
 		if (isAsyncIterable$4(source)) return (async () => {
 			const arr = [];
 			for await (const entry of source) arr.push(entry);
@@ -29622,7 +29622,7 @@
 			for await (const peer of this.store.all(query)) fn(peer);
 		}
 		async all(query) {
-			return all$1(this.store.all(query));
+			return all(this.store.all(query));
 		}
 		async delete(peerId, options) {
 			const release = await this.store.getReadLock(peerId, options);
@@ -29965,10 +29965,10 @@
 	}
 	function sort(source, sorter) {
 		if (isAsyncIterable$1(source)) return (async function* () {
-			yield* (await all$1(source)).sort(sorter);
+			yield* (await all(source)).sort(sorter);
 		})();
 		return (function* () {
-			yield* all$1(source).sort(sorter);
+			yield* all(source).sort(sorter);
 		})();
 	}
 	//#endregion
@@ -87145,31 +87145,34 @@
 	var ytext = ydoc.getText("shared-markdown");
 	ydoc.clientID = Math.floor(Math.random() * 1e9);
 	var p2pNode = null;
+	var isNetworkReady = false;
 	async function initP2PNetwork() {
 		try {
 			p2pNode = await createLibp2p({
 				addresses: { listen: ["/p2p-circuit"] },
 				transports: [
-					webSockets({ filter: _libp2p_websockets_filters.all }),
+					webSockets(),
 					webRTC(),
 					circuitRelayTransport()
 				],
 				services: {
-					pubsub: gossipsub({ emitSelf: false }),
+					pubsub: gossipsub({
+						emitSelf: false,
+						allowPublishToZeroTopicPeers: true
+					}),
 					identify: identify(),
 					bootstrap: bootstrap({ list: [CIRCUIT_RELAY_ADDRESS] })
 				}
 			});
 			await p2pNode.start();
-			console.log("🚀 Децентрализованный P2P узел успешно запущен и подключен к релею!");
-			ydoc.on("update", async (update, origin) => {
-				if (origin === "remote") return;
-				if (p2pNode?.services?.pubsub) try {
-					await p2pNode.services.pubsub.publish(P2P_TOPIC, update);
-				} catch (err) {
-					console.error("Ошибка отправки апдейта в PubSub:", err);
-				}
-			});
+			console.log("🚀 Децентрализованный P2P узел успешно запущен внутри бандла!");
+			console.log("⏳ Устанавливаем физическое соединение с релеем...");
+			try {
+				await p2pNode.dial(CIRCUIT_RELAY_ADDRESS);
+				console.log("🔌 Физический WebSocket сокет до релея успешно открыт!");
+			} catch (dialErr) {
+				console.warn("⚠️ Предупреждение прямого диала (возможно, bootstrap уже успел соединить):", dialErr);
+			}
 			if (p2pNode?.services?.pubsub) {
 				p2pNode.services.pubsub.addEventListener("message", (evt) => {
 					if (evt.detail.topic !== P2P_TOPIC) return;
@@ -87178,7 +87181,17 @@
 				});
 				await p2pNode.services.pubsub.subscribe(P2P_TOPIC);
 				console.log(`📡 Успешно подписались на P2P комнату: ${P2P_TOPIC}`);
+				isNetworkReady = true;
 			}
+			ydoc.on("update", async (update, origin) => {
+				if (origin === "remote" || !isNetworkReady) return;
+				if (p2pNode?.services?.pubsub) if (p2pNode.services.pubsub.getSubscribers(P2P_TOPIC).length > 0) try {
+					await p2pNode.services.pubsub.publish(P2P_TOPIC, update);
+				} catch (err) {
+					console.error("Ошибка публикации апдейта в PubSub:", err);
+				}
+				else console.log("📭 В комнате пока нет других пиров. Изменения сохранены локально.");
+			});
 		} catch (error) {
 			console.error("Критическая ошибка инициализации сети libp2p:", error);
 		}
@@ -87227,7 +87240,11 @@
 		createCodeMirror,
 		createProseMirror,
 		toMarkdown,
-		parseMarkdown
+		parseMarkdown,
+		initMarkdownEditor: function(container) {
+			if (!container) return;
+			return createProseMirror(container, ytext.toString());
+		}
 	};
 	//#endregion
-})(_libp2p_websockets_filters);
+})();
