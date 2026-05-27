@@ -90509,10 +90509,25 @@
 		});
 	}
 	function createProseMirror(container, initialMarkdownText) {
-		return new EditorView(container, { state: EditorState.create({
-			doc: defaultMarkdownParser.parse(initialMarkdownText),
-			plugins: [history(), keymap(baseKeymap)]
-		}) });
+		const pmView = new EditorView(container, {
+			state: EditorState.create({
+				doc: defaultMarkdownParser.parse(initialMarkdownText),
+				plugins: [history(), keymap(baseKeymap)]
+			}),
+			dispatchTransaction(tr) {
+				const newState = pmView.state.apply(tr);
+				pmView.updateState(newState);
+				if (tr.docChanged) {
+					const currentYaml = extractYaml(ytext.toString());
+					const bodyText = defaultMarkdownSerializer.serialize(newState.doc);
+					ydoc.transact(() => {
+						ytext.delete(0, ytext.length);
+						ytext.insert(0, currentYaml + bodyText);
+					});
+				}
+			}
+		});
+		return pmView;
 	}
 	function toMarkdown(pmStateDoc) {
 		return defaultMarkdownSerializer.serialize(pmStateDoc);
@@ -90532,18 +90547,6 @@
 			if (!container) return;
 			if (!ytext.toString()) ytext.insert(0, "# Онлайн Коллаборация\n\n- Связь налажена штатно.");
 			const pmView = createProseMirror(container, ytext.toString());
-			const originalDispatch = pmView.dispatchTransaction.bind(pmView);
-			pmView.setProps({ dispatchTransaction(tr) {
-				originalDispatch(tr);
-				if (tr.docChanged) {
-					const currentYaml = extractYaml(ytext.toString());
-					const bodyText = defaultMarkdownSerializer.serialize(pmView.state.doc);
-					ydoc.transact(() => {
-						ytext.delete(0, ytext.length);
-						ytext.insert(0, currentYaml + bodyText);
-					});
-				}
-			} });
 			window.addEventListener("message", (e) => {
 				if (e.data && e.data.type === "mapReady") {
 					console.log("🗺️ Сигнал mapReady получен бандлом. Отправляем стартовые данные!");
