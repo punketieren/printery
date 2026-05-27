@@ -1030,7 +1030,7 @@
 	* A Decoder handles the decoding of an Uint8Array.
 	* @template {ArrayBufferLike} [Buf=ArrayBufferLike]
 	*/
-	var Decoder$2 = class {
+	var Decoder$3 = class {
 		/**
 		* @param {Uint8Array<Buf>} uint8Array Binary data to decode
 		*/
@@ -1055,7 +1055,7 @@
 	* @param {Uint8Array<Buf>} uint8Array
 	* @return {Decoder<Buf>}
 	*/
-	var createDecoder = (uint8Array) => new Decoder$2(uint8Array);
+	var createDecoder = (uint8Array) => new Decoder$3(uint8Array);
 	/**
 	* @function
 	* @param {Decoder} decoder
@@ -1262,7 +1262,7 @@
 	*
 	* @template T
 	*/
-	var RleDecoder = class extends Decoder$2 {
+	var RleDecoder = class extends Decoder$3 {
 		/**
 		* @param {Uint8Array} uint8Array
 		* @param {function(Decoder):T} reader
@@ -1290,7 +1290,7 @@
 			return this.s;
 		}
 	};
-	var UintOptRleDecoder = class extends Decoder$2 {
+	var UintOptRleDecoder = class extends Decoder$3 {
 		/**
 		* @param {Uint8Array} uint8Array
 		*/
@@ -1316,7 +1316,7 @@
 			return this.s;
 		}
 	};
-	var IntDiffOptRleDecoder = class extends Decoder$2 {
+	var IntDiffOptRleDecoder = class extends Decoder$3 {
 		/**
 		* @param {Uint8Array} uint8Array
 		*/
@@ -11513,7 +11513,7 @@
 	* to decode multibases (with matching prefix) or just base decode strings
 	* with corresponding base encoding.
 	*/
-	var Decoder$1 = class {
+	var Decoder$2 = class {
 		name;
 		prefix;
 		baseDecode;
@@ -11571,7 +11571,7 @@
 			this.baseEncode = baseEncode;
 			this.baseDecode = baseDecode;
 			this.encoder = new Encoder$1(name, prefix, baseEncode);
-			this.decoder = new Decoder$1(name, prefix, baseDecode);
+			this.decoder = new Decoder$2(name, prefix, baseDecode);
 		}
 		encode(input) {
 			return this.encoder.encode(input);
@@ -22479,7 +22479,7 @@
 	* to decode multibases (with matching prefix) or just base decode strings
 	* with corresponding base encoding.
 	*/
-	var Decoder = class {
+	var Decoder$1 = class {
 		name;
 		prefix;
 		baseDecode;
@@ -22537,7 +22537,7 @@
 			this.baseEncode = baseEncode;
 			this.baseDecode = baseDecode;
 			this.encoder = new Encoder(name, prefix, baseEncode);
-			this.decoder = new Decoder(name, prefix, baseDecode);
+			this.decoder = new Decoder$1(name, prefix, baseDecode);
 		}
 		encode(input) {
 			return this.encoder.encode(input);
@@ -47967,6 +47967,812 @@
 	};
 	function bootstrap(init) {
 		return (components) => new Bootstrap(components, init);
+	}
+	//#endregion
+	//#region node_modules/@chainsafe/libp2p-yamux/dist/src/frame.js
+	var FrameType;
+	(function(FrameType) {
+		/** Used to transmit data. May transmit zero length payloads depending on the flags. */
+		FrameType[FrameType["Data"] = 0] = "Data";
+		/** Used to updated the senders receive window size. This is used to implement per-session flow control. */
+		FrameType[FrameType["WindowUpdate"] = 1] = "WindowUpdate";
+		/** Used to measure RTT. It can also be used to heart-beat and do keep-alive over TCP. */
+		FrameType[FrameType["Ping"] = 2] = "Ping";
+		/** Used to close a session. */
+		FrameType[FrameType["GoAway"] = 3] = "GoAway";
+	})(FrameType || (FrameType = {}));
+	var Flag;
+	(function(Flag) {
+		/** Signals the start of a new stream. May be sent with a data or window update message. Also sent with a ping to indicate outbound. */
+		Flag[Flag["SYN"] = 1] = "SYN";
+		/** Acknowledges the start of a new stream. May be sent with a data or window update message. Also sent with a ping to indicate response. */
+		Flag[Flag["ACK"] = 2] = "ACK";
+		/** Performs a half-close of a stream. May be sent with a data message or window update. */
+		Flag[Flag["FIN"] = 4] = "FIN";
+		/** Reset a stream immediately. May be sent with a data or window update message. */
+		Flag[Flag["RST"] = 8] = "RST";
+	})(Flag || (Flag = {}));
+	Object.values(Flag).filter((x) => typeof x !== "string");
+	var GoAwayCode;
+	(function(GoAwayCode) {
+		GoAwayCode[GoAwayCode["NormalTermination"] = 0] = "NormalTermination";
+		GoAwayCode[GoAwayCode["ProtocolError"] = 1] = "ProtocolError";
+		GoAwayCode[GoAwayCode["InternalError"] = 2] = "InternalError";
+	})(GoAwayCode || (GoAwayCode = {}));
+	//#endregion
+	//#region node_modules/@chainsafe/libp2p-yamux/dist/src/errors.js
+	var ProtocolError = class extends Error {
+		static name = "ProtocolError";
+		reason;
+		constructor(message, reason) {
+			super(message);
+			this.name = "ProtocolError";
+			this.reason = reason;
+		}
+	};
+	function isProtocolError(err) {
+		return err?.reason !== null;
+	}
+	var InvalidFrameError = class extends ProtocolError {
+		static name = "InvalidFrameError";
+		constructor(message = "The frame was invalid") {
+			super(message, GoAwayCode.ProtocolError);
+			this.name = "InvalidFrameError";
+		}
+	};
+	var UnRequestedPingError = class extends ProtocolError {
+		static name = "UnRequestedPingError";
+		constructor(message = "Un-requested ping error") {
+			super(message, GoAwayCode.ProtocolError);
+			this.name = "UnRequestedPingError";
+		}
+	};
+	var NotMatchingPingError = class extends ProtocolError {
+		static name = "NotMatchingPingError";
+		constructor(message = "Not matching ping error") {
+			super(message, GoAwayCode.ProtocolError);
+			this.name = "NotMatchingPingError";
+		}
+	};
+	var StreamAlreadyExistsError = class extends ProtocolError {
+		static name = "StreamAlreadyExistsError";
+		constructor(message = "Stream already exists") {
+			super(message, GoAwayCode.ProtocolError);
+			this.name = "StreamAlreadyExistsError";
+		}
+	};
+	var DecodeInvalidVersionError = class extends ProtocolError {
+		static name = "DecodeInvalidVersionError";
+		constructor(message = "Decode invalid version") {
+			super(message, GoAwayCode.ProtocolError);
+			this.name = "DecodeInvalidVersionError";
+		}
+	};
+	var BothClientsError = class extends ProtocolError {
+		static name = "BothClientsError";
+		constructor(message = "Both clients") {
+			super(message, GoAwayCode.ProtocolError);
+			this.name = "BothClientsError";
+		}
+	};
+	var ReceiveWindowExceededError = class extends ProtocolError {
+		static name = "ReceiveWindowExceededError";
+		constructor(message = "Receive window exceeded") {
+			super(message, GoAwayCode.ProtocolError);
+			this.name = "ReceiveWindowExceededError";
+		}
+	};
+	new Set([
+		InvalidFrameError.name,
+		UnRequestedPingError.name,
+		NotMatchingPingError.name,
+		StreamAlreadyExistsError.name,
+		DecodeInvalidVersionError.name,
+		BothClientsError.name,
+		ReceiveWindowExceededError.name
+	]);
+	//#endregion
+	//#region node_modules/@chainsafe/libp2p-yamux/dist/src/config.js
+	var defaultConfig = {
+		enableKeepAlive: true,
+		keepAliveInterval: 3e4,
+		maxInboundStreams: 1e3,
+		maxOutboundStreams: 1e3,
+		maxMessageSize: 64 * 1024,
+		maxEarlyStreams: 10,
+		streamOptions: {
+			initialStreamWindowSize: 256 * 1024,
+			maxStreamWindowSize: 16 * 1024 * 1024,
+			inactivityTimeout: 12e4,
+			maxReadBufferLength: 4194304,
+			maxWriteBufferLength: Infinity
+		}
+	};
+	function verifyConfig(config) {
+		if (config.keepAliveInterval != null && config.keepAliveInterval <= 0) throw new InvalidParametersError$1("keep-alive interval must be positive");
+		if (config.maxInboundStreams != null && config.maxInboundStreams < 0) throw new InvalidParametersError$1("max inbound streams must be larger or equal 0");
+		if (config.maxOutboundStreams != null && config.maxOutboundStreams < 0) throw new InvalidParametersError$1("max outbound streams must be larger or equal 0");
+		if (config.maxMessageSize != null && config.maxMessageSize < 1024) throw new InvalidParametersError$1("MaxMessageSize must be greater than a kilobyte");
+		if (config.streamOptions?.initialStreamWindowSize != null && config.streamOptions?.initialStreamWindowSize < 262144) throw new InvalidParametersError$1("InitialStreamWindowSize must be larger or equal 256 kB");
+		if (config.streamOptions?.maxStreamWindowSize != null && config.streamOptions?.initialStreamWindowSize != null && config.streamOptions?.maxStreamWindowSize < config.streamOptions?.initialStreamWindowSize) throw new InvalidParametersError$1("MaxStreamWindowSize must be larger than the InitialStreamWindowSize");
+		if (config.streamOptions?.maxStreamWindowSize != null && config.streamOptions?.maxStreamWindowSize > 2 ** 32 - 1) throw new InvalidParametersError$1("MaxStreamWindowSize must be less than equal MAX_UINT32");
+	}
+	//#endregion
+	//#region node_modules/@chainsafe/libp2p-yamux/dist/src/decode.js
+	function isDataFrame(frame) {
+		return frame.header.type === FrameType.Data && frame.data !== null;
+	}
+	var twoPow24 = 2 ** 24;
+	/**
+	* Decode a header from the front of a buffer
+	*
+	* @param data - Assumed to have enough bytes for a header
+	*/
+	function decodeHeader(data) {
+		if (data[0] !== 0) throw new InvalidFrameError("Invalid frame version");
+		return {
+			type: data[1],
+			flag: (data[2] << 8) + data[3],
+			streamID: data[4] * twoPow24 + (data[5] << 16) + (data[6] << 8) + data[7],
+			length: data[8] * twoPow24 + (data[9] << 16) + (data[10] << 8) + data[11]
+		};
+	}
+	/**
+	* Decodes yamux frames from a source
+	*/
+	var Decoder = class {
+		/** Buffer for in-progress frames */
+		buffer;
+		constructor() {
+			this.buffer = new Uint8ArrayList();
+		}
+		/**
+		* Emits frames from the decoder source.
+		*
+		* Note: If `readData` is emitted, it _must_ be called before the next iteration
+		* Otherwise an error is thrown
+		*/
+		*emitFrames(buf) {
+			this.buffer.append(buf);
+			while (true) {
+				const frame = this.readFrame();
+				if (frame === void 0) break;
+				yield frame;
+			}
+		}
+		readFrame() {
+			let frameSize = 12;
+			if (this.buffer.byteLength < 12) return;
+			const header = decodeHeader(this.buffer.subarray(0, 12));
+			if (header.type === FrameType.Data) {
+				frameSize += header.length;
+				if (this.buffer.byteLength < frameSize) return;
+				const data = this.buffer.sublist(12, frameSize);
+				this.buffer.consume(frameSize);
+				return {
+					header,
+					data
+				};
+			}
+			this.buffer.consume(frameSize);
+			return { header };
+		}
+	};
+	//#endregion
+	//#region node_modules/@chainsafe/libp2p-yamux/dist/src/encode.js
+	function encodeHeader(header) {
+		const frame = new Uint8Array(12);
+		frame[1] = header.type;
+		frame[2] = header.flag >>> 8;
+		frame[3] = header.flag;
+		frame[4] = header.streamID >>> 24;
+		frame[5] = header.streamID >>> 16;
+		frame[6] = header.streamID >>> 8;
+		frame[7] = header.streamID;
+		frame[8] = header.length >>> 24;
+		frame[9] = header.length >>> 16;
+		frame[10] = header.length >>> 8;
+		frame[11] = header.length;
+		return frame;
+	}
+	//#endregion
+	//#region node_modules/@chainsafe/libp2p-yamux/dist/src/stream.js
+	var StreamState;
+	(function(StreamState) {
+		StreamState[StreamState["Init"] = 0] = "Init";
+		StreamState[StreamState["SYNSent"] = 1] = "SYNSent";
+		StreamState[StreamState["SYNReceived"] = 2] = "SYNReceived";
+		StreamState[StreamState["Established"] = 3] = "Established";
+		StreamState[StreamState["Finished"] = 4] = "Finished";
+		StreamState[StreamState["Paused"] = 5] = "Paused";
+	})(StreamState || (StreamState = {}));
+	/** YamuxStream is used to represent a logical stream within a session */
+	var YamuxStream = class extends AbstractStream {
+		streamId;
+		state;
+		/** The number of available bytes to send */
+		sendWindowCapacity;
+		/** The number of bytes available to receive in a full window */
+		recvWindow;
+		/** The number of available bytes to receive */
+		recvWindowCapacity;
+		maxStreamWindowSize;
+		/**
+		* An 'epoch' is the time it takes to process and read data
+		*
+		* Used in conjunction with RTT to determine whether to increase the recvWindow
+		*/
+		epochStart;
+		getRTT;
+		sendFrame;
+		constructor(init) {
+			const initialWindowSize = init.initialStreamWindowSize ?? 262144;
+			super({
+				...init,
+				maxMessageSize: initialWindowSize - 12
+			});
+			this.streamId = init.streamId;
+			this.state = init.state;
+			this.sendWindowCapacity = initialWindowSize;
+			this.recvWindow = initialWindowSize;
+			this.recvWindowCapacity = this.recvWindow;
+			this.maxStreamWindowSize = init.maxStreamWindowSize ?? 16777216;
+			this.epochStart = Date.now();
+			this.getRTT = init.getRTT;
+			this.sendFrame = init.sendFrame;
+			const setStateToFinishedOnCloseListener = () => {
+				this.state = StreamState.Finished;
+			};
+			this.addEventListener("close", setStateToFinishedOnCloseListener);
+		}
+		/**
+		* Send a data message to the remote muxer
+		*/
+		sendData(buf) {
+			const totalBytes = buf.byteLength;
+			let sentBytes = 0;
+			let canSendMore = true;
+			this.log?.trace("send window capacity is %d bytes", this.sendWindowCapacity);
+			while (buf.byteLength > 0) {
+				if (this.sendWindowCapacity === 0) {
+					canSendMore = false;
+					this.log?.trace("sent %d/%d bytes, exhausted send window, waiting for window update", sentBytes, totalBytes);
+					break;
+				}
+				const toSend = Math.min(this.sendWindowCapacity, buf.byteLength);
+				const flags = this.getSendFlags();
+				const data = buf.sublist(0, toSend);
+				buf.consume(toSend);
+				const muxerSendMore = this.sendFrame({
+					type: FrameType.Data,
+					flag: flags,
+					streamID: this.streamId,
+					length: toSend
+				}, data);
+				this.sendWindowCapacity -= toSend;
+				sentBytes += toSend;
+				if (!muxerSendMore) {
+					canSendMore = muxerSendMore;
+					this.log.trace("sent %d/%d bytes, wait for muxer to have more send capacity", sentBytes, totalBytes);
+					break;
+				}
+			}
+			return {
+				sentBytes,
+				canSendMore
+			};
+		}
+		/**
+		* Send a reset message to the remote muxer
+		*/
+		sendReset() {
+			this.sendFrame({
+				type: FrameType.WindowUpdate,
+				flag: Flag.RST,
+				streamID: this.streamId,
+				length: 0
+			});
+		}
+		/**
+		* Send a message to the remote muxer, informing them no more data messages
+		* will be sent by this end of the stream
+		*/
+		async sendCloseWrite() {
+			const flags = this.getSendFlags() | Flag.FIN;
+			this.sendFrame({
+				type: FrameType.WindowUpdate,
+				flag: flags,
+				streamID: this.streamId,
+				length: 0
+			});
+		}
+		/**
+		* Send a message to the remote muxer, informing them no more data messages
+		* will be read by this end of the stream - this is a no-op on Yamux streams
+		*/
+		async sendCloseRead(options) {
+			options?.signal?.throwIfAborted();
+		}
+		/**
+		* Stop sending window updates temporarily - in the interim the the remote
+		* send window will exhaust and the remote will stop sending data
+		*/
+		sendPause() {
+			this.state = StreamState.Paused;
+		}
+		/**
+		* Start sending window updates as normal
+		*/
+		sendResume() {
+			this.state = StreamState.Established;
+			this.sendWindowUpdate();
+		}
+		/**
+		* handleWindowUpdate is called when the stream receives a window update frame
+		*/
+		handleWindowUpdate(frame) {
+			this.processFlags(frame.header.flag);
+			this.sendWindowCapacity += frame.header.length;
+			this.maxMessageSize = this.sendWindowCapacity - 12;
+			if (this.maxMessageSize < 0) this.maxMessageSize = 0;
+			if (this.maxMessageSize === 0) return;
+			if (this.writeBuffer.byteLength > 0) {
+				this.log?.trace("window update of %d bytes allows more data to be sent, have %d bytes queued, sending data %s", frame.header.length, this.writeBuffer.byteLength, this.sendingData);
+				this.safeDispatchEvent("drain");
+			}
+		}
+		/**
+		* handleData is called when the stream receives a data frame
+		*/
+		handleData(frame) {
+			if (!isDataFrame(frame)) throw new InvalidFrameError("Frame was not data frame");
+			this.processFlags(frame.header.flag);
+			if (this.recvWindowCapacity < frame.header.length) throw new ReceiveWindowExceededError("Receive window exceeded");
+			this.recvWindowCapacity -= frame.header.length;
+			this.onData(frame.data);
+			this.sendWindowUpdate();
+		}
+		/**
+		* processFlags is used to update the state of the stream based on set flags, if any.
+		*/
+		processFlags(flags) {
+			if ((flags & Flag.ACK) === Flag.ACK) {
+				if (this.state === StreamState.SYNSent) this.state = StreamState.Established;
+			}
+			if ((flags & Flag.FIN) === Flag.FIN) this.onRemoteCloseWrite();
+			if ((flags & Flag.RST) === Flag.RST) this.onRemoteReset();
+		}
+		/**
+		* getSendFlags determines any flags that are appropriate
+		* based on the current stream state.
+		*
+		* The state is updated as a side-effect.
+		*/
+		getSendFlags() {
+			switch (this.state) {
+				case StreamState.Init:
+					this.state = StreamState.SYNSent;
+					return Flag.SYN;
+				case StreamState.SYNReceived:
+					this.state = StreamState.Established;
+					return Flag.ACK;
+				default: return 0;
+			}
+		}
+		/**
+		* Potentially sends a window update enabling further remote writes to take
+		* place.
+		*/
+		sendWindowUpdate() {
+			if (this.state === StreamState.Paused) {
+				this.epochStart = Date.now();
+				return;
+			}
+			const flags = this.getSendFlags();
+			const now = Date.now();
+			const rtt = this.getRTT();
+			if (flags === 0 && rtt > -1 && now - this.epochStart <= rtt * 4) this.recvWindow = Math.min(this.recvWindow * 2, this.maxStreamWindowSize);
+			if (this.recvWindowCapacity >= this.recvWindow && flags === 0) return;
+			const delta = this.recvWindow - this.recvWindowCapacity;
+			this.recvWindowCapacity = this.recvWindow;
+			this.epochStart = now;
+			this.sendFrame({
+				type: FrameType.WindowUpdate,
+				flag: flags,
+				streamID: this.streamId,
+				length: delta
+			});
+		}
+	};
+	//#endregion
+	//#region node_modules/@chainsafe/libp2p-yamux/dist/src/muxer.js
+	function debugFrame(header) {
+		return {
+			type: FrameType[header.type],
+			flags: [
+				(header.flag & Flag.SYN) === Flag.SYN ? "SYN" : void 0,
+				(header.flag & Flag.ACK) === Flag.ACK ? "ACK" : void 0,
+				(header.flag & Flag.FIN) === Flag.FIN ? "FIN" : void 0,
+				(header.flag & Flag.RST) === Flag.RST ? "RST" : void 0
+			].filter(Boolean),
+			streamID: header.streamID,
+			length: header.length
+		};
+	}
+	var YAMUX_PROTOCOL_ID = "/yamux/1.0.0";
+	var Yamux = class {
+		protocol = YAMUX_PROTOCOL_ID;
+		_init;
+		constructor(init = {}) {
+			this._init = init;
+		}
+		[Symbol.toStringTag] = "@chainsafe/libp2p-yamux";
+		[serviceCapabilities] = ["@libp2p/stream-multiplexing"];
+		createStreamMuxer(maConn) {
+			return new YamuxMuxer(maConn, { ...this._init });
+		}
+	};
+	var YamuxMuxer = class extends AbstractStreamMuxer {
+		/** The next stream id to be used when initiating a new stream */
+		nextStreamID;
+		/** The next ping id to be used when pinging */
+		nextPingID;
+		/** Tracking info for the currently active ping */
+		activePing;
+		/** Round trip time */
+		rtt;
+		/** True if client, false if server */
+		client;
+		localGoAway;
+		remoteGoAway;
+		/** Number of tracked inbound streams */
+		numInboundStreams;
+		/** Number of tracked outbound streams */
+		numOutboundStreams;
+		decoder;
+		keepAlive;
+		enableKeepAlive;
+		keepAliveInterval;
+		maxInboundStreams;
+		maxOutboundStreams;
+		constructor(maConn, init = {}) {
+			super(maConn, {
+				...init,
+				protocol: YAMUX_PROTOCOL_ID,
+				name: "yamux"
+			});
+			this.client = maConn.direction === "outbound";
+			verifyConfig(init);
+			this.enableKeepAlive = init.enableKeepAlive ?? defaultConfig.enableKeepAlive;
+			this.keepAliveInterval = init.keepAliveInterval ?? defaultConfig.keepAliveInterval;
+			this.maxInboundStreams = init.maxInboundStreams ?? defaultConfig.maxInboundStreams;
+			this.maxOutboundStreams = init.maxOutboundStreams ?? defaultConfig.maxOutboundStreams;
+			this.decoder = new Decoder();
+			this.numInboundStreams = 0;
+			this.numOutboundStreams = 0;
+			this.nextStreamID = this.client ? 1 : 2;
+			this.nextPingID = 0;
+			this.rtt = -1;
+			this.log.trace("muxer created");
+			if (this.enableKeepAlive) {
+				this.log.trace("muxer keepalive enabled interval=%s", this.keepAliveInterval);
+				this.keepAlive = repeatingTask(async (options) => {
+					try {
+						await this.ping(options);
+					} catch (err) {
+						this.log.error("ping error: %s", err);
+					}
+				}, this.keepAliveInterval, { runImmediately: true });
+				this.keepAlive.start();
+			}
+		}
+		onData(buf) {
+			for (const frame of this.decoder.emitFrames(buf)) this.handleFrame(frame);
+		}
+		onCreateStream() {
+			if (this.remoteGoAway !== void 0) throw new MuxerClosedError("Muxer closed remotely");
+			if (this.localGoAway !== void 0) throw new MuxerClosedError("Muxer closed locally");
+			const id = this.nextStreamID;
+			this.nextStreamID += 2;
+			if (this.numOutboundStreams >= this.maxOutboundStreams) throw new TooManyOutboundProtocolStreamsError("max outbound streams exceeded");
+			this.log.trace("new outgoing stream id=%s", id);
+			const stream = this._newStream(id, StreamState.Init, "outbound");
+			this.numOutboundStreams++;
+			queueMicrotask(() => {
+				stream.sendWindowUpdate();
+			});
+			return stream;
+		}
+		/**
+		* Initiate a ping and wait for a response
+		*
+		* Note: only a single ping will be initiated at a time.
+		* If a ping is already in progress, a new ping will not be initiated.
+		*
+		* @returns the round-trip-time in milliseconds
+		*/
+		async ping(options) {
+			if (this.remoteGoAway !== void 0) throw new MuxerClosedError("Muxer closed remotely");
+			if (this.localGoAway !== void 0) throw new MuxerClosedError("Muxer closed locally");
+			if (this.activePing != null) return raceSignal(this.activePing.promise, options?.signal);
+			this.activePing = Object.assign(Promise.withResolvers(), {
+				id: this.nextPingID++,
+				start: Date.now()
+			});
+			this.sendPing(this.activePing.id);
+			try {
+				this.rtt = await raceSignal(this.activePing.promise, options?.signal);
+			} finally {
+				this.activePing = void 0;
+			}
+			return this.rtt;
+		}
+		/**
+		* Get the ping round trip time
+		*
+		* Note: Will return 0 if no successful ping has yet been completed
+		*
+		* @returns the round-trip-time in milliseconds
+		*/
+		getRTT() {
+			return this.rtt;
+		}
+		/**
+		* Close the muxer
+		*/
+		async close(options = {}) {
+			if (this.status !== "open") return;
+			try {
+				const reason = options?.reason ?? GoAwayCode.NormalTermination;
+				this.log.trace("muxer close reason=%s", GoAwayCode[reason]);
+				await super.close(options);
+				this.sendGoAway(reason);
+			} finally {
+				this.keepAlive?.stop();
+			}
+		}
+		abort(err) {
+			if (this.status !== "open") return;
+			try {
+				super.abort(err);
+				let reason = GoAwayCode.InternalError;
+				if (isProtocolError(err)) reason = err.reason;
+				this.log.error("muxer abort reason=%s error=%s", reason, err);
+				this.sendGoAway(reason);
+			} finally {
+				this.keepAlive?.stop();
+			}
+		}
+		onTransportClosed() {
+			try {
+				super.onTransportClosed();
+			} finally {
+				this.keepAlive?.stop();
+			}
+		}
+		/** Create a new stream */
+		_newStream(streamId, state, direction) {
+			if (this.streams.find((s) => s.streamId === streamId) != null) throw new InvalidParametersError$1("Stream already exists with that id");
+			const stream = new YamuxStream({
+				...this.streamOptions,
+				id: `${streamId}`,
+				streamId,
+				state,
+				direction,
+				sendFrame: this.sendFrame.bind(this),
+				log: this.log.newScope(`${direction}:${streamId}`),
+				getRTT: this.getRTT.bind(this)
+			});
+			stream.addEventListener("close", () => {
+				this.closeStream(streamId);
+			}, { once: true });
+			return stream;
+		}
+		/**
+		* closeStream is used to close a stream once both sides have
+		* issued a close.
+		*/
+		closeStream(id) {
+			if (this.client === (id % 2 === 0)) this.numInboundStreams--;
+			else this.numOutboundStreams--;
+		}
+		handleFrame(frame) {
+			const { streamID, type, length } = frame.header;
+			this.log.trace("received frame %o", debugFrame(frame.header));
+			if (streamID === 0) switch (type) {
+				case FrameType.Ping:
+					this.handlePing(frame.header);
+					return;
+				case FrameType.GoAway:
+					this.handleGoAway(length);
+					return;
+				default: throw new InvalidFrameError("Invalid frame type");
+			}
+			else switch (frame.header.type) {
+				case FrameType.Data:
+				case FrameType.WindowUpdate:
+					this.handleStreamMessage(frame);
+					return;
+				default: throw new InvalidFrameError("Invalid frame type");
+			}
+		}
+		handlePing(header) {
+			if (header.flag === Flag.SYN) {
+				this.log.trace("received ping request pingId=%s", header.length);
+				this.sendPing(header.length, Flag.ACK);
+			} else if (header.flag === Flag.ACK) {
+				this.log.trace("received ping response pingId=%s", header.length);
+				this.handlePingResponse(header.length);
+			} else throw new InvalidFrameError("Invalid frame flag");
+		}
+		handlePingResponse(pingId) {
+			if (this.activePing === void 0) throw new UnRequestedPingError("ping not requested");
+			if (this.activePing.id !== pingId) throw new NotMatchingPingError("ping doesn't match our id");
+			this.activePing.resolve(Date.now() - this.activePing.start);
+		}
+		handleGoAway(reason) {
+			this.log.trace("received GoAway reason=%s", GoAwayCode[reason] ?? "unknown");
+			this.remoteGoAway = reason;
+			if (reason === GoAwayCode.NormalTermination) this.onTransportClosed();
+			else this.abort(/* @__PURE__ */ new Error("Remote sent GoAway"));
+		}
+		handleStreamMessage(frame) {
+			const { streamID, flag, type } = frame.header;
+			if ((flag & Flag.SYN) === Flag.SYN) this.incomingStream(streamID);
+			const stream = this.streams.find((s) => s.streamId === streamID);
+			if (stream === void 0) {
+				this.log.trace("frame for missing stream id=%s", streamID);
+				return;
+			}
+			switch (type) {
+				case FrameType.WindowUpdate:
+					stream.handleWindowUpdate(frame);
+					return;
+				case FrameType.Data:
+					stream.handleData(frame);
+					return;
+				default: throw new Error("unreachable");
+			}
+		}
+		incomingStream(id) {
+			if (this.client !== (id % 2 === 0)) throw new InvalidParametersError$1("Both endpoints are clients");
+			if (this.streams.find((s) => s.streamId === id)) return;
+			this.log.trace("new incoming stream id=%s", id);
+			if (this.localGoAway !== void 0) {
+				this.sendFrame({
+					type: FrameType.WindowUpdate,
+					flag: Flag.RST,
+					streamID: id,
+					length: 0
+				});
+				return;
+			}
+			if (this.numInboundStreams >= this.maxInboundStreams) {
+				this.log("maxIncomingStreams exceeded, forcing stream reset");
+				this.sendFrame({
+					type: FrameType.WindowUpdate,
+					flag: Flag.RST,
+					streamID: id,
+					length: 0
+				});
+				return;
+			}
+			const stream = this._newStream(id, StreamState.SYNReceived, "inbound");
+			this.numInboundStreams++;
+			this.onRemoteStream(stream);
+		}
+		sendFrame(header, data) {
+			let encoded;
+			if (header.type === FrameType.Data) {
+				if (data == null) throw new InvalidFrameError("Invalid frame");
+				encoded = new Uint8ArrayList(encodeHeader(header), data);
+			} else encoded = encodeHeader(header);
+			this.log.trace("sending frame %o", debugFrame(header));
+			return this.send(encoded);
+		}
+		sendPing(pingId, flag = Flag.SYN) {
+			if (flag === Flag.SYN) this.log.trace("sending ping request pingId=%s", pingId);
+			else this.log.trace("sending ping response pingId=%s", pingId);
+			this.sendFrame({
+				type: FrameType.Ping,
+				flag,
+				streamID: 0,
+				length: pingId
+			});
+		}
+		sendGoAway(reason = GoAwayCode.NormalTermination) {
+			this.log("sending GoAway reason=%s", GoAwayCode[reason]);
+			this.localGoAway = reason;
+			this.sendFrame({
+				type: FrameType.GoAway,
+				flag: 0,
+				streamID: 0,
+				length: reason
+			});
+		}
+	};
+	//#endregion
+	//#region node_modules/@chainsafe/libp2p-yamux/dist/src/index.js
+	/**
+	* @packageDocumentation
+	*
+	* This module is a JavaScript implementation of [Yamux from Hashicorp](https://github.com/hashicorp/yamux/blob/master/spec.md) designed to be used with [js-libp2p](https://github.com/libp2p/js-libp2p).
+	*
+	* @example Configure libp2p with Yamux
+	*
+	* ```typescript
+	* import { createLibp2p } from 'libp2p'
+	* import { yamux } from '@chainsafe/libp2p-yamux'
+	*
+	* const node = await createLibp2p({
+	*   // ... other options
+	*   streamMuxers: [
+	*     yamux()
+	*   ]
+	* })
+	* ```
+	*
+	* @example Using the low-level API
+	*
+	* ```js
+	* import { yamux } from '@chainsafe/libp2p-yamux'
+	* import { pipe } from 'it-pipe'
+	* import { duplexPair } from 'it-pair/duplex'
+	* import all from 'it-all'
+	*
+	* // Connect two yamux muxers to demo basic stream multiplexing functionality
+	*
+	* const clientMuxer = yamux({
+	*   client: true,
+	*   onIncomingStream: stream => {
+	*     // echo data on incoming streams
+	*     pipe(stream, stream)
+	*   },
+	*   onStreamEnd: stream => {
+	*     // do nothing
+	*   }
+	* })()
+	*
+	* const serverMuxer = yamux({
+	*   client: false,
+	*   onIncomingStream: stream => {
+	*     // echo data on incoming streams
+	*     pipe(stream, stream)
+	*   },
+	*   onStreamEnd: stream => {
+	*     // do nothing
+	*   }
+	* })()
+	*
+	* // `p` is our "connections", what we use to connect the two sides
+	* // In a real application, a connection is usually to a remote computer
+	* const p = duplexPair()
+	*
+	* // connect the muxers together
+	* pipe(p[0], clientMuxer, p[0])
+	* pipe(p[1], serverMuxer, p[1])
+	*
+	* // now either side can open streams
+	* const stream0 = clientMuxer.newStream()
+	* const stream1 = serverMuxer.newStream()
+	*
+	* // Send some data to the other side
+	* const encoder = new TextEncoder()
+	* const data = [encoder.encode('hello'), encoder.encode('world')]
+	* pipe(data, stream0)
+	*
+	* // Receive data back
+	* const result = await pipe(stream0, all)
+	*
+	* // close a stream
+	* stream1.close()
+	*
+	* // close the muxer
+	* clientMuxer.close()
+	* ```
+	*/
+	function yamux(init = {}) {
+		return () => new Yamux(init);
 	}
 	//#endregion
 	//#region node_modules/@marijn/find-cluster-break/src/index.js
@@ -90442,6 +91248,7 @@
 					circuitRelayTransport()
 				],
 				connectionEncrypters: [noise()],
+				streamMuxers: [yamux()],
 				services: {
 					pubsub: gossipsub({
 						emitSelf: false,
