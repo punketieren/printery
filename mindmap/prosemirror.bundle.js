@@ -87139,7 +87139,7 @@
 	};
 	//#endregion
 	//#region src/editor.js
-	var CIRCUIT_RELAY_ADDRESS = "/ip4/194.87.235.7/tcp/9090/ws/p2p/12D3KooWGFvYftoUhase4UxPp1pfMmUQQPHy87dkeFrUeD7ZThJV";
+	var CIRCUIT_RELAY_ADDRESS = "/dns4/libp2pmarkmap.hopto.org/tcp/443/wss/p2p/12D3KooWGFvYftoUhase4UxPp1pfMmUQQPHy87dkeFrUeD7ZThJV";
 	var P2P_TOPIC = "ynpvlb-mrkmp-collab-id-8874";
 	var ydoc = new Doc();
 	var ytext = ydoc.getText("shared-markdown");
