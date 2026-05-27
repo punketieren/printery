@@ -466,7 +466,7 @@
 	* @param {Encoder} encoder
 	* @return {number}
 	*/
-	var length$3 = (encoder) => {
+	var length$4 = (encoder) => {
 		let len = encoder.cpos;
 		for (let i = 0; i < encoder.bufs.length; i++) len += encoder.bufs[i].length;
 		return len;
@@ -479,7 +479,7 @@
 	* @return {Uint8Array<ArrayBuffer>} The created ArrayBuffer.
 	*/
 	var toUint8Array = (encoder) => {
-		const uint8arr = new Uint8Array(length$3(encoder));
+		const uint8arr = new Uint8Array(length$4(encoder));
 		let curPos = 0;
 		for (let i = 0; i < encoder.bufs.length; i++) {
 			const d = encoder.bufs[i];
@@ -511,7 +511,7 @@
 	* @param {Encoder} encoder
 	* @param {number} num The byte that is to be encoded.
 	*/
-	var write$1 = (encoder, num) => {
+	var write$2 = (encoder, num) => {
 		const bufferLen = encoder.cbuf.length;
 		if (encoder.cpos === bufferLen) {
 			encoder.bufs.push(encoder.cbuf);
@@ -527,7 +527,7 @@
 	* @param {Encoder} encoder
 	* @param {number} num The number that is to be encoded.
 	*/
-	var writeUint8 = write$1;
+	var writeUint8 = write$2;
 	/**
 	* Write a variable length unsigned integer. Max encodable integer is 2^53.
 	*
@@ -537,10 +537,10 @@
 	*/
 	var writeVarUint = (encoder, num) => {
 		while (num > 127) {
-			write$1(encoder, 128 | 127 & num);
+			write$2(encoder, 128 | 127 & num);
 			num = floor$1(num / 128);
 		}
-		write$1(encoder, 127 & num);
+		write$2(encoder, 127 & num);
 	};
 	/**
 	* Write a variable length integer.
@@ -554,10 +554,10 @@
 	var writeVarInt = (encoder, num) => {
 		const isNegative = isNegativeZero(num);
 		if (isNegative) num = -num;
-		write$1(encoder, (num > 63 ? 128 : 0) | (isNegative ? 64 : 0) | 63 & num);
+		write$2(encoder, (num > 63 ? 128 : 0) | (isNegative ? 64 : 0) | 63 & num);
 		num = floor$1(num / 64);
 		while (num > 0) {
-			write$1(encoder, (num > 127 ? 128 : 0) | 127 & num);
+			write$2(encoder, (num > 127 ? 128 : 0) | 127 & num);
 			num = floor$1(num / 128);
 		}
 	};
@@ -578,7 +578,7 @@
 			/* c8 ignore next */
 			const written = utf8TextEncoder.encodeInto(str, _strBuffer).written || 0;
 			writeVarUint(encoder, written);
-			for (let i = 0; i < written; i++) write$1(encoder, _strBuffer[i]);
+			for (let i = 0; i < written; i++) write$2(encoder, _strBuffer[i]);
 		} else writeVarUint8Array(encoder, encodeUtf8(str));
 	};
 	/**
@@ -592,7 +592,7 @@
 		const encodedString = unescape(encodeURIComponent(str));
 		const len = encodedString.length;
 		writeVarUint(encoder, len);
-		for (let i = 0; i < len; i++) write$1(encoder, encodedString.codePointAt(i));
+		for (let i = 0; i < len; i++) write$2(encoder, encodedString.codePointAt(i));
 	};
 	/**
 	* Write a variable length string.
@@ -730,36 +730,36 @@
 	var writeAny = (encoder, data) => {
 		switch (typeof data) {
 			case "string":
-				write$1(encoder, 119);
+				write$2(encoder, 119);
 				writeVarString(encoder, data);
 				break;
 			case "number":
 				if (isInteger(data) && abs(data) <= 2147483647) {
-					write$1(encoder, 125);
+					write$2(encoder, 125);
 					writeVarInt(encoder, data);
 				} else if (isFloat32(data)) {
-					write$1(encoder, 124);
+					write$2(encoder, 124);
 					writeFloat32(encoder, data);
 				} else {
-					write$1(encoder, 123);
+					write$2(encoder, 123);
 					writeFloat64(encoder, data);
 				}
 				break;
 			case "bigint":
-				write$1(encoder, 122);
+				write$2(encoder, 122);
 				writeBigInt64(encoder, data);
 				break;
 			case "object":
-				if (data === null) write$1(encoder, 126);
+				if (data === null) write$2(encoder, 126);
 				else if (isArray(data)) {
-					write$1(encoder, 117);
+					write$2(encoder, 117);
 					writeVarUint(encoder, data.length);
 					for (let i = 0; i < data.length; i++) writeAny(encoder, data[i]);
 				} else if (data instanceof Uint8Array) {
-					write$1(encoder, 116);
+					write$2(encoder, 116);
 					writeVarUint8Array(encoder, data);
 				} else {
-					write$1(encoder, 118);
+					write$2(encoder, 118);
 					const keys = Object.keys(data);
 					writeVarUint(encoder, keys.length);
 					for (let i = 0; i < keys.length; i++) {
@@ -770,9 +770,9 @@
 				}
 				break;
 			case "boolean":
-				write$1(encoder, data ? 120 : 121);
+				write$2(encoder, data ? 120 : 121);
 				break;
-			default: write$1(encoder, 127);
+			default: write$2(encoder, 127);
 		}
 	};
 	/**
@@ -10741,6 +10741,26 @@
 		}
 	};
 	/**
+	* Thrown when a remote Peer ID does not match the expected one
+	*/
+	var UnexpectedPeerError = class extends Error {
+		static name = "UnexpectedPeerError";
+		constructor(message = "Unexpected Peer") {
+			super(message);
+			this.name = "UnexpectedPeerError";
+		}
+	};
+	/**
+	* Thrown when a crypto exchange fails
+	*/
+	var InvalidCryptoExchangeError$1 = class extends Error {
+		static name = "InvalidCryptoExchangeError";
+		constructor(message = "Invalid crypto exchange") {
+			super(message);
+			this.name = "InvalidCryptoExchangeError";
+		}
+	};
+	/**
 	* Thrown when invalid parameters are passed to a function or method call
 	*/
 	var InvalidParametersError$1 = class extends Error {
@@ -11755,24 +11775,24 @@
 		encode$10.bytes = offset - oldOffset + 1;
 		return out;
 	}
-	var decode$13 = read$2;
+	var decode$13 = read$3;
 	var MSB$1$5 = 128, REST$1$3 = 127;
 	/**
 	* @param {string | any[]} buf
 	* @param {number} offset
 	*/
-	function read$2(buf, offset) {
+	function read$3(buf, offset) {
 		var res = 0, offset = offset || 0, shift = 0, counter = offset, b, l = buf.length;
 		do {
 			if (counter >= l) {
-				read$2.bytes = 0;
+				read$3.bytes = 0;
 				throw new RangeError("Could not decode varint");
 			}
 			b = buf[counter++];
 			res += shift < 28 ? (b & REST$1$3) << shift : (b & REST$1$3) * Math.pow(2, shift);
 			shift += 7;
 		} while (b >= MSB$1$5);
-		read$2.bytes = counter - offset;
+		read$3.bytes = counter - offset;
 		return res;
 	}
 	var N1$3 = Math.pow(2, 7);
@@ -11784,13 +11804,13 @@
 	var N7$3 = Math.pow(2, 49);
 	var N8$1 = Math.pow(2, 56);
 	var N9$1 = Math.pow(2, 63);
-	var length$2 = function(value) {
+	var length$3 = function(value) {
 		return value < N1$3 ? 1 : value < N2$3 ? 2 : value < N3$3 ? 3 : value < N4$3 ? 4 : value < N5$3 ? 5 : value < N6$3 ? 6 : value < N7$3 ? 7 : value < N8$1 ? 8 : value < N9$1 ? 9 : 10;
 	};
 	var _brrp_varint$1 = {
 		encode: encode_1$1,
 		decode: decode$13,
-		encodingLength: length$2
+		encodingLength: length$3
 	};
 	//#endregion
 	//#region node_modules/multiformats/dist/src/varint.js
@@ -12213,7 +12233,7 @@
 	* Returns a `Uint8Array` of the requested size. Referenced memory will
 	* be initialized to 0.
 	*/
-	function alloc$1(size = 0) {
+	function alloc$2(size = 0) {
 		return new Uint8Array(size);
 	}
 	/**
@@ -12594,7 +12614,7 @@
 			return new DataView(buf.buffer, buf.byteOffset, buf.byteLength).getInt16(0, littleEndian);
 		}
 		setInt16(byteOffset, value, littleEndian) {
-			const buf = alloc$1(2);
+			const buf = alloc$2(2);
 			new DataView(buf.buffer, buf.byteOffset, buf.byteLength).setInt16(0, value, littleEndian);
 			this.write(buf, byteOffset);
 		}
@@ -12603,7 +12623,7 @@
 			return new DataView(buf.buffer, buf.byteOffset, buf.byteLength).getInt32(0, littleEndian);
 		}
 		setInt32(byteOffset, value, littleEndian) {
-			const buf = alloc$1(4);
+			const buf = alloc$2(4);
 			new DataView(buf.buffer, buf.byteOffset, buf.byteLength).setInt32(0, value, littleEndian);
 			this.write(buf, byteOffset);
 		}
@@ -12612,7 +12632,7 @@
 			return new DataView(buf.buffer, buf.byteOffset, buf.byteLength).getBigInt64(0, littleEndian);
 		}
 		setBigInt64(byteOffset, value, littleEndian) {
-			const buf = alloc$1(8);
+			const buf = alloc$2(8);
 			new DataView(buf.buffer, buf.byteOffset, buf.byteLength).setBigInt64(0, value, littleEndian);
 			this.write(buf, byteOffset);
 		}
@@ -12630,7 +12650,7 @@
 			return new DataView(buf.buffer, buf.byteOffset, buf.byteLength).getUint16(0, littleEndian);
 		}
 		setUint16(byteOffset, value, littleEndian) {
-			const buf = alloc$1(2);
+			const buf = alloc$2(2);
 			new DataView(buf.buffer, buf.byteOffset, buf.byteLength).setUint16(0, value, littleEndian);
 			this.write(buf, byteOffset);
 		}
@@ -12639,7 +12659,7 @@
 			return new DataView(buf.buffer, buf.byteOffset, buf.byteLength).getUint32(0, littleEndian);
 		}
 		setUint32(byteOffset, value, littleEndian) {
-			const buf = alloc$1(4);
+			const buf = alloc$2(4);
 			new DataView(buf.buffer, buf.byteOffset, buf.byteLength).setUint32(0, value, littleEndian);
 			this.write(buf, byteOffset);
 		}
@@ -12648,7 +12668,7 @@
 			return new DataView(buf.buffer, buf.byteOffset, buf.byteLength).getBigUint64(0, littleEndian);
 		}
 		setBigUint64(byteOffset, value, littleEndian) {
-			const buf = alloc$1(8);
+			const buf = alloc$2(8);
 			new DataView(buf.buffer, buf.byteOffset, buf.byteLength).setBigUint64(0, value, littleEndian);
 			this.write(buf, byteOffset);
 		}
@@ -12657,7 +12677,7 @@
 			return new DataView(buf.buffer, buf.byteOffset, buf.byteLength).getFloat32(0, littleEndian);
 		}
 		setFloat32(byteOffset, value, littleEndian) {
-			const buf = alloc$1(4);
+			const buf = alloc$2(4);
 			new DataView(buf.buffer, buf.byteOffset, buf.byteLength).setFloat32(0, value, littleEndian);
 			this.write(buf, byteOffset);
 		}
@@ -12666,7 +12686,7 @@
 			return new DataView(buf.buffer, buf.byteOffset, buf.byteLength).getFloat64(0, littleEndian);
 		}
 		setFloat64(byteOffset, value, littleEndian) {
-			const buf = alloc$1(8);
+			const buf = alloc$2(8);
 			new DataView(buf.buffer, buf.byteOffset, buf.byteLength).setFloat64(0, value, littleEndian);
 			this.write(buf, byteOffset);
 		}
@@ -12898,7 +12918,7 @@
 	});
 	//#endregion
 	//#region node_modules/uint8arrays/dist/src/util/bases.js
-	function createCodec$2(name, prefix, encode, decode) {
+	function createCodec$3(name, prefix, encode, decode) {
 		return {
 			name,
 			prefix,
@@ -12910,12 +12930,12 @@
 			decoder: { decode }
 		};
 	}
-	var string$2 = createCodec$2("utf8", "u", (buf) => {
+	var string$2 = createCodec$3("utf8", "u", (buf) => {
 		return "u" + new TextDecoder("utf8").decode(buf);
 	}, (str) => {
 		return new TextEncoder().encode(str.substring(1));
 	});
-	var ascii$1 = createCodec$2("ascii", "a", (buf) => {
+	var ascii$1 = createCodec$3("ascii", "a", (buf) => {
 		let string = "a";
 		for (let i = 0; i < buf.length; i++) string += String.fromCharCode(buf[i]);
 		return string;
@@ -13286,7 +13306,7 @@
 	* isBytes(new Uint8Array([1, 2, 3]));
 	* ```
 	*/
-	function isBytes$1(a) {
+	function isBytes$2(a) {
 		return a instanceof Uint8Array || ArrayBuffer.isView(a) && a.constructor.name === "Uint8Array" && "BYTES_PER_ELEMENT" in a && a.BYTES_PER_ELEMENT === 1;
 	}
 	/**
@@ -13301,7 +13321,7 @@
 	* anumber(32, 'length');
 	* ```
 	*/
-	function anumber$1(n, title = "") {
+	function anumber$2(n, title = "") {
 		if (typeof n !== "number") {
 			const prefix = title && `"${title}" `;
 			throw new TypeError(`${prefix}expected number, got ${typeof n}`);
@@ -13325,8 +13345,8 @@
 	* abytes(new Uint8Array([1, 2, 3]));
 	* ```
 	*/
-	function abytes$1(value, length, title = "") {
-		const bytes = isBytes$1(value);
+	function abytes$2(value, length, title = "") {
+		const bytes = isBytes$2(value);
 		const len = value?.length;
 		const needsLen = length !== void 0;
 		if (!bytes || needsLen && len !== length) {
@@ -13355,8 +13375,8 @@
 	*/
 	function ahash(h) {
 		if (typeof h !== "function" || typeof h.create !== "function") throw new TypeError("Hash must wrapped by utils.createHasher");
-		anumber$1(h.outputLen);
-		anumber$1(h.blockLen);
+		anumber$2(h.outputLen);
+		anumber$2(h.blockLen);
 		if (h.outputLen < 1) throw new Error("\"outputLen\" must be >= 1");
 		if (h.blockLen < 1) throw new Error("\"blockLen\" must be >= 1");
 	}
@@ -13374,7 +13394,7 @@
 	* aexists(hash);
 	* ```
 	*/
-	function aexists(instance, checkFinished = true) {
+	function aexists$1(instance, checkFinished = true) {
 		if (instance.destroyed) throw new Error("Hash instance has been destroyed");
 		if (checkFinished && instance.finished) throw new Error("Hash#digest() has already been called");
 	}
@@ -13394,8 +13414,8 @@
 	* aoutput(new Uint8Array(hash.outputLen), hash);
 	* ```
 	*/
-	function aoutput(out, instance) {
-		abytes$1(out, void 0, "digestInto() output");
+	function aoutput$1(out, instance) {
+		abytes$2(out, void 0, "digestInto() output");
 		const min = instance.outputLen;
 		if (out.length < min) throw new RangeError("\"digestInto() output\" expected to be of length >=" + min);
 	}
@@ -13408,7 +13428,7 @@
 	* clean(new Uint8Array([1, 2, 3]));
 	* ```
 	*/
-	function clean(...arrays) {
+	function clean$1(...arrays) {
 		for (let i = 0; i < arrays.length; i++) arrays[i].fill(0);
 	}
 	/**
@@ -13421,7 +13441,7 @@
 	* createView(new Uint8Array(4));
 	* ```
 	*/
-	function createView(arr) {
+	function createView$1(arr) {
 		return new DataView(arr.buffer, arr.byteOffset, arr.byteLength);
 	}
 	/**
@@ -13454,7 +13474,7 @@
 	* ```
 	*/
 	function bytesToHex$1(bytes) {
-		abytes$1(bytes);
+		abytes$2(bytes);
 		if (hasHexBuiltin) return bytes.toHex();
 		let hex = "";
 		for (let i = 0; i < bytes.length; i++) hex += hexes[bytes[i]];
@@ -13523,7 +13543,7 @@
 		let sum = 0;
 		for (let i = 0; i < arrays.length; i++) {
 			const a = arrays[i];
-			abytes$1(a);
+			abytes$2(a);
 			sum += a.length;
 		}
 		const res = new Uint8Array(sum);
@@ -13578,7 +13598,7 @@
 	* ```
 	*/
 	function randomBytes$2(bytesLength = 32) {
-		anumber$1(bytesLength, "bytesLength");
+		anumber$2(bytesLength, "bytesLength");
 		const cr = typeof globalThis === "object" ? globalThis.crypto : null;
 		if (typeof cr?.getRandomValues !== "function") throw new Error("crypto.getRandomValues must be defined");
 		if (bytesLength > 65536) throw new RangeError(`"bytesLength" expected <= 65536, got ${bytesLength}`);
@@ -13685,17 +13705,17 @@
 			this.padOffset = padOffset;
 			this.isLE = isLE;
 			this.buffer = new Uint8Array(blockLen);
-			this.view = createView(this.buffer);
+			this.view = createView$1(this.buffer);
 		}
 		update(data) {
-			aexists(this);
-			abytes$1(data);
+			aexists$1(this);
+			abytes$2(data);
 			const { view, buffer, blockLen } = this;
 			const len = data.length;
 			for (let pos = 0; pos < len;) {
 				const take = Math.min(blockLen - this.pos, len - pos);
 				if (take === blockLen) {
-					const dataView = createView(data);
+					const dataView = createView$1(data);
 					for (; blockLen <= len - pos; pos += blockLen) this.process(dataView, pos);
 					continue;
 				}
@@ -13712,13 +13732,13 @@
 			return this;
 		}
 		digestInto(out) {
-			aexists(this);
-			aoutput(out, this);
+			aexists$1(this);
+			aoutput$1(out, this);
 			this.finished = true;
 			const { buffer, view, blockLen, isLE } = this;
 			let { pos } = this;
 			buffer[pos++] = 128;
-			clean(this.buffer.subarray(pos));
+			clean$1(this.buffer.subarray(pos));
 			if (this.padOffset > blockLen - pos) {
 				this.process(view, 0);
 				pos = 0;
@@ -13726,7 +13746,7 @@
 			for (let i = pos; i < blockLen; i++) buffer[i] = 0;
 			view.setBigUint64(blockLen - 8, BigInt(this.length * 8), isLE);
 			this.process(view, 0);
-			const oview = createView(out);
+			const oview = createView$1(out);
 			const len = this.outputLen;
 			if (len % 4) throw new Error("_sha2: outputLen must be aligned to 32bit");
 			const outLen = len / 4;
@@ -13980,12 +14000,12 @@
 			this.set(A, B, C, D, E, F, G, H);
 		}
 		roundClean() {
-			clean(SHA256_W);
+			clean$1(SHA256_W);
 		}
 		destroy() {
 			this.destroyed = true;
 			this.set(0, 0, 0, 0, 0, 0, 0, 0);
-			clean(this.buffer);
+			clean$1(this.buffer);
 		}
 	};
 	/** Internal SHA-256 hash class grounded in RFC 6234 §6.2. */
@@ -14190,11 +14210,11 @@
 			this.set(Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl);
 		}
 		roundClean() {
-			clean(SHA512_W_H, SHA512_W_L);
+			clean$1(SHA512_W_H, SHA512_W_L);
 		}
 		destroy() {
 			this.destroyed = true;
-			clean(this.buffer);
+			clean$1(this.buffer);
 			this.set(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 		}
 	};
@@ -14267,7 +14287,7 @@
 	* abytes(new Uint8Array(1));
 	* ```
 	*/
-	var abytes = (value, length, title) => abytes$1(value, length, title);
+	var abytes$1 = (value, length, title) => abytes$2(value, length, title);
 	/**
 	* Validates that a value is a non-negative safe integer.
 	* @param n - Value to validate.
@@ -14279,7 +14299,7 @@
 	* anumber(1);
 	* ```
 	*/
-	var anumber = anumber$1;
+	var anumber$1 = anumber$2;
 	/**
 	* Encodes bytes as lowercase hex.
 	* @param bytes - Bytes to encode.
@@ -14327,7 +14347,7 @@
 	* isBytes(new Uint8Array(1));
 	* ```
 	*/
-	var isBytes = isBytes$1;
+	var isBytes$1 = isBytes$2;
 	/**
 	* Reads random bytes from the platform CSPRNG.
 	* @param bytesLength - Number of random bytes to read.
@@ -14340,8 +14360,8 @@
 	* ```
 	*/
 	var randomBytes$1 = (bytesLength) => randomBytes$2(bytesLength);
-	var _0n$5 = /* @__PURE__ */ BigInt(0);
-	var _1n$5 = /* @__PURE__ */ BigInt(1);
+	var _0n$6 = /* @__PURE__ */ BigInt(0);
+	var _1n$6 = /* @__PURE__ */ BigInt(1);
 	/**
 	* Validates that a flag is boolean.
 	* @param value - Value to validate.
@@ -14355,7 +14375,7 @@
 	* abool(true);
 	* ```
 	*/
-	function abool(value, title = "") {
+	function abool$1(value, title = "") {
 		if (typeof value !== "boolean") {
 			const prefix = title && `"${title}" `;
 			throw new TypeError(prefix + "expected boolean, got type=" + typeof value);
@@ -14377,7 +14397,7 @@
 	function abignumber(n) {
 		if (typeof n === "bigint") {
 			if (!isPosBig(n)) throw new RangeError("positive bigint expected, got " + n);
-		} else anumber(n);
+		} else anumber$1(n);
 		return n;
 	}
 	/**
@@ -14437,7 +14457,7 @@
 	*/
 	function hexToNumber(hex) {
 		if (typeof hex !== "string") throw new TypeError("hex string expected, got " + typeof hex);
-		return hex === "" ? _0n$5 : BigInt("0x" + hex);
+		return hex === "" ? _0n$6 : BigInt("0x" + hex);
 	}
 	/**
 	* Parses big-endian bytes into bigint.
@@ -14467,7 +14487,7 @@
 	* ```
 	*/
 	function bytesToNumberLE(bytes) {
-		return hexToNumber(bytesToHex$1(copyBytes(abytes$1(bytes)).reverse()));
+		return hexToNumber(bytesToHex$1(copyBytes$1(abytes$2(bytes)).reverse()));
 	}
 	/**
 	* Encodes a bigint into fixed-length big-endian bytes.
@@ -14483,7 +14503,7 @@
 	* ```
 	*/
 	function numberToBytesBE(n, len) {
-		anumber$1(len);
+		anumber$2(len);
 		if (len === 0) throw new RangeError("zero length");
 		n = abignumber(n);
 		const hex = n.toString(16);
@@ -14518,9 +14538,9 @@
 	* equalBytes(Uint8Array.of(1), Uint8Array.of(1));
 	* ```
 	*/
-	function equalBytes(a, b) {
-		a = abytes(a);
-		b = abytes(b);
+	function equalBytes$1(a, b) {
+		a = abytes$1(a);
+		b = abytes$1(b);
 		if (a.length !== b.length) return false;
 		let diff = 0;
 		for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
@@ -14538,8 +14558,8 @@
 	* copyBytes(Uint8Array.of(1, 2, 3));
 	* ```
 	*/
-	function copyBytes(bytes) {
-		return Uint8Array.from(abytes(bytes));
+	function copyBytes$1(bytes) {
+		return Uint8Array.from(abytes$1(bytes));
 	}
 	/**
 	* Decodes 7-bit ASCII string to Uint8Array, throws on non-ascii symbols
@@ -14563,7 +14583,7 @@
 			return charCode;
 		});
 	}
-	var isPosBig = (n) => typeof n === "bigint" && _0n$5 <= n;
+	var isPosBig = (n) => typeof n === "bigint" && _0n$6 <= n;
 	/**
 	* Checks whether a bigint lies inside a half-open range.
 	* @param n - Candidate value.
@@ -14614,9 +14634,9 @@
 	* ```
 	*/
 	function bitLen(n) {
-		if (n < _0n$5) throw new Error("expected non-negative bigint, got " + n);
+		if (n < _0n$6) throw new Error("expected non-negative bigint, got " + n);
 		let len;
-		for (len = 0; n > _0n$5; n >>= _1n$5, len += 1);
+		for (len = 0; n > _0n$6; n >>= _1n$6, len += 1);
 		return len;
 	}
 	/**
@@ -14632,7 +14652,7 @@
 	* bitMask(4);
 	* ```
 	*/
-	var bitMask = (n) => (_1n$5 << BigInt(n)) - _1n$5;
+	var bitMask = (n) => (_1n$6 << BigInt(n)) - _1n$6;
 	/**
 	* Minimal HMAC-DRBG from NIST 800-90 for RFC6979 sigs.
 	* @param hashLen - Hash output size in bytes. Callers are expected to pass a positive length; `0`
@@ -14655,8 +14675,8 @@
 	* ```
 	*/
 	function createHmacDrbg(hashLen, qByteLen, hmacFn) {
-		anumber$1(hashLen, "hashLen");
-		anumber$1(qByteLen, "qByteLen");
+		anumber$2(hashLen, "hashLen");
+		anumber$2(qByteLen, "qByteLen");
 		if (typeof hmacFn !== "function") throw new TypeError("hmacFn must be a function");
 		const u8n = (len) => new Uint8Array(len);
 		const NULL = Uint8Array.of();
@@ -14754,7 +14774,7 @@
 	* @module
 	*/
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
-	var _0n$4 = /* @__PURE__ */ BigInt(0), _1n$4 = /* @__PURE__ */ BigInt(1), _2n$4 = /* @__PURE__ */ BigInt(2);
+	var _0n$5 = /* @__PURE__ */ BigInt(0), _1n$5 = /* @__PURE__ */ BigInt(1), _2n$5 = /* @__PURE__ */ BigInt(2);
 	var _3n$2 = /* @__PURE__ */ BigInt(3), _4n$1 = /* @__PURE__ */ BigInt(4), _5n$1 = /* @__PURE__ */ BigInt(5);
 	var _7n = /* @__PURE__ */ BigInt(7), _8n$2 = /* @__PURE__ */ BigInt(8), _9n = /* @__PURE__ */ BigInt(9);
 	var _16n = /* @__PURE__ */ BigInt(16);
@@ -14771,9 +14791,9 @@
 	* ```
 	*/
 	function mod(a, b) {
-		if (b <= _0n$4) throw new Error("mod: expected positive modulus, got " + b);
+		if (b <= _0n$5) throw new Error("mod: expected positive modulus, got " + b);
 		const result = a % b;
-		return result >= _0n$4 ? result : b + result;
+		return result >= _0n$5 ? result : b + result;
 	}
 	/**
 	* Does `x^(2^power)` mod p. `pow2(30, 4)` == `30^(2^4)`.
@@ -14792,9 +14812,9 @@
 	* ```
 	*/
 	function pow2(x, power, modulo) {
-		if (power < _0n$4) throw new Error("pow2: expected non-negative exponent, got " + power);
+		if (power < _0n$5) throw new Error("pow2: expected non-negative exponent, got " + power);
 		let res = x;
-		while (power-- > _0n$4) {
+		while (power-- > _0n$5) {
 			res *= res;
 			res %= modulo;
 		}
@@ -14815,19 +14835,19 @@
 	* ```
 	*/
 	function invert(number, modulo) {
-		if (number === _0n$4) throw new Error("invert: expected non-zero number");
-		if (modulo <= _0n$4) throw new Error("invert: expected positive modulus, got " + modulo);
+		if (number === _0n$5) throw new Error("invert: expected non-zero number");
+		if (modulo <= _0n$5) throw new Error("invert: expected positive modulus, got " + modulo);
 		let a = mod(number, modulo);
 		let b = modulo;
-		let x = _0n$4, y = _1n$4, u = _1n$4, v = _0n$4;
-		while (a !== _0n$4) {
+		let x = _0n$5, y = _1n$5, u = _1n$5, v = _0n$5;
+		while (a !== _0n$5) {
 			const q = b / a;
 			const r = b - a * q;
 			const m = x - u * q;
 			const n = y - v * q;
 			b = a, a = r, x = u, y = v, u = m, v = n;
 		}
-		if (b !== _1n$4) throw new Error("invert: does not exist");
+		if (b !== _1n$5) throw new Error("invert: does not exist");
 		return mod(x, modulo);
 	}
 	function assertIsSquare(Fp, root, n) {
@@ -14836,7 +14856,7 @@
 	}
 	function sqrt3mod4(Fp, n) {
 		const F = Fp;
-		const p1div4 = (F.ORDER + _1n$4) / _4n$1;
+		const p1div4 = (F.ORDER + _1n$5) / _4n$1;
 		const root = F.pow(n, p1div4);
 		assertIsSquare(F, root, n);
 		return root;
@@ -14844,10 +14864,10 @@
 	function sqrt5mod8(Fp, n) {
 		const F = Fp;
 		const p5div8 = (F.ORDER - _5n$1) / _8n$2;
-		const n2 = F.mul(n, _2n$4);
+		const n2 = F.mul(n, _2n$5);
 		const v = F.pow(n2, p5div8);
 		const nv = F.mul(n, v);
-		const i = F.mul(F.mul(nv, _2n$4), v);
+		const i = F.mul(F.mul(nv, _2n$5), v);
 		const root = F.mul(nv, F.sub(i, F.ONE));
 		assertIsSquare(F, root, n);
 		return root;
@@ -14895,18 +14915,18 @@
 	*/
 	function tonelliShanks(P) {
 		if (P < _3n$2) throw new Error("sqrt is not defined for small field");
-		let Q = P - _1n$4;
+		let Q = P - _1n$5;
 		let S = 0;
-		while (Q % _2n$4 === _0n$4) {
-			Q /= _2n$4;
+		while (Q % _2n$5 === _0n$5) {
+			Q /= _2n$5;
 			S++;
 		}
-		let Z = _2n$4;
+		let Z = _2n$5;
 		const _Fp = Field(P);
 		while (FpLegendre(_Fp, Z) === 1) if (Z++ > 1e3) throw new Error("Cannot find square root: probably non-prime P");
 		if (S === 1) return sqrt3mod4;
 		let cc = _Fp.pow(Z, Q);
-		const Q1div2 = (Q + _1n$4) / _2n$4;
+		const Q1div2 = (Q + _1n$5) / _2n$5;
 		return function tonelliSlow(Fp, n) {
 			const F = Fp;
 			if (F.is0(n)) return n;
@@ -14924,7 +14944,7 @@
 					t_tmp = F.sqr(t_tmp);
 					if (i === M) throw new Error("Cannot find square root");
 				}
-				const exponent = _1n$4 << BigInt(M - i - 1);
+				const exponent = _1n$5 << BigInt(M - i - 1);
 				const b = F.pow(c, exponent);
 				M = i;
 				c = F.sqr(b);
@@ -14976,7 +14996,7 @@
 	* isNegativeLE(3n, 11n);
 	* ```
 	*/
-	var isNegativeLE = (num, modulo) => (mod(num, modulo) & _1n$4) === _1n$4;
+	var isNegativeLE = (num, modulo) => (mod(num, modulo) & _1n$5) === _1n$5;
 	var FIELD_FIELDS = [
 		"create",
 		"isValid",
@@ -15022,7 +15042,7 @@
 		asafenumber(field.BYTES, "BYTES");
 		asafenumber(field.BITS, "BITS");
 		if (field.BYTES < 1 || field.BITS < 1) throw new Error("invalid field: expected BYTES/BITS > 0");
-		if (field.ORDER <= _1n$4) throw new Error("invalid field: expected ORDER > 1, got " + field.ORDER);
+		if (field.ORDER <= _1n$5) throw new Error("invalid field: expected ORDER > 1, got " + field.ORDER);
 		return field;
 	}
 	/**
@@ -15044,15 +15064,15 @@
 	*/
 	function FpPow(Fp, num, power) {
 		const F = Fp;
-		if (power < _0n$4) throw new Error("invalid exponent, negatives unsupported");
-		if (power === _0n$4) return F.ONE;
-		if (power === _1n$4) return num;
+		if (power < _0n$5) throw new Error("invalid exponent, negatives unsupported");
+		if (power === _0n$5) return F.ONE;
+		if (power === _1n$5) return num;
 		let p = F.ONE;
 		let d = num;
-		while (power > _0n$4) {
-			if (power & _1n$4) p = F.mul(p, d);
+		while (power > _0n$5) {
+			if (power & _1n$5) p = F.mul(p, d);
 			d = F.sqr(d);
-			power >>= _1n$4;
+			power >>= _1n$5;
 		}
 		return p;
 	}
@@ -15111,7 +15131,7 @@
 	*/
 	function FpLegendre(Fp, n) {
 		const F = Fp;
-		const p1mod2 = (F.ORDER - _1n$4) / _2n$4;
+		const p1mod2 = (F.ORDER - _1n$5) / _2n$5;
 		const powered = F.pow(n, p1mod2);
 		const yes = F.eql(powered, F.ONE);
 		const zero = F.eql(powered, F.ZERO);
@@ -15133,8 +15153,8 @@
 	* ```
 	*/
 	function nLength(n, nBitLength) {
-		if (nBitLength !== void 0) anumber(nBitLength);
-		if (n <= _0n$4) throw new Error("invalid n length: expected positive n, got " + n);
+		if (nBitLength !== void 0) anumber$1(nBitLength);
+		if (n <= _0n$5) throw new Error("invalid n length: expected positive n, got " + n);
 		if (nBitLength !== void 0 && nBitLength < 1) throw new Error("invalid n length: expected positive bit length, got " + nBitLength);
 		const bits = bitLen(n);
 		if (nBitLength !== void 0 && nBitLength < bits) throw new Error(`invalid n length: expected bit length (${bits}) >= n.length (${nBitLength})`);
@@ -15150,12 +15170,12 @@
 		BITS;
 		BYTES;
 		isLE;
-		ZERO = _0n$4;
-		ONE = _1n$4;
+		ZERO = _0n$5;
+		ONE = _1n$5;
 		_lengths;
 		_mod;
 		constructor(ORDER, opts = {}) {
-			if (ORDER <= _1n$4) throw new Error("invalid field: expected ORDER > 1, got " + ORDER);
+			if (ORDER <= _1n$5) throw new Error("invalid field: expected ORDER > 1, got " + ORDER);
 			let _nbitLength = void 0;
 			this.isLE = false;
 			if (opts != null && typeof opts === "object") {
@@ -15180,16 +15200,16 @@
 		}
 		isValid(num) {
 			if (typeof num !== "bigint") throw new TypeError("invalid field element: expected bigint, got " + typeof num);
-			return _0n$4 <= num && num < this.ORDER;
+			return _0n$5 <= num && num < this.ORDER;
 		}
 		is0(num) {
-			return num === _0n$4;
+			return num === _0n$5;
 		}
 		isValidNot0(num) {
 			return !this.is0(num) && this.isValid(num);
 		}
 		isOdd(num) {
-			return (num & _1n$4) === _1n$4;
+			return (num & _1n$5) === _1n$5;
 		}
 		neg(num) {
 			return mod(-num, this.ORDER);
@@ -15239,7 +15259,7 @@
 			return this.isLE ? numberToBytesLE(num, this.BYTES) : numberToBytesBE(num, this.BYTES);
 		}
 		fromBytes(bytes, skipValidation = false) {
-			abytes(bytes);
+			abytes$1(bytes);
 			const { _lengths: allowedLengths, BYTES, isLE, ORDER, _mod: modFromBytes } = this;
 			if (allowedLengths) {
 				if (bytes.length < 1 || !allowedLengths.includes(bytes.length) || bytes.length > BYTES) throw new Error("Field.fromBytes: expected " + allowedLengths + " bytes, got " + bytes.length);
@@ -15259,7 +15279,7 @@
 			return FpInvertBatch(this, lst);
 		}
 		cmov(a, b, condition) {
-			abool(condition, "condition");
+			abool$1(condition, "condition");
 			return condition ? b : a;
 		}
 	};
@@ -15309,8 +15329,8 @@
 	*/
 	function getFieldBytesLength(fieldOrder) {
 		if (typeof fieldOrder !== "bigint") throw new Error("field order must be bigint");
-		if (fieldOrder <= _1n$4) throw new Error("field order must be greater than 1");
-		const bitLength = bitLen(fieldOrder - _1n$4);
+		if (fieldOrder <= _1n$5) throw new Error("field order must be greater than 1");
+		const bitLength = bitLen(fieldOrder - _1n$5);
 		return Math.ceil(bitLength / 8);
 	}
 	/**
@@ -15357,12 +15377,12 @@
 	* ```
 	*/
 	function mapHashToField(key, fieldOrder, isLE = false) {
-		abytes(key);
+		abytes$1(key);
 		const len = key.length;
 		const fieldLen = getFieldBytesLength(fieldOrder);
 		const minLen = Math.max(getMinHashLength(fieldOrder), 16);
 		if (len < minLen || len > 1024) throw new Error("expected " + minLen + "-1024 bytes of input, got " + len);
-		const reduced = mod(isLE ? bytesToNumberLE(key) : bytesToNumberBE(key), fieldOrder - _1n$4) + _1n$4;
+		const reduced = mod(isLE ? bytesToNumberLE(key) : bytesToNumberBE(key), fieldOrder - _1n$5) + _1n$5;
 		return isLE ? numberToBytesLE(reduced, fieldLen) : numberToBytesBE(reduced, fieldLen);
 	}
 	//#endregion
@@ -15373,8 +15393,8 @@
 	* @module
 	*/
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
-	var _0n$3 = /* @__PURE__ */ BigInt(0);
-	var _1n$3 = /* @__PURE__ */ BigInt(1);
+	var _0n$4 = /* @__PURE__ */ BigInt(0);
+	var _1n$4 = /* @__PURE__ */ BigInt(1);
 	/**
 	* Computes both candidates first, but the final selection still branches on `condition`, so this
 	* is not a strict constant-time CMOV primitive.
@@ -15438,7 +15458,7 @@
 		let nextN = n >> shiftBy;
 		if (wbits > windowSize) {
 			wbits -= maxNumber;
-			nextN += _1n$3;
+			nextN += _1n$4;
 		}
 		const offsetStart = window * windowSize;
 		const offset = offsetStart + Math.abs(wbits) - 1;
@@ -15460,7 +15480,7 @@
 		return pointWindowSizes.get(P) || 1;
 	}
 	function assert0(n) {
-		if (n !== _0n$3) throw new Error("invalid wNAF");
+		if (n !== _0n$4) throw new Error("invalid wNAF");
 	}
 	/**
 	* Elliptic curve multiplication of Point by scalar. Fragile.
@@ -15503,10 +15523,10 @@
 		}
 		_unsafeLadder(elm, n, p = this.ZERO) {
 			let d = elm;
-			while (n > _0n$3) {
-				if (n & _1n$3) p = p.add(d);
+			while (n > _0n$4) {
+				if (n & _1n$4) p = p.add(d);
 				d = d.double();
-				n >>= _1n$3;
+				n >>= _1n$4;
 			}
 			return p;
 		}
@@ -15570,7 +15590,7 @@
 		wNAFUnsafe(W, precomputes, n, acc = this.ZERO) {
 			const wo = calcWOpts(W, this.bits);
 			for (let window = 0; window < wo.windows; window++) {
-				if (n === _0n$3) break;
+				if (n === _0n$4) break;
 				const { nextN, offset, isZero, isNeg } = calcOffsets(n, window, wo);
 				n = nextN;
 				if (isZero) continue;
@@ -15632,12 +15652,12 @@
 		let acc = point;
 		let p1 = Point.ZERO;
 		let p2 = Point.ZERO;
-		while (k1 > _0n$3 || k2 > _0n$3) {
-			if (k1 & _1n$3) p1 = p1.add(acc);
-			if (k2 & _1n$3) p2 = p2.add(acc);
+		while (k1 > _0n$4 || k2 > _0n$4) {
+			if (k1 & _1n$4) p1 = p1.add(acc);
+			if (k2 & _1n$4) p2 = p2.add(acc);
 			acc = acc.double();
-			k1 >>= _1n$3;
-			k2 >>= _1n$3;
+			k1 >>= _1n$4;
+			k2 >>= _1n$4;
 		}
 		return {
 			p1,
@@ -15687,7 +15707,7 @@
 			"h"
 		]) {
 			const val = CURVE[p];
-			if (!(typeof val === "bigint" && val > _0n$3)) throw new Error(`CURVE.${p} must be positive bigint`);
+			if (!(typeof val === "bigint" && val > _0n$4)) throw new Error(`CURVE.${p} must be positive bigint`);
 		}
 		const Fp = createField(CURVE.p, curveOpts.Fp, FpFnLE);
 		const Fn = createField(CURVE.n, curveOpts.Fn, FpFnLE);
@@ -15737,7 +15757,7 @@
 	* @module
 	*/
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
-	var _0n$2 = /* @__PURE__ */ BigInt(0), _1n$2 = /* @__PURE__ */ BigInt(1), _2n$3 = /* @__PURE__ */ BigInt(2), _8n$1 = /* @__PURE__ */ BigInt(8);
+	var _0n$3 = /* @__PURE__ */ BigInt(0), _1n$3 = /* @__PURE__ */ BigInt(1), _2n$4 = /* @__PURE__ */ BigInt(2), _8n$1 = /* @__PURE__ */ BigInt(8);
 	function isEdValidXY(Fp, CURVE, x, y) {
 		const x2 = Fp.sqr(x);
 		const y2 = Fp.sqr(y);
@@ -15773,7 +15793,7 @@
 		let CURVE = validated.CURVE;
 		const { h: cofactor } = CURVE;
 		validateObject(opts, {}, { uvRatio: "function" });
-		const MASK = _2n$3 << BigInt(Fn.BYTES * 8) - _1n$2;
+		const MASK = _2n$4 << BigInt(Fn.BYTES * 8) - _1n$3;
 		const modP = (n) => Fp.create(n);
 		const uvRatio = opts.uvRatio === void 0 ? (u, v) => {
 			try {
@@ -15784,7 +15804,7 @@
 			} catch (e) {
 				return {
 					isValid: false,
-					value: _0n$2
+					value: _0n$3
 				};
 			}
 		} : opts.uvRatio;
@@ -15794,7 +15814,7 @@
 		* Coordinates >= Fp.ORDER are allowed for zip215.
 		*/
 		function acoord(title, n, banZero = false) {
-			const min = banZero ? _1n$2 : _0n$2;
+			const min = banZero ? _1n$3 : _0n$3;
 			aInRange("coordinate " + title, n, min, MASK);
 			return n;
 		}
@@ -15802,8 +15822,8 @@
 			if (!(other instanceof Point)) throw new Error("EdwardsPoint expected");
 		}
 		class Point {
-			static BASE = new Point(CURVE.Gx, CURVE.Gy, _1n$2, modP(CURVE.Gx * CURVE.Gy));
-			static ZERO = new Point(_0n$2, _1n$2, _1n$2, _0n$2);
+			static BASE = new Point(CURVE.Gx, CURVE.Gy, _1n$3, modP(CURVE.Gx * CURVE.Gy));
+			static ZERO = new Point(_0n$3, _1n$3, _1n$3, _0n$3);
 			static Fp = Fp;
 			static Fn = Fn;
 			X;
@@ -15830,24 +15850,24 @@
 				const { x, y } = p || {};
 				acoord("x", x);
 				acoord("y", y);
-				return new Point(x, y, _1n$2, modP(x * y));
+				return new Point(x, y, _1n$3, modP(x * y));
 			}
 			static fromBytes(bytes, zip215 = false) {
 				const len = Fp.BYTES;
 				const { a, d } = CURVE;
-				bytes = copyBytes(abytes(bytes, len, "point"));
-				abool(zip215, "zip215");
-				const normed = copyBytes(bytes);
+				bytes = copyBytes$1(abytes$1(bytes, len, "point"));
+				abool$1(zip215, "zip215");
+				const normed = copyBytes$1(bytes);
 				const lastByte = bytes[len - 1];
 				normed[len - 1] = lastByte & -129;
 				const y = bytesToNumberLE(normed);
-				aInRange("point.y", y, _0n$2, zip215 ? MASK : Fp.ORDER);
+				aInRange("point.y", y, _0n$3, zip215 ? MASK : Fp.ORDER);
 				const y2 = modP(y * y);
-				let { isValid, value: x } = uvRatio(modP(y2 - _1n$2), modP(d * y2 - a));
+				let { isValid, value: x } = uvRatio(modP(y2 - _1n$3), modP(d * y2 - a));
 				if (!isValid) throw new Error("bad point: invalid y coordinate");
-				const isXOdd = (x & _1n$2) === _1n$2;
+				const isXOdd = (x & _1n$3) === _1n$3;
 				const isLastByteOdd = (lastByte & 128) !== 0;
-				if (!zip215 && x === _0n$2 && isLastByteOdd) throw new Error("bad point: x=0 and x_0=1");
+				if (!zip215 && x === _0n$3 && isLastByteOdd) throw new Error("bad point: x=0 and x_0=1");
 				if (isLastByteOdd !== isXOdd) x = modP(-x);
 				return Point.fromAffine({
 					x,
@@ -15865,7 +15885,7 @@
 			}
 			precompute(windowSize = 8, isLazy = true) {
 				wnaf.createCache(this, windowSize);
-				if (!isLazy) this.multiply(_2n$3);
+				if (!isLazy) this.multiply(_2n$4);
 				return this;
 			}
 			assertValidity() {
@@ -15901,7 +15921,7 @@
 				const { X: X1, Y: Y1, Z: Z1 } = this;
 				const A = modP(X1 * X1);
 				const B = modP(Y1 * Y1);
-				const C = modP(_2n$3 * modP(Z1 * Z1));
+				const C = modP(_2n$4 * modP(Z1 * Z1));
 				const D = modP(a * A);
 				const x1y1 = X1 + Y1;
 				const E = modP(modP(x1y1 * x1y1) - A - B);
@@ -15942,8 +15962,8 @@
 			}
 			multiplyUnsafe(scalar) {
 				if (!Fn.isValid(scalar)) throw new RangeError("invalid scalar: expected 0 <= sc < curve.n");
-				if (scalar === _0n$2) return Point.ZERO;
-				if (this.is0() || scalar === _1n$2) return this;
+				if (scalar === _0n$3) return Point.ZERO;
+				if (this.is0() || scalar === _1n$3) return this;
 				return wnaf.unsafe(this, scalar, (p) => normalizeZ(Point, p));
 			}
 			isSmallOrder() {
@@ -15962,23 +15982,23 @@
 				const y = modP(Y * iz);
 				const zz = Fp.mul(Z, iz);
 				if (is0) return {
-					x: _0n$2,
-					y: _1n$2
+					x: _0n$3,
+					y: _1n$3
 				};
-				if (zz !== _1n$2) throw new Error("invZ was invalid");
+				if (zz !== _1n$3) throw new Error("invZ was invalid");
 				return {
 					x,
 					y
 				};
 			}
 			clearCofactor() {
-				if (cofactor === _1n$2) return this;
+				if (cofactor === _1n$3) return this;
 				return this.multiplyUnsafe(cofactor);
 			}
 			toBytes() {
 				const { x, y } = this.toAffine();
 				const bytes = Fp.toBytes(y);
-				bytes[bytes.length - 1] |= x & _1n$2 ? 128 : 0;
+				bytes[bytes.length - 1] |= x & _1n$3 ? 128 : 0;
 				return bytes;
 			}
 			toHex() {
@@ -16131,7 +16151,7 @@
 		const randomBytes = opts.randomBytes === void 0 ? randomBytes$1 : opts.randomBytes;
 		const adjustScalarBytes = opts.adjustScalarBytes === void 0 ? (bytes) => bytes : opts.adjustScalarBytes;
 		const domain = opts.domain === void 0 ? (data, ctx, phflag) => {
-			abool(phflag, "phflag");
+			abool$1(phflag, "phflag");
 			if (ctx.length || phflag) throw new Error("Contexts/pre-hash are not supported");
 			return data;
 		} : opts.domain;
@@ -16140,8 +16160,8 @@
 		}
 		function getPrivateScalar(key) {
 			const len = lengths.secretKey;
-			abytes(key, lengths.secretKey, "secretKey");
-			const hashed = abytes(hash(key), 2 * len, "hashedSecretKey");
+			abytes$1(key, lengths.secretKey, "secretKey");
+			const hashed = abytes$1(hash(key), 2 * len, "hashedSecretKey");
 			const head = adjustScalarBytes(hashed.slice(0, len));
 			return {
 				head,
@@ -16168,11 +16188,11 @@
 			return getExtendedPublicKey(secretKey).pointBytes;
 		}
 		function hashDomainToScalar(context = Uint8Array.of(), ...msgs) {
-			return modN_LE(hash(domain(concatBytes(...msgs), abytes(context, void 0, "context"), !!prehash)));
+			return modN_LE(hash(domain(concatBytes(...msgs), abytes$1(context, void 0, "context"), !!prehash)));
 		}
 		/** Signs message with secret key. RFC8032 5.1.6 */
 		function sign(msg, secretKey, options = {}) {
-			msg = abytes(msg, void 0, "message");
+			msg = abytes$1(msg, void 0, "message");
 			if (prehash) msg = prehash(msg);
 			const { prefix, scalar, pointBytes } = getExtendedPublicKey(secretKey);
 			const r = hashDomainToScalar(options.context, prefix, msg);
@@ -16180,7 +16200,7 @@
 			const k = hashDomainToScalar(options.context, R, pointBytes, msg);
 			const s = Fn.create(r + k * scalar);
 			if (!Fn.isValid(s)) throw new Error("sign failed: invalid s");
-			return abytes(concatBytes(R, Fn.toBytes(s)), lengths.signature, "result");
+			return abytes$1(concatBytes(R, Fn.toBytes(s)), lengths.signature, "result");
 		}
 		const verifyOpts = { zip215: opts.zip215 };
 		/**
@@ -16191,10 +16211,10 @@
 			const { context } = options;
 			const zip215 = options.zip215 === void 0 ? !!verifyOpts.zip215 : options.zip215;
 			const len = lengths.signature;
-			sig = abytes(sig, len, "signature");
-			msg = abytes(msg, void 0, "message");
-			publicKey = abytes(publicKey, lengths.publicKey, "publicKey");
-			if (zip215 !== void 0) abool(zip215, "zip215");
+			sig = abytes$1(sig, len, "signature");
+			msg = abytes$1(msg, void 0, "message");
+			publicKey = abytes$1(publicKey, lengths.publicKey, "publicKey");
+			if (zip215 !== void 0) abool$1(zip215, "zip215");
 			if (prehash) msg = prehash(msg);
 			const mid = len / 2;
 			const r = sig.subarray(0, mid);
@@ -16220,10 +16240,10 @@
 		};
 		function randomSecretKey(seed) {
 			seed = seed === void 0 ? randomBytes(lengths.seed) : seed;
-			return abytes(seed, lengths.seed, "seed");
+			return abytes$1(seed, lengths.seed, "seed");
 		}
 		function isValidSecretKey(key) {
-			return isBytes(key) && key.length === lengths.secretKey;
+			return isBytes$1(key) && key.length === lengths.secretKey;
 		}
 		function isValidPublicKey(key, zip215) {
 			try {
@@ -16251,12 +16271,12 @@
 				const size = lengths.publicKey;
 				const is25519 = size === 32;
 				if (!is25519 && size !== 57) throw new Error("only defined for 25519 and 448");
-				const u = is25519 ? Fp.div(_1n$2 + y, _1n$2 - y) : Fp.div(y - _1n$2, y + _1n$2);
+				const u = is25519 ? Fp.div(_1n$3 + y, _1n$3 - y) : Fp.div(y - _1n$3, y + _1n$3);
 				return Fp.toBytes(u);
 			},
 			toMontgomerySecret(secretKey) {
 				const size = lengths.secretKey;
-				abytes(secretKey, size);
+				abytes$1(secretKey, size);
 				return adjustScalarBytes(hash(secretKey.subarray(0, size))).subarray(0, size);
 			}
 		};
@@ -16292,7 +16312,7 @@
 		return arr;
 	}
 	function normDST(DST) {
-		if (!isBytes(DST) && typeof DST !== "string") throw new Error("DST must be Uint8Array or ascii string");
+		if (!isBytes$1(DST) && typeof DST !== "string") throw new Error("DST must be Uint8Array or ascii string");
 		const dst = typeof DST === "string" ? asciiToBytes(DST) : DST;
 		if (dst.length === 0) throw new Error("DST must be non-empty");
 		return dst;
@@ -16318,7 +16338,7 @@
 	* ```
 	*/
 	function expand_message_xmd(msg, DST, lenInBytes, H) {
-		abytes(msg);
+		abytes$1(msg);
 		asafenumber(lenInBytes);
 		DST = normDST(DST);
 		if (DST.length > 255) DST = H(concatBytes(asciiToBytes("H2C-OVERSIZE-DST-"), DST));
@@ -16338,8 +16358,161 @@
 		]));
 		return concatBytes(...b).slice(0, lenInBytes);
 	}
-	var _DST_scalar = "HashToScalar-", _0n$1 = /* @__PURE__ */ BigInt(0), _1n$1 = /* @__PURE__ */ BigInt(1), _2n$2 = /* @__PURE__ */ BigInt(2);
+	var _DST_scalar = "HashToScalar-";
+	//#endregion
+	//#region node_modules/@noble/curves/abstract/montgomery.js
+	/**
+	* Montgomery curve methods. It's not really whole montgomery curve,
+	* just bunch of very specific methods for X25519 / X448 from
+	* [RFC 7748](https://www.rfc-editor.org/rfc/rfc7748)
+	* @module
+	*/
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
+	var _0n$2 = BigInt(0);
+	var _1n$2 = BigInt(1);
+	var _2n$3 = BigInt(2);
+	function validateOpts(curve) {
+		validateObject(curve, {
+			P: "bigint",
+			type: "string",
+			adjustScalarBytes: "function",
+			powPminus2: "function"
+		}, { randomBytes: "function" });
+		return Object.freeze({ ...curve });
+	}
+	/**
+	* @param curveDef - Montgomery curve definition.
+	* @returns ECDH helper namespace.
+	* @throws If the curve definition or derived shared point is invalid. {@link Error}
+	* @example
+	* Perform one X25519 key exchange through the generic Montgomery helper.
+	*
+	* ```ts
+	* import { x25519 } from '@noble/curves/ed25519.js';
+	* const alice = x25519.keygen();
+	* const shared = x25519.getSharedSecret(alice.secretKey, alice.publicKey);
+	* ```
+	*/
+	function montgomery(curveDef) {
+		const { P, type, adjustScalarBytes, powPminus2, randomBytes: rand } = validateOpts(curveDef);
+		const is25519 = type === "x25519";
+		if (!is25519 && type !== "x448") throw new Error("invalid type");
+		const randomBytes_ = rand === void 0 ? randomBytes$1 : rand;
+		const montgomeryBits = is25519 ? 255 : 448;
+		const fieldLen = is25519 ? 32 : 56;
+		const Gu = is25519 ? BigInt(9) : BigInt(5);
+		const a24 = is25519 ? BigInt(121665) : BigInt(39081);
+		const minScalar = is25519 ? _2n$3 ** BigInt(254) : _2n$3 ** BigInt(447);
+		const maxScalar = minScalar + (is25519 ? BigInt(8) * _2n$3 ** BigInt(251) - _1n$2 : BigInt(4) * _2n$3 ** BigInt(445) - _1n$2) + _1n$2;
+		const modP = (n) => mod(n, P);
+		const GuBytes = encodeU(Gu);
+		function encodeU(u) {
+			return numberToBytesLE(modP(u), fieldLen);
+		}
+		function decodeU(u) {
+			const _u = copyBytes$1(abytes$1(u, fieldLen, "uCoordinate"));
+			if (is25519) _u[31] &= 127;
+			return modP(bytesToNumberLE(_u));
+		}
+		function decodeScalar(scalar) {
+			return bytesToNumberLE(adjustScalarBytes(copyBytes$1(abytes$1(scalar, fieldLen, "scalar"))));
+		}
+		function scalarMult(scalar, u) {
+			const pu = montgomeryLadder(decodeU(u), decodeScalar(scalar));
+			if (pu === _0n$2) throw new Error("invalid private or public key received");
+			return encodeU(pu);
+		}
+		function scalarMultBase(scalar) {
+			return scalarMult(scalar, GuBytes);
+		}
+		const getPublicKey = scalarMultBase;
+		const getSharedSecret = scalarMult;
+		function cswap(swap, x_2, x_3) {
+			const dummy = modP(swap * (x_2 - x_3));
+			x_2 = modP(x_2 - dummy);
+			x_3 = modP(x_3 + dummy);
+			return {
+				x_2,
+				x_3
+			};
+		}
+		/**
+		* Montgomery x-only multiplication ladder for the selected X25519/X448 curve.
+		* @param pointU - decoded Montgomery u coordinate for the selected curve
+		* @param scalar - decoded clamped scalar by which the point is multiplied
+		* @returns resulting Montgomery u coordinate for the selected curve
+		*/
+		function montgomeryLadder(u, scalar) {
+			aInRange("u", u, _0n$2, P);
+			aInRange("scalar", scalar, minScalar, maxScalar);
+			const k = scalar;
+			const x_1 = u;
+			let x_2 = _1n$2;
+			let z_2 = _0n$2;
+			let x_3 = u;
+			let z_3 = _1n$2;
+			let swap = _0n$2;
+			for (let t = BigInt(montgomeryBits - 1); t >= _0n$2; t--) {
+				const k_t = k >> t & _1n$2;
+				swap ^= k_t;
+				({x_2, x_3} = cswap(swap, x_2, x_3));
+				({x_2: z_2, x_3: z_3} = cswap(swap, z_2, z_3));
+				swap = k_t;
+				const A = x_2 + z_2;
+				const AA = modP(A * A);
+				const B = x_2 - z_2;
+				const BB = modP(B * B);
+				const E = AA - BB;
+				const C = x_3 + z_3;
+				const DA = modP((x_3 - z_3) * A);
+				const CB = modP(C * B);
+				const dacb = DA + CB;
+				const da_cb = DA - CB;
+				x_3 = modP(dacb * dacb);
+				z_3 = modP(x_1 * modP(da_cb * da_cb));
+				x_2 = modP(AA * BB);
+				z_2 = modP(E * (AA + modP(a24 * E)));
+			}
+			({x_2, x_3} = cswap(swap, x_2, x_3));
+			({x_2: z_2, x_3: z_3} = cswap(swap, z_2, z_3));
+			const z2 = powPminus2(z_2);
+			return modP(x_2 * z2);
+		}
+		const lengths = {
+			secretKey: fieldLen,
+			publicKey: fieldLen,
+			seed: fieldLen
+		};
+		const randomSecretKey = (seed) => {
+			seed = seed === void 0 ? randomBytes_(fieldLen) : seed;
+			abytes$1(seed, lengths.seed, "seed");
+			return seed;
+		};
+		const utils = { randomSecretKey };
+		Object.freeze(lengths);
+		Object.freeze(utils);
+		return Object.freeze({
+			keygen: createKeygen(randomSecretKey, getPublicKey),
+			getSharedSecret,
+			getPublicKey,
+			scalarMult,
+			scalarMultBase,
+			utils,
+			GuBytes: GuBytes.slice(),
+			lengths
+		});
+	}
+	//#endregion
+	//#region node_modules/@noble/curves/ed25519.js
+	/**
+	* ed25519 Twisted Edwards curve with following addons:
+	* - X25519 ECDH
+	* - Ristretto cofactor elimination
+	* - Elligator hash-to-group / point indistinguishability
+	* @module
+	*/
+	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
+	var _0n$1 = /* @__PURE__ */ BigInt(0), _1n$1 = /* @__PURE__ */ BigInt(1), _2n$2 = /* @__PURE__ */ BigInt(2), _3n$1 = /* @__PURE__ */ BigInt(3);
 	var _5n = /* @__PURE__ */ BigInt(5), _8n = /* @__PURE__ */ BigInt(8);
 	var ed25519_CURVE_p = /* @__PURE__ */ BigInt("0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffed");
 	var ed25519_CURVE = {
@@ -16419,6 +16592,32 @@
 	* ```
 	*/
 	var ed25519 = /* @__PURE__ */ ed({});
+	/**
+	* ECDH using curve25519 aka x25519.
+	* `getSharedSecret()` rejects low-order peer inputs by default, and seeded
+	* `keygen(seed)` reuses the provided 32-byte seed buffer instead of copying it.
+	* @example
+	* Derive one shared secret between two X25519 peers.
+	*
+	* ```js
+	* import { x25519 } from '@noble/curves/ed25519.js';
+	* const alice = x25519.keygen();
+	* const bob = x25519.keygen();
+	* const shared = x25519.getSharedSecret(alice.secretKey, bob.publicKey);
+	* ```
+	*/
+	var x25519 = /* @__PURE__ */ (() => {
+		const P = ed25519_CURVE_p;
+		return montgomery({
+			P,
+			type: "x25519",
+			powPminus2: (x) => {
+				const { pow_p_5_8, b2 } = ed25519_pow_2_252_3(x);
+				return mod(pow2(pow_p_5_8, _3n$1, P) * b2, P);
+			},
+			adjustScalarBytes
+		});
+	})();
 	var SQRT_M1 = ED25519_SQRT_M1;
 	var SQRT_AD_MINUS_ONE = /* @__PURE__ */ BigInt("25063068953384623474111414158702152701244531502492656460079210482610430750235");
 	var INVSQRT_A_MINUS_D = /* @__PURE__ */ BigInt("54469307008909316920995813868745141605393597292927456921205312896311721017578");
@@ -16487,12 +16686,12 @@
 			return new _RistrettoPoint(ep);
 		}
 		static fromBytes(bytes) {
-			abytes$1(bytes, 32);
+			abytes$2(bytes, 32);
 			const { a, d } = ed25519_CURVE;
 			const P = ed25519_CURVE_p;
 			const mod = (n) => Fp.create(n);
 			const s = bytes255ToNumberLE(bytes);
-			if (!equalBytes(Fp.toBytes(s), bytes) || isNegativeLE(s, P)) throw new Error("invalid ristretto255 encoding 1");
+			if (!equalBytes$1(Fp.toBytes(s), bytes) || isNegativeLE(s, P)) throw new Error("invalid ristretto255 encoding 1");
 			const s2 = mod(s * s);
 			const u1 = mod(_1n$1 + a * s2);
 			const u2 = mod(_1n$1 - a * s2);
@@ -16611,7 +16810,7 @@
 		* `hash_to_ristretto255` function defined in RFC 9380.
 		*/
 		deriveToCurve(bytes) {
-			abytes$1(bytes, 64);
+			abytes$2(bytes, 64);
 			const R1 = calcElligatorRistrettoMap(bytes255ToNumberLE(bytes.subarray(0, 32)));
 			const R2 = calcElligatorRistrettoMap(bytes255ToNumberLE(bytes.subarray(32, 64)));
 			return new _RistrettoPoint(R1.add(R2));
@@ -16947,62 +17146,62 @@
 	}
 	//#endregion
 	//#region node_modules/protons-runtime/dist/src/utils/float.js
-	var f32 = new Float32Array([-0]);
-	var f8b = new Uint8Array(f32.buffer);
+	var f32$1 = new Float32Array([-0]);
+	var f8b$1 = new Uint8Array(f32$1.buffer);
 	/**
 	* Writes a 32 bit float to a buffer using little endian byte order
 	*/
-	function writeFloatLE(val, buf, pos) {
-		f32[0] = val;
-		buf[pos] = f8b[0];
-		buf[pos + 1] = f8b[1];
-		buf[pos + 2] = f8b[2];
-		buf[pos + 3] = f8b[3];
+	function writeFloatLE$1(val, buf, pos) {
+		f32$1[0] = val;
+		buf[pos] = f8b$1[0];
+		buf[pos + 1] = f8b$1[1];
+		buf[pos + 2] = f8b$1[2];
+		buf[pos + 3] = f8b$1[3];
 	}
 	/**
 	* Reads a 32 bit float from a buffer using little endian byte order
 	*/
-	function readFloatLE(buf, pos) {
-		f8b[0] = buf[pos];
-		f8b[1] = buf[pos + 1];
-		f8b[2] = buf[pos + 2];
-		f8b[3] = buf[pos + 3];
-		return f32[0];
+	function readFloatLE$1(buf, pos) {
+		f8b$1[0] = buf[pos];
+		f8b$1[1] = buf[pos + 1];
+		f8b$1[2] = buf[pos + 2];
+		f8b$1[3] = buf[pos + 3];
+		return f32$1[0];
 	}
-	var f64 = new Float64Array([-0]);
-	var d8b = new Uint8Array(f64.buffer);
+	var f64$1 = new Float64Array([-0]);
+	var d8b$1 = new Uint8Array(f64$1.buffer);
 	/**
 	* Writes a 64 bit double to a buffer using little endian byte order
 	*/
-	function writeDoubleLE(val, buf, pos) {
-		f64[0] = val;
-		buf[pos] = d8b[0];
-		buf[pos + 1] = d8b[1];
-		buf[pos + 2] = d8b[2];
-		buf[pos + 3] = d8b[3];
-		buf[pos + 4] = d8b[4];
-		buf[pos + 5] = d8b[5];
-		buf[pos + 6] = d8b[6];
-		buf[pos + 7] = d8b[7];
+	function writeDoubleLE$1(val, buf, pos) {
+		f64$1[0] = val;
+		buf[pos] = d8b$1[0];
+		buf[pos + 1] = d8b$1[1];
+		buf[pos + 2] = d8b$1[2];
+		buf[pos + 3] = d8b$1[3];
+		buf[pos + 4] = d8b$1[4];
+		buf[pos + 5] = d8b$1[5];
+		buf[pos + 6] = d8b$1[6];
+		buf[pos + 7] = d8b$1[7];
 	}
 	/**
 	* Reads a 64 bit double from a buffer using little endian byte order
 	*/
-	function readDoubleLE(buf, pos) {
-		d8b[0] = buf[pos];
-		d8b[1] = buf[pos + 1];
-		d8b[2] = buf[pos + 2];
-		d8b[3] = buf[pos + 3];
-		d8b[4] = buf[pos + 4];
-		d8b[5] = buf[pos + 5];
-		d8b[6] = buf[pos + 6];
-		d8b[7] = buf[pos + 7];
-		return f64[0];
+	function readDoubleLE$1(buf, pos) {
+		d8b$1[0] = buf[pos];
+		d8b$1[1] = buf[pos + 1];
+		d8b$1[2] = buf[pos + 2];
+		d8b$1[3] = buf[pos + 3];
+		d8b$1[4] = buf[pos + 4];
+		d8b$1[5] = buf[pos + 5];
+		d8b$1[6] = buf[pos + 6];
+		d8b$1[7] = buf[pos + 7];
+		return f64$1[0];
 	}
 	//#endregion
 	//#region node_modules/protons-runtime/dist/src/utils/longbits.js
-	var MAX_SAFE_NUMBER_INTEGER = BigInt(Number.MAX_SAFE_INTEGER);
-	var MIN_SAFE_NUMBER_INTEGER = BigInt(Number.MIN_SAFE_INTEGER);
+	var MAX_SAFE_NUMBER_INTEGER$1 = BigInt(Number.MAX_SAFE_INTEGER);
+	var MIN_SAFE_NUMBER_INTEGER$1 = BigInt(Number.MIN_SAFE_INTEGER);
 	/**
 	* Constructs new long bits.
 	*
@@ -17012,7 +17211,7 @@
 	* @param {number} lo - Low 32 bits, unsigned
 	* @param {number} hi - High 32 bits, unsigned
 	*/
-	var LongBits = class LongBits {
+	var LongBits$1 = class LongBits$1 {
 		lo;
 		hi;
 		constructor(lo, hi) {
@@ -17087,8 +17286,8 @@
 		* Constructs new long bits from the specified number
 		*/
 		static fromBigInt(value) {
-			if (value === 0n) return zero;
-			if (value < MAX_SAFE_NUMBER_INTEGER && value > MIN_SAFE_NUMBER_INTEGER) return this.fromNumber(Number(value));
+			if (value === 0n) return zero$1;
+			if (value < MAX_SAFE_NUMBER_INTEGER$1 && value > MIN_SAFE_NUMBER_INTEGER$1) return this.fromNumber(Number(value));
 			const negative = value < 0n;
 			if (negative) value = -value;
 			let hi = value >> 32n;
@@ -17096,18 +17295,18 @@
 			if (negative) {
 				hi = ~hi | 0n;
 				lo = ~lo | 0n;
-				if (++lo > TWO_32) {
+				if (++lo > TWO_32$1) {
 					lo = 0n;
-					if (++hi > TWO_32) hi = 0n;
+					if (++hi > TWO_32$1) hi = 0n;
 				}
 			}
-			return new LongBits(Number(lo), Number(hi));
+			return new LongBits$1(Number(lo), Number(hi));
 		}
 		/**
 		* Constructs new long bits from the specified number
 		*/
 		static fromNumber(value) {
-			if (value === 0) return zero;
+			if (value === 0) return zero$1;
 			const sign = value < 0;
 			if (sign) value = -value;
 			let lo = value >>> 0;
@@ -17120,35 +17319,35 @@
 					if (++hi > 4294967295) hi = 0;
 				}
 			}
-			return new LongBits(lo, hi);
+			return new LongBits$1(lo, hi);
 		}
 		/**
 		* Constructs new long bits from a number, long or string
 		*/
 		static from(value) {
-			if (typeof value === "number") return LongBits.fromNumber(value);
-			if (typeof value === "bigint") return LongBits.fromBigInt(value);
-			if (typeof value === "string") return LongBits.fromBigInt(BigInt(value));
-			return value.low != null || value.high != null ? new LongBits(value.low >>> 0, value.high >>> 0) : zero;
+			if (typeof value === "number") return LongBits$1.fromNumber(value);
+			if (typeof value === "bigint") return LongBits$1.fromBigInt(value);
+			if (typeof value === "string") return LongBits$1.fromBigInt(BigInt(value));
+			return value.low != null || value.high != null ? new LongBits$1(value.low >>> 0, value.high >>> 0) : zero$1;
 		}
 	};
-	var zero = new LongBits(0, 0);
-	zero.toBigInt = function() {
+	var zero$1 = new LongBits$1(0, 0);
+	zero$1.toBigInt = function() {
 		return 0n;
 	};
-	zero.zzEncode = zero.zzDecode = function() {
+	zero$1.zzEncode = zero$1.zzDecode = function() {
 		return this;
 	};
-	zero.length = function() {
+	zero$1.length = function() {
 		return 1;
 	};
-	var TWO_32 = 4294967296n;
+	var TWO_32$1 = 4294967296n;
 	//#endregion
 	//#region node_modules/protons-runtime/dist/src/utils/utf8.js
 	/**
 	* Calculates the UTF8 byte length of a string
 	*/
-	function length$1(string) {
+	function length$2(string) {
 		let len = 0;
 		let c = 0;
 		for (let i = 0; i < string.length; ++i) {
@@ -17165,7 +17364,7 @@
 	/**
 	* Reads UTF8 bytes as a string
 	*/
-	function read$1(buffer, start, end) {
+	function read$2(buffer, start, end) {
 		if (end - start < 1) return "";
 		let parts;
 		const chunk = [];
@@ -17194,7 +17393,7 @@
 	/**
 	* Writes a string as UTF8 bytes
 	*/
-	function write(string, buffer, offset) {
+	function write$1(string, buffer, offset) {
 		const start = offset;
 		let c1;
 		let c2;
@@ -17222,16 +17421,16 @@
 	//#endregion
 	//#region node_modules/protons-runtime/dist/src/utils/reader.js
 	/* istanbul ignore next */
-	function indexOutOfRange(reader, writeLength) {
+	function indexOutOfRange$1(reader, writeLength) {
 		return RangeError(`index out of range: ${reader.pos} + ${writeLength ?? 1} > ${reader.len}`);
 	}
-	function readFixed32End(buf, end) {
+	function readFixed32End$1(buf, end) {
 		return (buf[end - 4] | buf[end - 3] << 8 | buf[end - 2] << 16 | buf[end - 1] << 24) >>> 0;
 	}
 	/**
 	* Constructs a new reader instance using the specified buffer.
 	*/
-	var Uint8ArrayReader = class {
+	var Uint8ArrayReader$1 = class {
 		buf;
 		pos;
 		len;
@@ -17267,7 +17466,7 @@
 			if (this.buf[this.pos++] < 128) return value;
 			if ((this.pos += 5) > this.len) {
 				this.pos = this.len;
-				throw indexOutOfRange(this, 10);
+				throw indexOutOfRange$1(this, 10);
 			}
 			return value;
 		}
@@ -17294,22 +17493,22 @@
 		* Reads fixed 32 bits as an unsigned 32 bit integer
 		*/
 		fixed32() {
-			if (this.pos + 4 > this.len) throw indexOutOfRange(this, 4);
-			return readFixed32End(this.buf, this.pos += 4);
+			if (this.pos + 4 > this.len) throw indexOutOfRange$1(this, 4);
+			return readFixed32End$1(this.buf, this.pos += 4);
 		}
 		/**
 		* Reads fixed 32 bits as a signed 32 bit integer
 		*/
 		sfixed32() {
-			if (this.pos + 4 > this.len) throw indexOutOfRange(this, 4);
-			return readFixed32End(this.buf, this.pos += 4) | 0;
+			if (this.pos + 4 > this.len) throw indexOutOfRange$1(this, 4);
+			return readFixed32End$1(this.buf, this.pos += 4) | 0;
 		}
 		/**
 		* Reads a float (32 bit) as a number
 		*/
 		float() {
-			if (this.pos + 4 > this.len) throw indexOutOfRange(this, 4);
-			const value = readFloatLE(this.buf, this.pos);
+			if (this.pos + 4 > this.len) throw indexOutOfRange$1(this, 4);
+			const value = readFloatLE$1(this.buf, this.pos);
 			this.pos += 4;
 			return value;
 		}
@@ -17318,8 +17517,8 @@
 		*/
 		double() {
 			/* istanbul ignore if */
-			if (this.pos + 8 > this.len) throw indexOutOfRange(this, 4);
-			const value = readDoubleLE(this.buf, this.pos);
+			if (this.pos + 8 > this.len) throw indexOutOfRange$1(this, 4);
+			const value = readDoubleLE$1(this.buf, this.pos);
 			this.pos += 8;
 			return value;
 		}
@@ -17331,7 +17530,7 @@
 			const start = this.pos;
 			const end = this.pos + length;
 			/* istanbul ignore if */
-			if (end > this.len) throw indexOutOfRange(this, length);
+			if (end > this.len) throw indexOutOfRange$1(this, length);
 			this.pos += length;
 			return start === end ? new Uint8Array(0) : this.buf.subarray(start, end);
 		}
@@ -17340,7 +17539,7 @@
 		*/
 		string() {
 			const bytes = this.bytes();
-			return read$1(bytes, 0, bytes.length);
+			return read$2(bytes, 0, bytes.length);
 		}
 		/**
 		* Skips the specified number of bytes if specified, otherwise skips a varint
@@ -17348,11 +17547,11 @@
 		skip(length) {
 			if (typeof length === "number") {
 				/* istanbul ignore if */
-				if (this.pos + length > this.len) throw indexOutOfRange(this, length);
+				if (this.pos + length > this.len) throw indexOutOfRange$1(this, length);
 				this.pos += length;
 			} else do
 				/* istanbul ignore if */
-				if (this.pos >= this.len) throw indexOutOfRange(this);
+				if (this.pos >= this.len) throw indexOutOfRange$1(this);
 			while ((this.buf[this.pos++] & 128) !== 0);
 			return this;
 		}
@@ -17382,7 +17581,7 @@
 			return this;
 		}
 		readLongVarint() {
-			const bits = new LongBits(0, 0);
+			const bits = new LongBits$1(0, 0);
 			let i = 0;
 			if (this.len - this.pos > 4) {
 				for (; i < 4; ++i) {
@@ -17396,7 +17595,7 @@
 			} else {
 				for (; i < 3; ++i) {
 					/* istanbul ignore if */
-					if (this.pos >= this.len) throw indexOutOfRange(this);
+					if (this.pos >= this.len) throw indexOutOfRange$1(this);
 					bits.lo = (bits.lo | (this.buf[this.pos] & 127) << i * 7) >>> 0;
 					if (this.buf[this.pos++] < 128) return bits;
 				}
@@ -17408,15 +17607,15 @@
 				if (this.buf[this.pos++] < 128) return bits;
 			}
 			else for (; i < 5; ++i) {
-				if (this.pos >= this.len) throw indexOutOfRange(this);
+				if (this.pos >= this.len) throw indexOutOfRange$1(this);
 				bits.hi = (bits.hi | (this.buf[this.pos] & 127) << i * 7 + 3) >>> 0;
 				if (this.buf[this.pos++] < 128) return bits;
 			}
 			throw Error("invalid varint encoding");
 		}
 		readFixed64() {
-			if (this.pos + 8 > this.len) throw indexOutOfRange(this, 8);
-			return new LongBits(readFixed32End(this.buf, this.pos += 4), readFixed32End(this.buf, this.pos += 4));
+			if (this.pos + 8 > this.len) throw indexOutOfRange$1(this, 8);
+			return new LongBits$1(readFixed32End$1(this.buf, this.pos += 4), readFixed32End$1(this.buf, this.pos += 4));
 		}
 		/**
 		* Reads a varint as a signed 64 bit value
@@ -17516,13 +17715,13 @@
 			return this.readFixed64().toString();
 		}
 	};
-	function createReader(buf) {
-		return new Uint8ArrayReader(buf instanceof Uint8Array ? buf : buf.subarray());
+	function createReader$1(buf) {
+		return new Uint8ArrayReader$1(buf instanceof Uint8Array ? buf : buf.subarray());
 	}
 	//#endregion
 	//#region node_modules/protons-runtime/dist/src/decode.js
-	function decodeMessage(buf, codec, opts) {
-		const reader = createReader(buf);
+	function decodeMessage$1(buf, codec, opts) {
+		const reader = createReader$1(buf);
 		return codec.decode(reader, void 0, opts);
 	}
 	//#endregion
@@ -17530,7 +17729,7 @@
 	/**
 	* A general purpose buffer pool
 	*/
-	function pool(size) {
+	function pool$1(size) {
 		const SIZE = size ?? 8192;
 		const MAX = SIZE >>> 1;
 		let slab;
@@ -17553,7 +17752,7 @@
 	*
 	* @classdesc Scheduled writer operation
 	*/
-	var Op = class {
+	var Op$1 = class {
 		/**
 		* Function to call
 		*/
@@ -17578,11 +17777,11 @@
 		}
 	};
 	/* istanbul ignore next */
-	function noop() {}
+	function noop$1() {}
 	/**
 	* Constructs a new writer state instance
 	*/
-	var State = class {
+	var State$1 = class {
 		/**
 		* Current head
 		*/
@@ -17606,13 +17805,13 @@
 			this.next = writer.states;
 		}
 	};
-	var bufferPool = pool();
+	var bufferPool$1 = pool$1();
 	/**
 	* Allocates a buffer of the specified size
 	*/
-	function alloc(size) {
+	function alloc$1(size) {
 		if (globalThis.Buffer != null) return allocUnsafe$1(size);
-		return bufferPool(size);
+		return bufferPool$1(size);
 	}
 	/**
 	* When a value is written, the writer calculates its byte length and puts it into a linked
@@ -17621,7 +17820,7 @@
 	* to first calculating over objects and then encoding over objects. In our case, the encoding
 	* part is just a linked list walk calling operations with already prepared values.
 	*/
-	var Uint8ArrayWriter = class {
+	var Uint8ArrayWriter$1 = class {
 		/**
 		* Current length
 		*/
@@ -17640,7 +17839,7 @@
 		states;
 		constructor() {
 			this.len = 0;
-			this.head = new Op(noop, 0, 0);
+			this.head = new Op$1(noop$1, 0, 0);
 			this.tail = this.head;
 			this.states = null;
 		}
@@ -17648,7 +17847,7 @@
 		* Pushes a new operation to the queue
 		*/
 		_push(fn, len, val) {
-			this.tail = this.tail.next = new Op(fn, len, val);
+			this.tail = this.tail.next = new Op$1(fn, len, val);
 			this.len += len;
 			return this;
 		}
@@ -17656,14 +17855,14 @@
 		* Writes an unsigned 32 bit value as a varint
 		*/
 		uint32(value) {
-			this.len += (this.tail = this.tail.next = new VarintOp((value = value >>> 0) < 128 ? 1 : value < 16384 ? 2 : value < 2097152 ? 3 : value < 268435456 ? 4 : 5, value)).len;
+			this.len += (this.tail = this.tail.next = new VarintOp$1((value = value >>> 0) < 128 ? 1 : value < 16384 ? 2 : value < 2097152 ? 3 : value < 268435456 ? 4 : 5, value)).len;
 			return this;
 		}
 		/**
 		* Writes a signed 32 bit value as a varint`
 		*/
 		int32(value) {
-			return value < 0 ? this._push(writeVarint64, 10, LongBits.fromNumber(value)) : this.uint32(value);
+			return value < 0 ? this._push(writeVarint64$1, 10, LongBits$1.fromNumber(value)) : this.uint32(value);
 		}
 		/**
 		* Writes a 32 bit value as a varint, zig-zag encoded
@@ -17675,8 +17874,8 @@
 		* Writes an unsigned 64 bit value as a varint
 		*/
 		uint64(value) {
-			const bits = LongBits.fromBigInt(value);
-			return this._push(writeVarint64, bits.length(), bits);
+			const bits = LongBits$1.fromBigInt(value);
+			return this._push(writeVarint64$1, bits.length(), bits);
 		}
 		/**
 		* Writes an unsigned 64 bit value as a varint
@@ -17712,15 +17911,15 @@
 		* Writes a signed 64 bit value as a varint, zig-zag encoded
 		*/
 		sint64(value) {
-			const bits = LongBits.fromBigInt(value).zzEncode();
-			return this._push(writeVarint64, bits.length(), bits);
+			const bits = LongBits$1.fromBigInt(value).zzEncode();
+			return this._push(writeVarint64$1, bits.length(), bits);
 		}
 		/**
 		* Writes a signed 64 bit value as a varint, zig-zag encoded
 		*/
 		sint64Number(value) {
-			const bits = LongBits.fromNumber(value).zzEncode();
-			return this._push(writeVarint64, bits.length(), bits);
+			const bits = LongBits$1.fromNumber(value).zzEncode();
+			return this._push(writeVarint64$1, bits.length(), bits);
 		}
 		/**
 		* Writes a signed 64 bit value as a varint, zig-zag encoded
@@ -17732,13 +17931,13 @@
 		* Writes a boolish value as a varint
 		*/
 		bool(value) {
-			return this._push(writeByte, 1, value ? 1 : 0);
+			return this._push(writeByte$1, 1, value ? 1 : 0);
 		}
 		/**
 		* Writes an unsigned 32 bit value as fixed 32 bits
 		*/
 		fixed32(value) {
-			return this._push(writeFixed32, 4, value >>> 0);
+			return this._push(writeFixed32$1, 4, value >>> 0);
 		}
 		/**
 		* Writes a signed 32 bit value as fixed 32 bits
@@ -17750,15 +17949,15 @@
 		* Writes an unsigned 64 bit value as fixed 64 bits
 		*/
 		fixed64(value) {
-			const bits = LongBits.fromBigInt(value);
-			return this._push(writeFixed32, 4, bits.lo)._push(writeFixed32, 4, bits.hi);
+			const bits = LongBits$1.fromBigInt(value);
+			return this._push(writeFixed32$1, 4, bits.lo)._push(writeFixed32$1, 4, bits.hi);
 		}
 		/**
 		* Writes an unsigned 64 bit value as fixed 64 bits
 		*/
 		fixed64Number(value) {
-			const bits = LongBits.fromNumber(value);
-			return this._push(writeFixed32, 4, bits.lo)._push(writeFixed32, 4, bits.hi);
+			const bits = LongBits$1.fromNumber(value);
+			return this._push(writeFixed32$1, 4, bits.lo)._push(writeFixed32$1, 4, bits.hi);
 		}
 		/**
 		* Writes an unsigned 64 bit value as fixed 64 bits
@@ -17788,7 +17987,7 @@
 		* Writes a float (32 bit)
 		*/
 		float(value) {
-			return this._push(writeFloatLE, 4, value);
+			return this._push(writeFloatLE$1, 4, value);
 		}
 		/**
 		* Writes a double (64 bit float).
@@ -17798,30 +17997,30 @@
 		* @returns {Writer} `this`
 		*/
 		double(value) {
-			return this._push(writeDoubleLE, 8, value);
+			return this._push(writeDoubleLE$1, 8, value);
 		}
 		/**
 		* Writes a sequence of bytes
 		*/
 		bytes(value) {
 			const len = value.length >>> 0;
-			if (len === 0) return this._push(writeByte, 1, 0);
-			return this.uint32(len)._push(writeBytes, len, value);
+			if (len === 0) return this._push(writeByte$1, 1, 0);
+			return this.uint32(len)._push(writeBytes$1, len, value);
 		}
 		/**
 		* Writes a string
 		*/
 		string(value) {
-			const len = length$1(value);
-			return len !== 0 ? this.uint32(len)._push(write, len, value) : this._push(writeByte, 1, 0);
+			const len = length$2(value);
+			return len !== 0 ? this.uint32(len)._push(write$1, len, value) : this._push(writeByte$1, 1, 0);
 		}
 		/**
 		* Forks this writer's state by pushing it to a stack.
 		* Calling {@link Writer#reset|reset} or {@link Writer#ldelim|ldelim} resets the writer to the previous state.
 		*/
 		fork() {
-			this.states = new State(this);
-			this.head = this.tail = new Op(noop, 0, 0);
+			this.states = new State$1(this);
+			this.head = this.tail = new Op$1(noop$1, 0, 0);
 			this.len = 0;
 			return this;
 		}
@@ -17835,7 +18034,7 @@
 				this.len = this.states.len;
 				this.states = this.states.next;
 			} else {
-				this.head = this.tail = new Op(noop, 0, 0);
+				this.head = this.tail = new Op$1(noop$1, 0, 0);
 				this.len = 0;
 			}
 			return this;
@@ -17860,7 +18059,7 @@
 		*/
 		finish() {
 			let head = this.head.next;
-			const buf = alloc(this.len);
+			const buf = alloc$1(this.len);
 			let pos = 0;
 			while (head != null) {
 				head.fn(head.val, buf, pos);
@@ -17870,10 +18069,10 @@
 			return buf;
 		}
 	};
-	function writeByte(val, buf, pos) {
+	function writeByte$1(val, buf, pos) {
 		buf[pos] = val & 255;
 	}
-	function writeVarint32(val, buf, pos) {
+	function writeVarint32$1(val, buf, pos) {
 		while (val > 127) {
 			buf[pos++] = val & 127 | 128;
 			val >>>= 7;
@@ -17885,14 +18084,14 @@
 	*
 	* @classdesc Scheduled varint writer operation
 	*/
-	var VarintOp = class extends Op {
+	var VarintOp$1 = class extends Op$1 {
 		next;
 		constructor(len, val) {
-			super(writeVarint32, len, val);
+			super(writeVarint32$1, len, val);
 			this.next = void 0;
 		}
 	};
-	function writeVarint64(val, buf, pos) {
+	function writeVarint64$1(val, buf, pos) {
 		while (val.hi !== 0) {
 			buf[pos++] = val.lo & 127 | 128;
 			val.lo = (val.lo >>> 7 | val.hi << 25) >>> 0;
@@ -17904,59 +18103,59 @@
 		}
 		buf[pos++] = val.lo;
 	}
-	function writeFixed32(val, buf, pos) {
+	function writeFixed32$1(val, buf, pos) {
 		buf[pos] = val & 255;
 		buf[pos + 1] = val >>> 8 & 255;
 		buf[pos + 2] = val >>> 16 & 255;
 		buf[pos + 3] = val >>> 24;
 	}
-	function writeBytes(val, buf, pos) {
+	function writeBytes$1(val, buf, pos) {
 		buf.set(val, pos);
 	}
 	if (globalThis.Buffer != null) {
-		Uint8ArrayWriter.prototype.bytes = function(value) {
+		Uint8ArrayWriter$1.prototype.bytes = function(value) {
 			const len = value.length >>> 0;
 			this.uint32(len);
-			if (len > 0) this._push(writeBytesBuffer, len, value);
+			if (len > 0) this._push(writeBytesBuffer$1, len, value);
 			return this;
 		};
-		Uint8ArrayWriter.prototype.string = function(value) {
+		Uint8ArrayWriter$1.prototype.string = function(value) {
 			const len = globalThis.Buffer.byteLength(value);
 			this.uint32(len);
-			if (len > 0) this._push(writeStringBuffer, len, value);
+			if (len > 0) this._push(writeStringBuffer$1, len, value);
 			return this;
 		};
 	}
-	function writeBytesBuffer(val, buf, pos) {
+	function writeBytesBuffer$1(val, buf, pos) {
 		buf.set(val, pos);
 	}
-	function writeStringBuffer(val, buf, pos) {
-		if (val.length < 40) write(val, buf, pos);
+	function writeStringBuffer$1(val, buf, pos) {
+		if (val.length < 40) write$1(val, buf, pos);
 		else if (buf.utf8Write != null) buf.utf8Write(val, pos);
 		else buf.set(fromString$2(val), pos);
 	}
 	/**
 	* Creates a new writer
 	*/
-	function createWriter() {
-		return new Uint8ArrayWriter();
+	function createWriter$1() {
+		return new Uint8ArrayWriter$1();
 	}
 	//#endregion
 	//#region node_modules/protons-runtime/dist/src/encode.js
-	function encodeMessage(message, codec) {
-		const w = createWriter();
+	function encodeMessage$1(message, codec) {
+		const w = createWriter$1();
 		codec.encode(message, w, { lengthDelimited: false });
 		return w.finish();
 	}
 	//#endregion
 	//#region node_modules/protons-runtime/dist/src/stream.js
 	function* streamMessage(buf, codec, opts) {
-		const reader = createReader(buf);
+		const reader = createReader$1(buf);
 		yield* codec.stream(reader, void 0, "$", opts);
 	}
 	//#endregion
 	//#region node_modules/protons-runtime/dist/src/codec.js
-	var CODEC_TYPES = {
+	var CODEC_TYPES$1 = {
 		VARINT: 0,
 		BIT64: 1,
 		LENGTH_DELIMITED: 2,
@@ -17964,7 +18163,7 @@
 		END_GROUP: 4,
 		BIT32: 5
 	};
-	function createCodec$1(name, type, encode, decode, stream) {
+	function createCodec$2(name, type, encode, decode, stream) {
 		return {
 			name,
 			type,
@@ -17980,7 +18179,7 @@
 			if (v[val.toString()] == null) throw new Error("Invalid enum value");
 			return v[val];
 		}
-		return createCodec$1("enum", CODEC_TYPES.VARINT, function enumEncode(val, writer) {
+		return createCodec$2("enum", CODEC_TYPES$1.VARINT, function enumEncode(val, writer) {
 			const enumValue = findValue(val);
 			writer.int32(enumValue);
 		}, function enumDecode(reader) {
@@ -17991,15 +18190,15 @@
 	}
 	//#endregion
 	//#region node_modules/protons-runtime/dist/src/codecs/message.js
-	function message(encode, decode, stream) {
-		return createCodec$1("message", CODEC_TYPES.LENGTH_DELIMITED, encode, decode, stream);
+	function message$1(encode, decode, stream) {
+		return createCodec$2("message", CODEC_TYPES$1.LENGTH_DELIMITED, encode, decode, stream);
 	}
 	//#endregion
 	//#region node_modules/protons-runtime/dist/src/index.js
 	/**
 	* Thrown when a repeated field has too many elements
 	*/
-	var MaxLengthError = class extends Error {
+	var MaxLengthError$1 = class extends Error {
 		/**
 		* This will be removed in a future release
 		*
@@ -18045,7 +18244,7 @@
 	(function(PublicKey) {
 		let _codec;
 		PublicKey.codec = () => {
-			if (_codec == null) _codec = message((obj, w, opts = {}) => {
+			if (_codec == null) _codec = message$1((obj, w, opts = {}) => {
 				if (opts.lengthDelimited !== false) w.fork();
 				if (obj.Type != null) {
 					w.uint32(8);
@@ -18100,11 +18299,11 @@
 			return _codec;
 		};
 		function encode(obj) {
-			return encodeMessage(obj, PublicKey.codec());
+			return encodeMessage$1(obj, PublicKey.codec());
 		}
 		PublicKey.encode = encode;
 		function decode(buf, opts) {
-			return decodeMessage(buf, PublicKey.codec(), opts);
+			return decodeMessage$1(buf, PublicKey.codec(), opts);
 		}
 		PublicKey.decode = decode;
 		function stream(buf, opts) {
@@ -18116,7 +18315,7 @@
 	(function(PrivateKey) {
 		let _codec;
 		PrivateKey.codec = () => {
-			if (_codec == null) _codec = message((obj, w, opts = {}) => {
+			if (_codec == null) _codec = message$1((obj, w, opts = {}) => {
 				if (opts.lengthDelimited !== false) w.fork();
 				if (obj.Type != null) {
 					w.uint32(8);
@@ -18171,11 +18370,11 @@
 			return _codec;
 		};
 		function encode(obj) {
-			return encodeMessage(obj, PrivateKey.codec());
+			return encodeMessage$1(obj, PrivateKey.codec());
 		}
 		PrivateKey.encode = encode;
 		function decode(buf, opts) {
-			return decodeMessage(buf, PrivateKey.codec(), opts);
+			return decodeMessage$1(buf, PrivateKey.codec(), opts);
 		}
 		PrivateKey.decode = decode;
 		function stream(buf, opts) {
@@ -18387,7 +18586,7 @@
 		destroyed = false;
 		constructor(hash, key) {
 			ahash(hash);
-			abytes$1(key, void 0, "key");
+			abytes$2(key, void 0, "key");
 			this.iHash = hash.create();
 			if (typeof this.iHash.update !== "function") throw new Error("Expected instance of class which extends utils.Hash");
 			this.blockLen = this.iHash.blockLen;
@@ -18400,16 +18599,16 @@
 			this.oHash = hash.create();
 			for (let i = 0; i < pad.length; i++) pad[i] ^= 106;
 			this.oHash.update(pad);
-			clean(pad);
+			clean$1(pad);
 		}
 		update(buf) {
-			aexists(this);
+			aexists$1(this);
 			this.iHash.update(buf);
 			return this;
 		}
 		digestInto(out) {
-			aexists(this);
-			aoutput(out, this);
+			aexists$1(this);
+			aoutput$1(out, this);
 			this.finished = true;
 			const buf = out.subarray(0, this.outputLen);
 			this.iHash.digestInto(buf);
@@ -18511,8 +18710,8 @@
 		validateObject(opts);
 		const optsn = {};
 		for (let optName of Object.keys(def)) optsn[optName] = opts[optName] === void 0 ? def[optName] : opts[optName];
-		abool(optsn.lowS, "lowS");
-		abool(optsn.prehash, "prehash");
+		abool$1(optsn.lowS, "lowS");
+		abool$1(optsn.prehash, "prehash");
 		if (optsn.format !== void 0) validateSigFormat(optsn.format);
 		return optsn;
 	}
@@ -18561,7 +18760,7 @@
 			},
 			decode(tag, data) {
 				const { Err: E } = DER;
-				data = abytes(data, void 0, "DER data");
+				data = abytes$1(data, void 0, "DER data");
 				let pos = 0;
 				if (tag < 0 || tag > 255) throw new E("tlv.encode: wrong tag");
 				if (data.length < 2 || data[pos++] !== tag) throw new E("tlv.decode: wrong tlv");
@@ -18608,7 +18807,7 @@
 		},
 		toSig(bytes) {
 			const { Err: E, _int: int, _tlv: tlv } = DER;
-			const data = abytes(bytes, void 0, "signature");
+			const data = abytes$1(bytes, void 0, "signature");
 			const { v: seqBytes, l: seqLeftBytes } = tlv.decode(48, data);
 			if (seqLeftBytes.length) throw new E("invalid signature: left bytes after parsing");
 			const { v: rBytes, l: rLeftBytes } = tlv.decode(2, seqBytes);
@@ -18680,14 +18879,14 @@
 			if (allowInfinityPoint && point.is0()) return Uint8Array.of(0);
 			const { x, y } = point.toAffine();
 			const bx = Fp.toBytes(x);
-			abool(isCompressed, "isCompressed");
+			abool$1(isCompressed, "isCompressed");
 			if (isCompressed) {
 				assertCompressionIsSupported();
 				return concatBytes(pprefix(!Fp.isOdd(y)), bx);
 			} else return concatBytes(Uint8Array.of(4), bx, Fp.toBytes(y));
 		}
 		function pointFromBytes(bytes) {
-			abytes(bytes, void 0, "Point");
+			abytes$1(bytes, void 0, "Point");
 			const { publicKey: comp, publicKeyUncompressed: uncomp } = lengths;
 			const length = bytes.length;
 			const head = bytes[0];
@@ -18792,7 +18991,7 @@
 				return new Point(x, y, Fp.ONE);
 			}
 			static fromBytes(bytes) {
-				const P = Point.fromAffine(decodePoint(abytes(bytes, void 0, "point")));
+				const P = Point.fromAffine(decodePoint(abytes$1(bytes, void 0, "point")));
 				P.assertValidity();
 				return P;
 			}
@@ -19036,7 +19235,7 @@
 				return this.clearCofactor().is0();
 			}
 			toBytes(isCompressed = true) {
-				abool(isCompressed, "isCompressed");
+				abool$1(isCompressed, "isCompressed");
 				this.assertValidity();
 				return encodePoint(Point, this, isCompressed);
 			}
@@ -19113,7 +19312,7 @@
 		*/
 		function randomSecretKey(seed) {
 			seed = seed === void 0 ? randomBytes_(lengths.seed) : seed;
-			return mapHashToField(abytes(seed, lengths.seed, "seed"), Fn.ORDER);
+			return mapHashToField(abytes$1(seed, lengths.seed, "seed"), Fn.ORDER);
 		}
 		/**
 		* Computes public key for a secret key. Checks for validity of the secret key.
@@ -19129,8 +19328,8 @@
 		function isProbPub(item) {
 			const { secretKey, publicKey, publicKeyUncompressed } = lengths;
 			const allowedLengths = Fn._lengths;
-			if (!isBytes(item)) return void 0;
-			const l = abytes(item, void 0, "key").length;
+			if (!isBytes$1(item)) return void 0;
+			const l = abytes$1(item, void 0, "key").length;
 			const isPub = l === publicKey || l === publicKeyUncompressed;
 			const isSec = l === secretKey || !!allowedLengths?.includes(l);
 			if (isPub && isSec) return void 0;
@@ -19234,7 +19433,7 @@
 		function validateSigLength(bytes, format) {
 			validateSigFormat(format);
 			const size = lengths.signature;
-			return abytes(bytes, format === "compact" ? size : format === "recovered" ? size + 1 : void 0);
+			return abytes$1(bytes, format === "compact" ? size : format === "recovered" ? size + 1 : void 0);
 		}
 		/**
 		* ECDSA signature with its (r, s) properties. Supports compact, recovered & DER representations.
@@ -19262,7 +19461,7 @@
 				validateSigLength(bytes, format);
 				let recid;
 				if (format === "der") {
-					const { r, s } = DER.toSig(abytes(bytes));
+					const { r, s } = DER.toSig(abytes$1(bytes));
 					return new Signature(r, s);
 				}
 				if (format === "recovered") {
@@ -19294,7 +19493,7 @@
 				const x = Fp.toBytes(radj);
 				const R = Point.fromBytes(concatBytes(pprefix((recovery & 1) === 0), x));
 				const ir = Fn.inv(radj);
-				const h = bits2int_modN(abytes(messageHash, void 0, "msgHash"));
+				const h = bits2int_modN(abytes$1(messageHash, void 0, "msgHash"));
 				const u1 = Fn.create(-h * ir);
 				const u2 = Fn.create(s * ir);
 				const Q = Point.BASE.multiplyUnsafe(u1).add(R.multiplyUnsafe(u2));
@@ -19339,8 +19538,8 @@
 			return Fn.toBytes(num);
 		}
 		function validateMsgAndHash(message, prehash) {
-			abytes(message, void 0, "message");
-			return prehash ? abytes(hash_(message), void 0, "prehashed message") : message;
+			abytes$1(message, void 0, "message");
+			return prehash ? abytes$1(hash_(message), void 0, "prehashed message") : message;
 		}
 		/**
 		* Steps A, D of RFC6979 3.2.
@@ -19359,7 +19558,7 @@
 			const seedArgs = [int2octets(d), int2octets(h1int)];
 			if (extraEntropy != null && extraEntropy !== false) {
 				const e = extraEntropy === true ? randomBytes(lengths.secretKey) : extraEntropy;
-				seedArgs.push(abytes(e, void 0, "extraEntropy"));
+				seedArgs.push(abytes$1(e, void 0, "extraEntropy"));
 			}
 			const seed = concatBytes(...seedArgs);
 			const m = h1int;
@@ -19417,9 +19616,9 @@
 		*/
 		function verify(signature, message, publicKey, opts = {}) {
 			const { lowS, prehash, format } = validateSigOpts(opts, defaultSigOpts);
-			publicKey = abytes(publicKey, void 0, "publicKey");
+			publicKey = abytes$1(publicKey, void 0, "publicKey");
 			message = validateMsgAndHash(message, prehash);
-			if (!isBytes(signature)) {
+			if (!isBytes$1(signature)) {
 				const end = signature instanceof Signature ? ", use sig.toBytes()" : "";
 				throw new Error("verify expects Uint8Array signature" + end);
 			}
@@ -20793,7 +20992,7 @@
 		constructor(buf, hash, seed, fingerprintSize = 2) {
 			if (fingerprintSize > 64) throw new TypeError("Invalid Fingerprint Size");
 			const fnv = hash.hashV(buf, seed);
-			const fp = alloc$1(fingerprintSize);
+			const fp = alloc$2(fingerprintSize);
 			for (let i = 0; i < fp.length; i++) fp[i] = fnv[i];
 			if (fp.length === 0) fp[0] = 7;
 			this.fp = fp;
@@ -22666,24 +22865,24 @@
 		encode$4.bytes = offset - oldOffset + 1;
 		return out;
 	}
-	var decode$5 = read;
+	var decode$5 = read$1;
 	var MSB$1 = 128, REST$1 = 127;
 	/**
 	* @param {string | any[]} buf
 	* @param {number} offset
 	*/
-	function read(buf, offset) {
+	function read$1(buf, offset) {
 		var res = 0, offset = offset || 0, shift = 0, counter = offset, b, l = buf.length;
 		do {
 			if (counter >= l) {
-				read.bytes = 0;
+				read$1.bytes = 0;
 				throw new RangeError("Could not decode varint");
 			}
 			b = buf[counter++];
 			res += shift < 28 ? (b & REST$1) << shift : (b & REST$1) * Math.pow(2, shift);
 			shift += 7;
 		} while (b >= MSB$1);
-		read.bytes = counter - offset;
+		read$1.bytes = counter - offset;
 		return res;
 	}
 	var N1 = Math.pow(2, 7);
@@ -22695,13 +22894,13 @@
 	var N7 = Math.pow(2, 49);
 	var N8 = Math.pow(2, 56);
 	var N9 = Math.pow(2, 63);
-	var length = function(value) {
+	var length$1 = function(value) {
 		return value < N1 ? 1 : value < N2 ? 2 : value < N3 ? 3 : value < N4 ? 4 : value < N5 ? 5 : value < N6 ? 6 : value < N7 ? 7 : value < N8 ? 8 : value < N9 ? 9 : 10;
 	};
 	var _brrp_varint = {
 		encode: encode_1,
 		decode: decode$5,
-		encodingLength: length
+		encodingLength: length$1
 	};
 	//#endregion
 	//#region node_modules/@multiformats/multiaddr/node_modules/multiformats/dist/src/varint.js
@@ -23154,7 +23353,7 @@
 	});
 	//#endregion
 	//#region node_modules/@multiformats/multiaddr/node_modules/uint8arrays/dist/src/util/bases.js
-	function createCodec(name, prefix, encode, decode) {
+	function createCodec$1(name, prefix, encode, decode) {
 		return {
 			name,
 			prefix,
@@ -23166,12 +23365,12 @@
 			decoder: { decode }
 		};
 	}
-	var string$1 = createCodec("utf8", "u", (buf) => {
+	var string$1 = createCodec$1("utf8", "u", (buf) => {
 		return "u" + new TextDecoder("utf8").decode(buf);
 	}, (str) => {
 		return new TextEncoder().encode(str.substring(1));
 	});
-	var ascii = createCodec("ascii", "a", (buf) => {
+	var ascii = createCodec$1("ascii", "a", (buf) => {
 		let string = "a";
 		for (let i = 0; i < buf.length; i++) string += String.fromCharCode(buf[i]);
 		return string;
@@ -26194,7 +26393,7 @@
 	};
 	//#endregion
 	//#region node_modules/@libp2p/utils/dist/src/stream-utils.js
-	var DEFAULT_MAX_BUFFER_SIZE = 4194304;
+	var DEFAULT_MAX_BUFFER_SIZE$1 = 4194304;
 	var UnwrappedError = class extends Error {
 		static name = "UnwrappedError";
 		name = "UnwrappedError";
@@ -26237,7 +26436,7 @@
 		return obj?.addEventListener != null && obj?.removeEventListener != null && obj?.send != null && obj?.push != null && obj?.log != null;
 	}
 	function byteStream(stream, opts) {
-		const maxBufferSize = opts?.maxBufferSize ?? DEFAULT_MAX_BUFFER_SIZE;
+		const maxBufferSize = opts?.maxBufferSize ?? DEFAULT_MAX_BUFFER_SIZE$1;
 		const readBuffer = new Uint8ArrayList();
 		let hasBytes;
 		let unwrapped = false;
@@ -26451,6 +26650,51 @@
 			return source;
 		}));
 	}
+	//#endregion
+	//#region node_modules/@libp2p/utils/dist/src/length-prefixed-decoder.js
+	var DEFAULT_MAX_BUFFER_SIZE = 1024 * 1024 * 4;
+	var DEFAULT_MAX_DATA_LENGTH = 1024 * 1024 * 4;
+	/**
+	* Decode length-prefixed data from a buffer
+	*/
+	var LengthPrefixedDecoder = class {
+		buffer;
+		maxBufferSize;
+		lengthDecoder;
+		maxDataLength;
+		encodingLength;
+		constructor(init = {}) {
+			this.buffer = new Uint8ArrayList();
+			this.maxBufferSize = init.maxBufferSize ?? DEFAULT_MAX_BUFFER_SIZE;
+			this.maxDataLength = init.maxDataLength ?? DEFAULT_MAX_DATA_LENGTH;
+			this.lengthDecoder = init.lengthDecoder ?? decode$9;
+			this.encodingLength = init.encodingLength ?? encodingLength$2;
+		}
+		/**
+		* Decodes length-prefixed data
+		*/
+		*decode(buf) {
+			this.buffer.append(buf);
+			if (this.buffer.byteLength > this.maxBufferSize) throw new InvalidParametersError$1(`Buffer length limit exceeded - ${this.buffer.byteLength}/${this.maxBufferSize}`);
+			while (true) {
+				let dataLength;
+				try {
+					dataLength = this.lengthDecoder(this.buffer);
+				} catch (err) {
+					if (err instanceof RangeError) break;
+					throw err;
+				}
+				if (dataLength < 0 || dataLength > this.maxDataLength) throw new InvalidMessageLengthError$1("Invalid message length");
+				const lengthLength = this.encodingLength(dataLength);
+				const chunkLength = lengthLength + dataLength;
+				if (this.buffer.byteLength >= chunkLength) {
+					const buf = this.buffer.sublist(lengthLength, chunkLength);
+					this.buffer.consume(chunkLength);
+					if (buf.byteLength > 0) yield buf;
+				} else break;
+			}
+		}
+	};
 	//#endregion
 	//#region node_modules/it-length-prefixed/dist/src/errors.js
 	/**
@@ -27001,7 +27245,7 @@
 	(function(Envelope) {
 		let _codec;
 		Envelope.codec = () => {
-			if (_codec == null) _codec = message((obj, w, opts = {}) => {
+			if (_codec == null) _codec = message$1((obj, w, opts = {}) => {
 				if (opts.lengthDelimited !== false) w.fork();
 				if (obj.publicKey != null && obj.publicKey.byteLength > 0) {
 					w.uint32(10);
@@ -27022,10 +27266,10 @@
 				if (opts.lengthDelimited !== false) w.ldelim();
 			}, (reader, length, opts = {}) => {
 				const obj = {
-					publicKey: alloc$1(0),
-					payloadType: alloc$1(0),
-					payload: alloc$1(0),
-					signature: alloc$1(0)
+					publicKey: alloc$2(0),
+					payloadType: alloc$2(0),
+					payload: alloc$2(0),
+					signature: alloc$2(0)
 				};
 				const end = length == null ? reader.len : reader.pos + length;
 				while (reader.pos < end) {
@@ -27087,11 +27331,11 @@
 			return _codec;
 		};
 		function encode(obj) {
-			return encodeMessage(obj, Envelope.codec());
+			return encodeMessage$1(obj, Envelope.codec());
 		}
 		Envelope.encode = encode;
 		function decode(buf, opts) {
-			return decodeMessage(buf, Envelope.codec(), opts);
+			return decodeMessage$1(buf, Envelope.codec(), opts);
 		}
 		Envelope.decode = decode;
 		function stream(buf, opts) {
@@ -27213,7 +27457,7 @@
 		(function(AddressInfo) {
 			let _codec;
 			AddressInfo.codec = () => {
-				if (_codec == null) _codec = message((obj, w, opts = {}) => {
+				if (_codec == null) _codec = message$1((obj, w, opts = {}) => {
 					if (opts.lengthDelimited !== false) w.fork();
 					if (obj.multiaddr != null && obj.multiaddr.byteLength > 0) {
 						w.uint32(10);
@@ -27221,7 +27465,7 @@
 					}
 					if (opts.lengthDelimited !== false) w.ldelim();
 				}, (reader, length, opts = {}) => {
-					const obj = { multiaddr: alloc$1(0) };
+					const obj = { multiaddr: alloc$2(0) };
 					const end = length == null ? reader.len : reader.pos + length;
 					while (reader.pos < end) {
 						const tag = reader.uint32();
@@ -27255,11 +27499,11 @@
 				return _codec;
 			};
 			function encode(obj) {
-				return encodeMessage(obj, AddressInfo.codec());
+				return encodeMessage$1(obj, AddressInfo.codec());
 			}
 			AddressInfo.encode = encode;
 			function decode(buf, opts) {
-				return decodeMessage(buf, AddressInfo.codec(), opts);
+				return decodeMessage$1(buf, AddressInfo.codec(), opts);
 			}
 			AddressInfo.decode = decode;
 			function stream(buf, opts) {
@@ -27269,7 +27513,7 @@
 		})(PeerRecord.AddressInfo || (PeerRecord.AddressInfo = {}));
 		let _codec;
 		PeerRecord.codec = () => {
-			if (_codec == null) _codec = message((obj, w, opts = {}) => {
+			if (_codec == null) _codec = message$1((obj, w, opts = {}) => {
 				if (opts.lengthDelimited !== false) w.fork();
 				if (obj.peerId != null && obj.peerId.byteLength > 0) {
 					w.uint32(10);
@@ -27286,7 +27530,7 @@
 				if (opts.lengthDelimited !== false) w.ldelim();
 			}, (reader, length, opts = {}) => {
 				const obj = {
-					peerId: alloc$1(0),
+					peerId: alloc$2(0),
 					seq: 0n,
 					addresses: []
 				};
@@ -27301,7 +27545,7 @@
 							obj.seq = reader.uint64();
 							break;
 						case 3:
-							if (opts.limits?.addresses != null && obj.addresses.length === opts.limits.addresses) throw new MaxLengthError("Decode error - repeated field \"addresses\" had too many elements");
+							if (opts.limits?.addresses != null && obj.addresses.length === opts.limits.addresses) throw new MaxLengthError$1("Decode error - repeated field \"addresses\" had too many elements");
 							obj.addresses.push(PeerRecord.AddressInfo.codec().decode(reader, reader.uint32(), { limits: opts.limits?.addresses$ }));
 							break;
 						default:
@@ -27329,7 +27573,7 @@
 							};
 							break;
 						case 3:
-							if (opts.limits?.addresses != null && obj.addresses === opts.limits.addresses) throw new MaxLengthError("Streaming decode error - repeated field \"addresses\" had too many elements");
+							if (opts.limits?.addresses != null && obj.addresses === opts.limits.addresses) throw new MaxLengthError$1("Streaming decode error - repeated field \"addresses\" had too many elements");
 							for (const evt of PeerRecord.AddressInfo.codec().stream(reader, reader.uint32(), `${prefix}.addresses[]`, { limits: opts.limits?.addresses$ })) yield {
 								...evt,
 								index: obj.addresses
@@ -27345,11 +27589,11 @@
 			return _codec;
 		};
 		function encode(obj) {
-			return encodeMessage(obj, PeerRecord.codec());
+			return encodeMessage$1(obj, PeerRecord.codec());
 		}
 		PeerRecord.encode = encode;
 		function decode(buf, opts) {
-			return decodeMessage(buf, PeerRecord.codec(), opts);
+			return decodeMessage$1(buf, PeerRecord.codec(), opts);
 		}
 		PeerRecord.decode = decode;
 		function stream(buf, opts) {
@@ -28375,7 +28619,7 @@
 		(function(Peer$metadataEntry) {
 			let _codec;
 			Peer$metadataEntry.codec = () => {
-				if (_codec == null) _codec = message((obj, w, opts = {}) => {
+				if (_codec == null) _codec = message$1((obj, w, opts = {}) => {
 					if (opts.lengthDelimited !== false) w.fork();
 					if (obj.key != null && obj.key !== "") {
 						w.uint32(10);
@@ -28389,7 +28633,7 @@
 				}, (reader, length, opts = {}) => {
 					const obj = {
 						key: "",
-						value: alloc$1(0)
+						value: alloc$2(0)
 					};
 					const end = length == null ? reader.len : reader.pos + length;
 					while (reader.pos < end) {
@@ -28433,11 +28677,11 @@
 				return _codec;
 			};
 			function encode(obj) {
-				return encodeMessage(obj, Peer$metadataEntry.codec());
+				return encodeMessage$1(obj, Peer$metadataEntry.codec());
 			}
 			Peer$metadataEntry.encode = encode;
 			function decode(buf, opts) {
-				return decodeMessage(buf, Peer$metadataEntry.codec(), opts);
+				return decodeMessage$1(buf, Peer$metadataEntry.codec(), opts);
 			}
 			Peer$metadataEntry.decode = decode;
 			function stream(buf, opts) {
@@ -28448,7 +28692,7 @@
 		(function(Peer$tagsEntry) {
 			let _codec;
 			Peer$tagsEntry.codec = () => {
-				if (_codec == null) _codec = message((obj, w, opts = {}) => {
+				if (_codec == null) _codec = message$1((obj, w, opts = {}) => {
 					if (opts.lengthDelimited !== false) w.fork();
 					if (obj.key != null && obj.key !== "") {
 						w.uint32(10);
@@ -28500,11 +28744,11 @@
 				return _codec;
 			};
 			function encode(obj) {
-				return encodeMessage(obj, Peer$tagsEntry.codec());
+				return encodeMessage$1(obj, Peer$tagsEntry.codec());
 			}
 			Peer$tagsEntry.encode = encode;
 			function decode(buf, opts) {
-				return decodeMessage(buf, Peer$tagsEntry.codec(), opts);
+				return decodeMessage$1(buf, Peer$tagsEntry.codec(), opts);
 			}
 			Peer$tagsEntry.decode = decode;
 			function stream(buf, opts) {
@@ -28514,7 +28758,7 @@
 		})(Peer.Peer$tagsEntry || (Peer.Peer$tagsEntry = {}));
 		let _codec;
 		Peer.codec = () => {
-			if (_codec == null) _codec = message((obj, w, opts = {}) => {
+			if (_codec == null) _codec = message$1((obj, w, opts = {}) => {
 				if (opts.lengthDelimited !== false) w.fork();
 				if (obj.addresses != null && obj.addresses.length > 0) for (const value of obj.addresses) {
 					w.uint32(10);
@@ -28563,11 +28807,11 @@
 					const tag = reader.uint32();
 					switch (tag >>> 3) {
 						case 1:
-							if (opts.limits?.addresses != null && obj.addresses.length === opts.limits.addresses) throw new MaxLengthError("Decode error - repeated field \"addresses\" had too many elements");
+							if (opts.limits?.addresses != null && obj.addresses.length === opts.limits.addresses) throw new MaxLengthError$1("Decode error - repeated field \"addresses\" had too many elements");
 							obj.addresses.push(Address.codec().decode(reader, reader.uint32(), { limits: opts.limits?.addresses$ }));
 							break;
 						case 2:
-							if (opts.limits?.protocols != null && obj.protocols.length === opts.limits.protocols) throw new MaxLengthError("Decode error - repeated field \"protocols\" had too many elements");
+							if (opts.limits?.protocols != null && obj.protocols.length === opts.limits.protocols) throw new MaxLengthError$1("Decode error - repeated field \"protocols\" had too many elements");
 							obj.protocols.push(reader.string());
 							break;
 						case 4:
@@ -28609,7 +28853,7 @@
 					const tag = reader.uint32();
 					switch (tag >>> 3) {
 						case 1:
-							if (opts.limits?.addresses != null && obj.addresses === opts.limits.addresses) throw new MaxLengthError("Streaming decode error - repeated field \"addresses\" had too many elements");
+							if (opts.limits?.addresses != null && obj.addresses === opts.limits.addresses) throw new MaxLengthError$1("Streaming decode error - repeated field \"addresses\" had too many elements");
 							for (const evt of Address.codec().stream(reader, reader.uint32(), `${prefix}.addresses[]`, { limits: opts.limits?.addresses$ })) yield {
 								...evt,
 								index: obj.addresses
@@ -28617,7 +28861,7 @@
 							obj.addresses++;
 							break;
 						case 2:
-							if (opts.limits?.protocols != null && obj.protocols === opts.limits.protocols) throw new MaxLengthError("Streaming decode error - repeated field \"protocols\" had too many elements");
+							if (opts.limits?.protocols != null && obj.protocols === opts.limits.protocols) throw new MaxLengthError$1("Streaming decode error - repeated field \"protocols\" had too many elements");
 							yield {
 								field: `${prefix}.protocols[]`,
 								index: obj.protocols,
@@ -28638,12 +28882,12 @@
 							};
 							break;
 						case 6:
-							if (opts.limits?.metadata != null && obj.metadata === opts.limits.metadata) throw new MaxLengthError("Decode error - map field \"metadata\" had too many elements");
+							if (opts.limits?.metadata != null && obj.metadata === opts.limits.metadata) throw new MaxLengthError$1("Decode error - map field \"metadata\" had too many elements");
 							yield* Peer.Peer$metadataEntry.codec().stream(reader, reader.uint32(), `${prefix}.metadata{}`, { limits: { value: opts.limits?.metadata$value } });
 							obj.metadata++;
 							break;
 						case 7:
-							if (opts.limits?.tags != null && obj.tags === opts.limits.tags) throw new MaxLengthError("Decode error - map field \"tags\" had too many elements");
+							if (opts.limits?.tags != null && obj.tags === opts.limits.tags) throw new MaxLengthError$1("Decode error - map field \"tags\" had too many elements");
 							yield* Peer.Peer$tagsEntry.codec().stream(reader, reader.uint32(), `${prefix}.tags{}`, { limits: { value: opts.limits?.tags$value } });
 							obj.tags++;
 							break;
@@ -28662,11 +28906,11 @@
 			return _codec;
 		};
 		function encode(obj) {
-			return encodeMessage(obj, Peer.codec());
+			return encodeMessage$1(obj, Peer.codec());
 		}
 		Peer.encode = encode;
 		function decode(buf, opts) {
-			return decodeMessage(buf, Peer.codec(), opts);
+			return decodeMessage$1(buf, Peer.codec(), opts);
 		}
 		Peer.decode = decode;
 		function stream(buf, opts) {
@@ -28678,7 +28922,7 @@
 	(function(Address) {
 		let _codec;
 		Address.codec = () => {
-			if (_codec == null) _codec = message((obj, w, opts = {}) => {
+			if (_codec == null) _codec = message$1((obj, w, opts = {}) => {
 				if (opts.lengthDelimited !== false) w.fork();
 				if (obj.multiaddr != null && obj.multiaddr.byteLength > 0) {
 					w.uint32(10);
@@ -28694,7 +28938,7 @@
 				}
 				if (opts.lengthDelimited !== false) w.ldelim();
 			}, (reader, length, opts = {}) => {
-				const obj = { multiaddr: alloc$1(0) };
+				const obj = { multiaddr: alloc$2(0) };
 				const end = length == null ? reader.len : reader.pos + length;
 				while (reader.pos < end) {
 					const tag = reader.uint32();
@@ -28746,11 +28990,11 @@
 			return _codec;
 		};
 		function encode(obj) {
-			return encodeMessage(obj, Address.codec());
+			return encodeMessage$1(obj, Address.codec());
 		}
 		Address.encode = encode;
 		function decode(buf, opts) {
-			return decodeMessage(buf, Address.codec(), opts);
+			return decodeMessage$1(buf, Address.codec(), opts);
 		}
 		Address.decode = decode;
 		function stream(buf, opts) {
@@ -28762,7 +29006,7 @@
 	(function(Tag) {
 		let _codec;
 		Tag.codec = () => {
-			if (_codec == null) _codec = message((obj, w, opts = {}) => {
+			if (_codec == null) _codec = message$1((obj, w, opts = {}) => {
 				if (opts.lengthDelimited !== false) w.fork();
 				if (obj.value != null && obj.value !== 0) {
 					w.uint32(8);
@@ -28817,11 +29061,11 @@
 			return _codec;
 		};
 		function encode(obj) {
-			return encodeMessage(obj, Tag.codec());
+			return encodeMessage$1(obj, Tag.codec());
 		}
 		Tag.encode = encode;
 		function decode(buf, opts) {
-			return decodeMessage(buf, Tag.codec(), opts);
+			return decodeMessage$1(buf, Tag.codec(), opts);
 		}
 		Tag.decode = decode;
 		function stream(buf, opts) {
@@ -35400,7 +35644,7 @@
 		})(Message.Flag || (Message.Flag = {}));
 		let _codec;
 		Message.codec = () => {
-			if (_codec == null) _codec = message((obj, w, opts = {}) => {
+			if (_codec == null) _codec = message$1((obj, w, opts = {}) => {
 				if (opts.lengthDelimited !== false) w.fork();
 				if (obj.flag != null) {
 					w.uint32(8);
@@ -35455,11 +35699,11 @@
 			return _codec;
 		};
 		function encode(obj) {
-			return encodeMessage(obj, Message.codec());
+			return encodeMessage$1(obj, Message.codec());
 		}
 		Message.encode = encode;
 		function decode(buf, opts) {
-			return decodeMessage(buf, Message.codec(), opts);
+			return decodeMessage$1(buf, Message.codec(), opts);
 		}
 		Message.decode = decode;
 		function stream(buf, opts) {
@@ -35862,7 +36106,7 @@
 		})(Message.Type || (Message.Type = {}));
 		let _codec;
 		Message.codec = () => {
-			if (_codec == null) _codec = message((obj, w, opts = {}) => {
+			if (_codec == null) _codec = message$1((obj, w, opts = {}) => {
 				if (opts.lengthDelimited !== false) w.fork();
 				if (obj.type != null) {
 					w.uint32(8);
@@ -35917,11 +36161,11 @@
 			return _codec;
 		};
 		function encode(obj) {
-			return encodeMessage(obj, Message.codec());
+			return encodeMessage$1(obj, Message.codec());
 		}
 		Message.encode = encode;
 		function decode(buf, opts) {
-			return decodeMessage(buf, Message.codec(), opts);
+			return decodeMessage$1(buf, Message.codec(), opts);
 		}
 		Message.decode = decode;
 		function stream(buf, opts) {
@@ -36372,6 +36616,3041 @@
 			circuitAddress: multiaddr(ma.getComponents().filter(({ name }) => name !== "webrtc")),
 			targetPeer: peerIdFromString$1(target)
 		};
+	}
+	//#endregion
+	//#region node_modules/@chainsafe/libp2p-noise/dist/src/constants.js
+	var NOISE_MSG_MAX_LENGTH_BYTES = 65535;
+	var NOISE_MSG_MAX_LENGTH_BYTES_WITHOUT_TAG = NOISE_MSG_MAX_LENGTH_BYTES - 16;
+	var DUMP_SESSION_KEYS = Boolean(globalThis.process?.env?.DUMP_SESSION_KEYS);
+	//#endregion
+	//#region node_modules/@noble/ciphers/utils.js
+	/**
+	* Utilities for hex, bytes, CSPRNG.
+	* @module
+	*/
+	/*! noble-ciphers - MIT License (c) 2023 Paul Miller (paulmillr.com) */
+	/**
+	* Checks if something is Uint8Array. Be careful: nodejs Buffer will return true.
+	* @param a - Value to inspect.
+	* @returns `true` when the value is a Uint8Array view, including Node's `Buffer`.
+	* @example
+	* Guards a value before treating it as raw key material.
+	*
+	* ```ts
+	* isBytes(new Uint8Array());
+	* ```
+	*/
+	function isBytes(a) {
+		return a instanceof Uint8Array || ArrayBuffer.isView(a) && a.constructor.name === "Uint8Array" && "BYTES_PER_ELEMENT" in a && a.BYTES_PER_ELEMENT === 1;
+	}
+	/**
+	* Asserts something is boolean.
+	* @param b - Value to validate.
+	* @throws On wrong argument types. {@link TypeError}
+	* @example
+	* Validates a boolean option before branching on it.
+	*
+	* ```ts
+	* abool(true);
+	* ```
+	*/
+	function abool(b) {
+		if (typeof b !== "boolean") throw new TypeError(`boolean expected, not ${b}`);
+	}
+	/**
+	* Asserts something is a non-negative safe integer.
+	* @param n - Value to validate.
+	* @throws On wrong argument types. {@link TypeError}
+	* @throws On wrong argument ranges or values. {@link RangeError}
+	* @example
+	* Validates a non-negative length or counter.
+	*
+	* ```ts
+	* anumber(1);
+	* ```
+	*/
+	function anumber(n) {
+		if (typeof n !== "number") throw new TypeError("number expected, got " + typeof n);
+		if (!Number.isSafeInteger(n) || n < 0) throw new RangeError("positive integer expected, got " + n);
+	}
+	/**
+	* Asserts something is Uint8Array.
+	* @param value - Value to validate.
+	* @param length - Expected byte length.
+	* @param title - Optional label used in error messages.
+	* @returns The validated byte array.
+	* On Node, `Buffer` is accepted too because it is a Uint8Array view.
+	* @throws On wrong argument types. {@link TypeError}
+	* @throws On wrong argument lengths. {@link RangeError}
+	* @example
+	* Validates a fixed-length nonce or key buffer.
+	*
+	* ```ts
+	* abytes(new Uint8Array([1, 2]), 2);
+	* ```
+	*/
+	function abytes(value, length, title = "") {
+		const bytes = isBytes(value);
+		const len = value?.length;
+		const needsLen = length !== void 0;
+		if (!bytes || needsLen && len !== length) {
+			const prefix = title && `"${title}" `;
+			const ofLen = needsLen ? ` of length ${length}` : "";
+			const got = bytes ? `length=${len}` : `type=${typeof value}`;
+			const message = prefix + "expected Uint8Array" + ofLen + ", got " + got;
+			if (!bytes) throw new TypeError(message);
+			throw new RangeError(message);
+		}
+		return value;
+	}
+	/**
+	* Asserts a hash- or MAC-like instance has not been destroyed or finished.
+	* @param instance - Stateful instance to validate.
+	* @param checkFinished - Whether to reject finished instances.
+	* When `false`, only `destroyed` is checked.
+	* @throws If the hash instance has already been destroyed or finalized. {@link Error}
+	* @example
+	* Guards against calling `update()` or `digest()` on a finished hash.
+	*
+	* ```ts
+	* aexists({ destroyed: false, finished: false });
+	* ```
+	*/
+	function aexists(instance, checkFinished = true) {
+		if (instance.destroyed) throw new Error("Hash instance has been destroyed");
+		if (checkFinished && instance.finished) throw new Error("Hash#digest() has already been called");
+	}
+	/**
+	* Asserts output is a properly-sized byte array.
+	* @param out - Output buffer to validate.
+	* @param instance - Hash-like instance providing `outputLen`.
+	* This is the relaxed `digestInto()`-style contract: output must be at least `outputLen`,
+	* unlike one-shot cipher helpers elsewhere in the repo that often require exact lengths.
+	* @throws On wrong argument types. {@link TypeError}
+	* @param onlyAligned - Whether `out` must be 4-byte aligned for zero-allocation word views.
+	* @throws On wrong output buffer lengths. {@link RangeError}
+	* @throws On wrong output buffer alignment. {@link Error}
+	* @example
+	* Verifies that a caller-provided output buffer is large enough.
+	*
+	* ```ts
+	* aoutput(new Uint8Array(16), { outputLen: 16 });
+	* ```
+	*/
+	function aoutput(out, instance, onlyAligned = false) {
+		abytes(out, void 0, "output");
+		const min = instance.outputLen;
+		if (out.length < min) throw new RangeError("digestInto() expects output buffer of length at least " + min);
+		if (onlyAligned && !isAligned32(out)) throw new Error("invalid output, must be aligned");
+	}
+	/**
+	* Casts a typed-array view to Uint32Array.
+	* @param arr - Typed-array view to reinterpret.
+	* @returns Uint32Array view over the same bytes. Callers are expected to provide a
+	* 4-byte-aligned offset; trailing `1..3` bytes are silently dropped.
+	* @example
+	* Views a byte buffer as 32-bit words for block processing.
+	*
+	* ```ts
+	* u32(new Uint8Array(4));
+	* ```
+	*/
+	function u32(arr) {
+		return new Uint32Array(arr.buffer, arr.byteOffset, Math.floor(arr.byteLength / 4));
+	}
+	/**
+	* Zeroizes typed arrays in place.
+	* Warning: JS provides no guarantees.
+	* @param arrays - Arrays to wipe.
+	* @example
+	* Wipes a temporary key buffer after use.
+	*
+	* ```ts
+	* const bytes = new Uint8Array([1]);
+	* clean(bytes);
+	* ```
+	*/
+	function clean(...arrays) {
+		for (let i = 0; i < arrays.length; i++) arrays[i].fill(0);
+	}
+	/**
+	* Creates a DataView for byte-level manipulation.
+	* @param arr - Typed-array view to wrap.
+	* @returns DataView over the same bytes.
+	* @example
+	* Creates an endian-aware view for length encoding.
+	*
+	* ```ts
+	* createView(new Uint8Array(4));
+	* ```
+	*/
+	function createView(arr) {
+		return new DataView(arr.buffer, arr.byteOffset, arr.byteLength);
+	}
+	/**
+	* Whether the current platform is little-endian.
+	* Most are; some IBM systems are not.
+	*/
+	var isLE = /* @__PURE__ */ (() => new Uint8Array(new Uint32Array([287454020]).buffer)[0] === 68)();
+	/**
+	* Reverses byte order of one 32-bit word.
+	* @param word - Unsigned 32-bit word to swap.
+	* @returns The same word with bytes reversed.
+	* @example
+	* Swaps a big-endian word into little-endian byte order.
+	*
+	* ```ts
+	* byteSwap(0x11223344);
+	* ```
+	*/
+	var byteSwap = (word) => word << 24 & 4278190080 | word << 8 & 16711680 | word >>> 8 & 65280 | word >>> 24 & 255;
+	/**
+	* Byte-swaps every word of a Uint32Array in place.
+	* @param arr - Uint32Array whose words should be swapped.
+	* @returns The same array after in-place byte swapping.
+	* @example
+	* Swaps every 32-bit word in a word-view buffer.
+	*
+	* ```ts
+	* byteSwap32(new Uint32Array([0x11223344]));
+	* ```
+	*/
+	var byteSwap32 = (arr) => {
+		for (let i = 0; i < arr.length; i++) arr[i] = byteSwap(arr[i]);
+		return arr;
+	};
+	/**
+	* Normalizes a Uint32Array view to the little-endian representation expected by cipher cores.
+	* @param u - Word view to normalize in place.
+	* @returns Little-endian normalized word view.
+	* @example
+	* Normalizes a word-view buffer before block processing.
+	*
+	* ```ts
+	* swap32IfBE(new Uint32Array([0x11223344]));
+	* ```
+	*/
+	var swap32IfBE = isLE ? (u) => u : byteSwap32;
+	/**
+	* Merges user options into defaults.
+	* @param defaults - Default option values.
+	* @param opts - User-provided overrides.
+	* @returns Combined options object.
+	* The merge mutates `defaults` in place and returns the same object.
+	* @throws If options are missing or not an object. {@link Error}
+	* @example
+	* Applies user overrides to the default cipher options.
+	*
+	* ```ts
+	* checkOpts({ rounds: 20 }, { rounds: 8 });
+	* ```
+	*/
+	function checkOpts(defaults, opts) {
+		if (opts == null || typeof opts !== "object") throw new Error("options must be defined");
+		return Object.assign(defaults, opts);
+	}
+	/**
+	* Compares two byte arrays in kinda constant time once lengths already match.
+	* @param a - First byte array.
+	* @param b - Second byte array.
+	* @returns `true` when the arrays contain the same bytes. Different lengths still return early.
+	* @example
+	* Compares an expected authentication tag with the received one.
+	*
+	* ```ts
+	* equalBytes(new Uint8Array([1]), new Uint8Array([1]));
+	* ```
+	*/
+	function equalBytes(a, b) {
+		if (a.length !== b.length) return false;
+		let diff = 0;
+		for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+		return diff === 0;
+	}
+	/**
+	* Wraps a keyed MAC constructor into a one-shot helper with `.create()`.
+	* @param keyLen - Valid probe-key length used to read static metadata once.
+	* The probe key is only used for `outputLen` / `blockLen`, so callers with several valid key sizes
+	* can pass any representative size as long as those values stay fixed.
+	* @param macCons - Keyed MAC constructor or factory.
+	* @param fromMsg - Optional adapter that derives extra constructor args from the one-shot message.
+	* @returns Callable MAC helper with `.create()`.
+	*/
+	function wrapMacConstructor(keyLen, macCons, fromMsg) {
+		const mac = macCons;
+		const getArgs = fromMsg || (() => []);
+		const macC = (msg, key) => mac(key, ...getArgs(msg)).update(msg).digest();
+		const tmp = mac(new Uint8Array(keyLen), ...getArgs(new Uint8Array(0)));
+		macC.outputLen = tmp.outputLen;
+		macC.blockLen = tmp.blockLen;
+		macC.create = (key, ...args) => mac(key, ...args);
+		return macC;
+	}
+	/**
+	* Wraps a cipher: validates args, ensures encrypt() can only be called once.
+	* Used internally by the exported cipher constructors.
+	* Output-buffer support is inferred from the wrapped `encrypt` / `decrypt`
+	* arity (`fn.length === 2`), and tag-bearing constructors are expected to use
+	* `args[1]` for optional AAD.
+	* @__NO_SIDE_EFFECTS__
+	* @param params - Static cipher metadata. See {@link CipherParams}.
+	* @param constructor - Cipher constructor.
+	* @returns Wrapped constructor with validation.
+	*/
+	var wrapCipher = (params, constructor) => {
+		function wrappedCipher(key, ...args) {
+			abytes(key, void 0, "key");
+			if (params.nonceLength !== void 0) {
+				const nonce = args[0];
+				abytes(nonce, params.varSizeNonce ? void 0 : params.nonceLength, "nonce");
+			}
+			const tagl = params.tagLength;
+			if (tagl && args[1] !== void 0) abytes(args[1], void 0, "AAD");
+			const cipher = constructor(key, ...args);
+			const checkOutput = (fnLength, output) => {
+				if (output !== void 0) {
+					if (fnLength !== 2) throw new Error("cipher output not supported");
+					abytes(output, void 0, "output");
+				}
+			};
+			let called = false;
+			return {
+				encrypt(data, output) {
+					if (called) throw new Error("cannot encrypt() twice with same key + nonce");
+					called = true;
+					abytes(data);
+					checkOutput(cipher.encrypt.length, output);
+					return cipher.encrypt(data, output);
+				},
+				decrypt(data, output) {
+					abytes(data);
+					if (tagl && data.length < tagl) throw new Error("\"ciphertext\" expected length bigger than tagLength=" + tagl);
+					checkOutput(cipher.decrypt.length, output);
+					return cipher.decrypt(data, output);
+				}
+			};
+		}
+		Object.assign(wrappedCipher, params);
+		return wrappedCipher;
+	};
+	/**
+	* By default, returns u8a of length.
+	* When out is available, it checks it for validity and uses it.
+	* @param expectedLength - Required output length.
+	* @param out - Optional destination buffer.
+	* @param onlyAligned - Whether `out` must be 4-byte aligned.
+	* @returns Output buffer ready for writing.
+	* @throws On wrong argument types. {@link TypeError}
+	* @throws If the provided output buffer has the wrong size or alignment. {@link Error}
+	* @example
+	* Reuses a caller-provided output buffer when lengths match.
+	*
+	* ```ts
+	* getOutput(16, new Uint8Array(16));
+	* ```
+	*/
+	function getOutput(expectedLength, out, onlyAligned = true) {
+		if (out === void 0) return new Uint8Array(expectedLength);
+		abytes(out, void 0, "output");
+		if (out.length !== expectedLength) throw new Error("\"output\" expected Uint8Array of length " + expectedLength + ", got: " + out.length);
+		if (onlyAligned && !isAligned32(out)) throw new Error("invalid output, must be aligned");
+		return out;
+	}
+	/**
+	* Encodes data and AAD bit lengths into a 16-byte buffer.
+	* @param dataLength - Data length in bits.
+	* @param aadLength - AAD length in bits.
+	* The serialized block is still `aadLength || dataLength`, matching GCM/Poly1305
+	* conventions even though the helper parameter order is `(dataLength, aadLength)`.
+	* @param isLE - Whether to encode lengths as little-endian.
+	* @returns 16-byte length block.
+	* @throws On wrong argument types passed to the endian validator. {@link TypeError}
+	* @throws On wrong argument ranges or values. {@link RangeError}
+	* @example
+	* Builds the length block appended by GCM and Poly1305.
+	*
+	* ```ts
+	* u64Lengths(16, 8, true);
+	* ```
+	*/
+	function u64Lengths(dataLength, aadLength, isLE) {
+		anumber(dataLength);
+		anumber(aadLength);
+		abool(isLE);
+		const num = new Uint8Array(16);
+		const view = createView(num);
+		view.setBigUint64(0, BigInt(aadLength), isLE);
+		view.setBigUint64(8, BigInt(dataLength), isLE);
+		return num;
+	}
+	/**
+	* Checks whether a byte array is aligned to a 4-byte offset.
+	* @param bytes - Byte array to inspect.
+	* @returns `true` when the view is 4-byte aligned.
+	* @example
+	* Checks whether a buffer can be safely viewed as Uint32Array.
+	*
+	* ```ts
+	* isAligned32(new Uint8Array(4));
+	* ```
+	*/
+	function isAligned32(bytes) {
+		return bytes.byteOffset % 4 === 0;
+	}
+	/**
+	* Copies bytes into a new Uint8Array.
+	* @param bytes - Bytes to copy.
+	* @returns Copied byte array.
+	* @throws On wrong argument types. {@link TypeError}
+	* @example
+	* Copies input into an aligned Uint8Array before block processing.
+	*
+	* ```ts
+	* copyBytes(new Uint8Array([1, 2]));
+	* ```
+	*/
+	function copyBytes(bytes) {
+		return Uint8Array.from(abytes(bytes));
+	}
+	//#endregion
+	//#region node_modules/@noble/ciphers/_arx.js
+	/**
+	* Basic utils for ARX (add-rotate-xor) salsa and chacha ciphers.
+	
+	RFC8439 requires multi-step cipher stream, where
+	authKey starts with counter: 0, actual msg with counter: 1.
+	
+	For this, we need a way to re-use nonce / counter:
+	
+	const counter = new Uint8Array(4);
+	chacha(..., counter, ...); // counter is now 1
+	chacha(..., counter, ...); // counter is now 2
+	
+	This is complicated:
+	
+	- 32-bit counters are enough, no need for 64-bit: max ArrayBuffer size in JS is 4GB
+	- Original papers don't allow mutating counters
+	- Counter overflow is undefined [^1]
+	- Idea A: allow providing (nonce | counter) instead of just nonce, re-use it
+	- Caveat: Cannot be re-used through all cases:
+	- * chacha has (counter | nonce)
+	- * xchacha has (nonce16 | counter | nonce16)
+	- Idea B: separate nonce / counter and provide separate API for counter re-use
+	- Caveat: there are different counter sizes depending on an algorithm.
+	- salsa & chacha also differ in structures of key & sigma:
+	salsa20:      s[0] | k(4) | s[1] | nonce(2) | cnt(2) | s[2] | k(4) | s[3]
+	chacha:       s(4) | k(8) | cnt(1) | nonce(3)
+	chacha20orig: s(4) | k(8) | cnt(2) | nonce(2)
+	- Idea C: helper method such as `setSalsaState(key, nonce, sigma, data)`
+	- Caveat: we can't re-use counter array
+	
+	xchacha uses the subkey and remaining 8 byte nonce with ChaCha20 as normal
+	(prefixed by 4 NUL bytes, since RFC8439 specifies a 12-byte nonce).
+	Counter overflow is undefined; see {@link https://mailarchive.ietf.org/arch/msg/cfrg/gsOnTJzcbgG6OqD8Sc0GO5aR_tU/ | the CFRG thread}.
+	Current noble policy is strict non-wrap for the shared 32-bit counter path:
+	exported ARX ciphers reject initial `0xffffffff` and stop before any implicit
+	wrap back to zero.
+	See {@link https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-xchacha#appendix-A.2 | the XChaCha appendix} for the extended-nonce construction.
+	
+	* @module
+	*/
+	var encodeStr = (str) => Uint8Array.from(str.split(""), (c) => c.charCodeAt(0));
+	var sigma16_32 = /* @__PURE__ */ (() => swap32IfBE(u32(encodeStr("expand 16-byte k"))))();
+	var sigma32_32 = /* @__PURE__ */ (() => swap32IfBE(u32(encodeStr("expand 32-byte k"))))();
+	/**
+	* Rotates a 32-bit word left.
+	* @param a - Input word.
+	* @param b - Rotation count in bits.
+	* @returns Rotated 32-bit word.
+	* @example
+	* Moves the top byte of `0x12345678` into the low byte position.
+	* ```ts
+	* rotl(0x12345678, 8);
+	* ```
+	*/
+	function rotl(a, b) {
+		return a << b | a >>> 32 - b;
+	}
+	var BLOCK_LEN = 64;
+	var BLOCK_LEN32 = 16;
+	var MAX_COUNTER = 2 ** 32 - 1;
+	var U32_EMPTY = /* @__PURE__ */ Uint32Array.of();
+	function runCipher(core, sigma, key, nonce, data, output, counter, rounds) {
+		const len = data.length;
+		const block = new Uint8Array(BLOCK_LEN);
+		const b32 = u32(block);
+		const isAligned = isLE && isAligned32(data) && isAligned32(output);
+		const d32 = isAligned ? u32(data) : U32_EMPTY;
+		const o32 = isAligned ? u32(output) : U32_EMPTY;
+		if (!isLE) {
+			for (let pos = 0; pos < len; counter++) {
+				core(sigma, key, nonce, b32, counter, rounds);
+				swap32IfBE(b32);
+				if (counter >= MAX_COUNTER) throw new Error("arx: counter overflow");
+				const take = Math.min(BLOCK_LEN, len - pos);
+				for (let j = 0, posj; j < take; j++) {
+					posj = pos + j;
+					output[posj] = data[posj] ^ block[j];
+				}
+				pos += take;
+			}
+			return;
+		}
+		for (let pos = 0; pos < len; counter++) {
+			core(sigma, key, nonce, b32, counter, rounds);
+			if (counter >= MAX_COUNTER) throw new Error("arx: counter overflow");
+			const take = Math.min(BLOCK_LEN, len - pos);
+			if (isAligned && take === BLOCK_LEN) {
+				const pos32 = pos / 4;
+				if (pos % 4 !== 0) throw new Error("arx: invalid block position");
+				for (let j = 0, posj; j < BLOCK_LEN32; j++) {
+					posj = pos32 + j;
+					o32[posj] = d32[posj] ^ b32[j];
+				}
+				pos += BLOCK_LEN;
+				continue;
+			}
+			for (let j = 0, posj; j < take; j++) {
+				posj = pos + j;
+				output[posj] = data[posj] ^ block[j];
+			}
+			pos += take;
+		}
+	}
+	/**
+	* Creates an ARX stream cipher from a 32-bit core permutation.
+	* Used internally to build the exported Salsa and ChaCha stream ciphers.
+	* @param core - Core function that fills one keystream block.
+	* @param opts - Cipher layout and nonce-extension options. See {@link CipherOpts}.
+	* @returns Stream cipher function over byte arrays.
+	* @throws If the core callback, key size, counter, or output sizing is invalid. {@link Error}
+	*/
+	function createCipher(core, opts) {
+		const { allowShortKeys, extendNonceFn, counterLength, counterRight, rounds } = checkOpts({
+			allowShortKeys: false,
+			counterLength: 8,
+			counterRight: false,
+			rounds: 20
+		}, opts);
+		if (typeof core !== "function") throw new Error("core must be a function");
+		anumber(counterLength);
+		anumber(rounds);
+		abool(counterRight);
+		abool(allowShortKeys);
+		return (key, nonce, data, output, counter = 0) => {
+			abytes(key, void 0, "key");
+			abytes(nonce, void 0, "nonce");
+			abytes(data, void 0, "data");
+			const len = data.length;
+			output = getOutput(len, output, false);
+			anumber(counter);
+			if (counter < 0 || counter >= MAX_COUNTER) throw new Error("arx: counter overflow");
+			const toClean = [];
+			let l = key.length;
+			let k;
+			let sigma;
+			if (l === 32) {
+				toClean.push(k = copyBytes(key));
+				sigma = sigma32_32;
+			} else if (l === 16 && allowShortKeys) {
+				k = new Uint8Array(32);
+				k.set(key);
+				k.set(key, 16);
+				sigma = sigma16_32;
+				toClean.push(k);
+			} else {
+				abytes(key, 32, "arx key");
+				throw new Error("invalid key size");
+			}
+			if (!isLE || !isAligned32(nonce)) toClean.push(nonce = copyBytes(nonce));
+			let k32 = u32(k);
+			if (extendNonceFn) {
+				if (nonce.length !== 24) throw new Error(`arx: extended nonce must be 24 bytes`);
+				const n16 = nonce.subarray(0, 16);
+				if (isLE) extendNonceFn(sigma, k32, u32(n16), k32);
+				else {
+					const sigmaRaw = swap32IfBE(Uint32Array.from(sigma));
+					extendNonceFn(sigmaRaw, k32, u32(n16), k32);
+					clean(sigmaRaw);
+					swap32IfBE(k32);
+				}
+				nonce = nonce.subarray(16);
+			} else if (!isLE) swap32IfBE(k32);
+			const nonceNcLen = 16 - counterLength;
+			if (nonceNcLen !== nonce.length) throw new Error(`arx: nonce must be ${nonceNcLen} or 16 bytes`);
+			if (nonceNcLen !== 12) {
+				const nc = new Uint8Array(12);
+				nc.set(nonce, counterRight ? 0 : 12 - nonce.length);
+				nonce = nc;
+				toClean.push(nonce);
+			}
+			const n32 = swap32IfBE(u32(nonce));
+			try {
+				runCipher(core, sigma, k32, n32, data, output, counter, rounds);
+				return output;
+			} finally {
+				clean(...toClean);
+			}
+		};
+	}
+	//#endregion
+	//#region node_modules/@noble/ciphers/_poly1305.js
+	/**
+	* Poly1305 ({@link https://cr.yp.to/mac/poly1305-20050329.pdf | PDF},
+	* {@link https://en.wikipedia.org/wiki/Poly1305 | wiki})
+	* is a fast and parallel secret-key message-authentication code suitable for
+	* a wide variety of applications. It was standardized in
+	* {@link https://www.rfc-editor.org/rfc/rfc8439 | RFC 8439} and is now used in TLS 1.3.
+	*
+	* Polynomial MACs are not perfect for every situation:
+	* they lack Random Key Robustness: the MAC can be forged, and can't be used in PAKE schemes.
+	* See {@link https://keymaterial.net/2020/09/07/invisible-salamanders-in-aes-gcm-siv/ | the invisible salamanders attack writeup}.
+	* To combat invisible salamanders, `hash(key)` can be included in ciphertext,
+	* however, this would violate ciphertext indistinguishability:
+	* an attacker would know which key was used - so `HKDF(key, i)`
+	* could be used instead.
+	*
+	* Check out the {@link https://cr.yp.to/mac.html | original website}.
+	* Based on public-domain {@link https://github.com/floodyberry/poly1305-donna | poly1305-donna}.
+	* @module
+	*/
+	function u8to16(a, i) {
+		return a[i++] & 255 | (a[i++] & 255) << 8;
+	}
+	/**
+	* Incremental Poly1305 MAC state.
+	* Prefer `poly1305()` for one-shot use.
+	* @param key - 32-byte Poly1305 one-time key.
+	* @example
+	* Feeds one chunk into an incremental Poly1305 state with a fresh one-time key.
+	*
+	* ```ts
+	* import { Poly1305 } from '@noble/ciphers/_poly1305.js';
+	* import { randomBytes } from '@noble/ciphers/utils.js';
+	* const key = randomBytes(32);
+	* const mac = new Poly1305(key);
+	* mac.update(new Uint8Array([1, 2, 3]));
+	* mac.digest();
+	* ```
+	*/
+	var Poly1305 = class {
+		blockLen = 16;
+		outputLen = 16;
+		buffer = new Uint8Array(16);
+		r = new Uint16Array(10);
+		h = new Uint16Array(10);
+		pad = new Uint16Array(8);
+		pos = 0;
+		finished = false;
+		destroyed = false;
+		constructor(key) {
+			key = copyBytes(abytes(key, 32, "key"));
+			const t0 = u8to16(key, 0);
+			const t1 = u8to16(key, 2);
+			const t2 = u8to16(key, 4);
+			const t3 = u8to16(key, 6);
+			const t4 = u8to16(key, 8);
+			const t5 = u8to16(key, 10);
+			const t6 = u8to16(key, 12);
+			const t7 = u8to16(key, 14);
+			this.r[0] = t0 & 8191;
+			this.r[1] = (t0 >>> 13 | t1 << 3) & 8191;
+			this.r[2] = (t1 >>> 10 | t2 << 6) & 7939;
+			this.r[3] = (t2 >>> 7 | t3 << 9) & 8191;
+			this.r[4] = (t3 >>> 4 | t4 << 12) & 255;
+			this.r[5] = t4 >>> 1 & 8190;
+			this.r[6] = (t4 >>> 14 | t5 << 2) & 8191;
+			this.r[7] = (t5 >>> 11 | t6 << 5) & 8065;
+			this.r[8] = (t6 >>> 8 | t7 << 8) & 8191;
+			this.r[9] = t7 >>> 5 & 127;
+			for (let i = 0; i < 8; i++) this.pad[i] = u8to16(key, 16 + 2 * i);
+		}
+		process(data, offset, isLast = false) {
+			const hibit = isLast ? 0 : 2048;
+			const { h, r } = this;
+			const r0 = r[0];
+			const r1 = r[1];
+			const r2 = r[2];
+			const r3 = r[3];
+			const r4 = r[4];
+			const r5 = r[5];
+			const r6 = r[6];
+			const r7 = r[7];
+			const r8 = r[8];
+			const r9 = r[9];
+			const t0 = u8to16(data, offset + 0);
+			const t1 = u8to16(data, offset + 2);
+			const t2 = u8to16(data, offset + 4);
+			const t3 = u8to16(data, offset + 6);
+			const t4 = u8to16(data, offset + 8);
+			const t5 = u8to16(data, offset + 10);
+			const t6 = u8to16(data, offset + 12);
+			const t7 = u8to16(data, offset + 14);
+			let h0 = h[0] + (t0 & 8191);
+			let h1 = h[1] + ((t0 >>> 13 | t1 << 3) & 8191);
+			let h2 = h[2] + ((t1 >>> 10 | t2 << 6) & 8191);
+			let h3 = h[3] + ((t2 >>> 7 | t3 << 9) & 8191);
+			let h4 = h[4] + ((t3 >>> 4 | t4 << 12) & 8191);
+			let h5 = h[5] + (t4 >>> 1 & 8191);
+			let h6 = h[6] + ((t4 >>> 14 | t5 << 2) & 8191);
+			let h7 = h[7] + ((t5 >>> 11 | t6 << 5) & 8191);
+			let h8 = h[8] + ((t6 >>> 8 | t7 << 8) & 8191);
+			let h9 = h[9] + (t7 >>> 5 | hibit);
+			let c = 0;
+			let d0 = c + h0 * r0 + h1 * (5 * r9) + h2 * (5 * r8) + h3 * (5 * r7) + h4 * (5 * r6);
+			c = d0 >>> 13;
+			d0 &= 8191;
+			d0 += h5 * (5 * r5) + h6 * (5 * r4) + h7 * (5 * r3) + h8 * (5 * r2) + h9 * (5 * r1);
+			c += d0 >>> 13;
+			d0 &= 8191;
+			let d1 = c + h0 * r1 + h1 * r0 + h2 * (5 * r9) + h3 * (5 * r8) + h4 * (5 * r7);
+			c = d1 >>> 13;
+			d1 &= 8191;
+			d1 += h5 * (5 * r6) + h6 * (5 * r5) + h7 * (5 * r4) + h8 * (5 * r3) + h9 * (5 * r2);
+			c += d1 >>> 13;
+			d1 &= 8191;
+			let d2 = c + h0 * r2 + h1 * r1 + h2 * r0 + h3 * (5 * r9) + h4 * (5 * r8);
+			c = d2 >>> 13;
+			d2 &= 8191;
+			d2 += h5 * (5 * r7) + h6 * (5 * r6) + h7 * (5 * r5) + h8 * (5 * r4) + h9 * (5 * r3);
+			c += d2 >>> 13;
+			d2 &= 8191;
+			let d3 = c + h0 * r3 + h1 * r2 + h2 * r1 + h3 * r0 + h4 * (5 * r9);
+			c = d3 >>> 13;
+			d3 &= 8191;
+			d3 += h5 * (5 * r8) + h6 * (5 * r7) + h7 * (5 * r6) + h8 * (5 * r5) + h9 * (5 * r4);
+			c += d3 >>> 13;
+			d3 &= 8191;
+			let d4 = c + h0 * r4 + h1 * r3 + h2 * r2 + h3 * r1 + h4 * r0;
+			c = d4 >>> 13;
+			d4 &= 8191;
+			d4 += h5 * (5 * r9) + h6 * (5 * r8) + h7 * (5 * r7) + h8 * (5 * r6) + h9 * (5 * r5);
+			c += d4 >>> 13;
+			d4 &= 8191;
+			let d5 = c + h0 * r5 + h1 * r4 + h2 * r3 + h3 * r2 + h4 * r1;
+			c = d5 >>> 13;
+			d5 &= 8191;
+			d5 += h5 * r0 + h6 * (5 * r9) + h7 * (5 * r8) + h8 * (5 * r7) + h9 * (5 * r6);
+			c += d5 >>> 13;
+			d5 &= 8191;
+			let d6 = c + h0 * r6 + h1 * r5 + h2 * r4 + h3 * r3 + h4 * r2;
+			c = d6 >>> 13;
+			d6 &= 8191;
+			d6 += h5 * r1 + h6 * r0 + h7 * (5 * r9) + h8 * (5 * r8) + h9 * (5 * r7);
+			c += d6 >>> 13;
+			d6 &= 8191;
+			let d7 = c + h0 * r7 + h1 * r6 + h2 * r5 + h3 * r4 + h4 * r3;
+			c = d7 >>> 13;
+			d7 &= 8191;
+			d7 += h5 * r2 + h6 * r1 + h7 * r0 + h8 * (5 * r9) + h9 * (5 * r8);
+			c += d7 >>> 13;
+			d7 &= 8191;
+			let d8 = c + h0 * r8 + h1 * r7 + h2 * r6 + h3 * r5 + h4 * r4;
+			c = d8 >>> 13;
+			d8 &= 8191;
+			d8 += h5 * r3 + h6 * r2 + h7 * r1 + h8 * r0 + h9 * (5 * r9);
+			c += d8 >>> 13;
+			d8 &= 8191;
+			let d9 = c + h0 * r9 + h1 * r8 + h2 * r7 + h3 * r6 + h4 * r5;
+			c = d9 >>> 13;
+			d9 &= 8191;
+			d9 += h5 * r4 + h6 * r3 + h7 * r2 + h8 * r1 + h9 * r0;
+			c += d9 >>> 13;
+			d9 &= 8191;
+			c = (c << 2) + c | 0;
+			c = c + d0 | 0;
+			d0 = c & 8191;
+			c = c >>> 13;
+			d1 += c;
+			h[0] = d0;
+			h[1] = d1;
+			h[2] = d2;
+			h[3] = d3;
+			h[4] = d4;
+			h[5] = d5;
+			h[6] = d6;
+			h[7] = d7;
+			h[8] = d8;
+			h[9] = d9;
+		}
+		finalize() {
+			const { h, pad } = this;
+			const g = new Uint16Array(10);
+			let c = h[1] >>> 13;
+			h[1] &= 8191;
+			for (let i = 2; i < 10; i++) {
+				h[i] += c;
+				c = h[i] >>> 13;
+				h[i] &= 8191;
+			}
+			h[0] += c * 5;
+			c = h[0] >>> 13;
+			h[0] &= 8191;
+			h[1] += c;
+			c = h[1] >>> 13;
+			h[1] &= 8191;
+			h[2] += c;
+			g[0] = h[0] + 5;
+			c = g[0] >>> 13;
+			g[0] &= 8191;
+			for (let i = 1; i < 10; i++) {
+				g[i] = h[i] + c;
+				c = g[i] >>> 13;
+				g[i] &= 8191;
+			}
+			g[9] -= 8192;
+			let mask = (c ^ 1) - 1;
+			for (let i = 0; i < 10; i++) g[i] &= mask;
+			mask = ~mask;
+			for (let i = 0; i < 10; i++) h[i] = h[i] & mask | g[i];
+			h[0] = (h[0] | h[1] << 13) & 65535;
+			h[1] = (h[1] >>> 3 | h[2] << 10) & 65535;
+			h[2] = (h[2] >>> 6 | h[3] << 7) & 65535;
+			h[3] = (h[3] >>> 9 | h[4] << 4) & 65535;
+			h[4] = (h[4] >>> 12 | h[5] << 1 | h[6] << 14) & 65535;
+			h[5] = (h[6] >>> 2 | h[7] << 11) & 65535;
+			h[6] = (h[7] >>> 5 | h[8] << 8) & 65535;
+			h[7] = (h[8] >>> 8 | h[9] << 5) & 65535;
+			let f = h[0] + pad[0];
+			h[0] = f & 65535;
+			for (let i = 1; i < 8; i++) {
+				f = (h[i] + pad[i] | 0) + (f >>> 16) | 0;
+				h[i] = f & 65535;
+			}
+			clean(g);
+		}
+		update(data) {
+			aexists(this);
+			abytes(data);
+			data = copyBytes(data);
+			const { buffer, blockLen } = this;
+			const len = data.length;
+			for (let pos = 0; pos < len;) {
+				const take = Math.min(blockLen - this.pos, len - pos);
+				if (take === blockLen) {
+					for (; blockLen <= len - pos; pos += blockLen) this.process(data, pos);
+					continue;
+				}
+				buffer.set(data.subarray(pos, pos + take), this.pos);
+				this.pos += take;
+				pos += take;
+				if (this.pos === blockLen) {
+					this.process(buffer, 0, false);
+					this.pos = 0;
+				}
+			}
+			return this;
+		}
+		destroy() {
+			this.destroyed = true;
+			clean(this.h, this.r, this.buffer, this.pad);
+		}
+		digestInto(out) {
+			aexists(this);
+			aoutput(out, this);
+			this.finished = true;
+			const { buffer, h } = this;
+			let { pos } = this;
+			if (pos) {
+				buffer[pos++] = 1;
+				for (; pos < 16; pos++) buffer[pos] = 0;
+				this.process(buffer, 0, true);
+			}
+			this.finalize();
+			let opos = 0;
+			for (let i = 0; i < 8; i++) {
+				out[opos++] = h[i] >>> 0;
+				out[opos++] = h[i] >>> 8;
+			}
+		}
+		digest() {
+			const { buffer, outputLen } = this;
+			this.digestInto(buffer);
+			const res = buffer.slice(0, outputLen);
+			this.destroy();
+			return res;
+		}
+	};
+	/**
+	* Poly1305 MAC from RFC 8439.
+	* @param msg - Message bytes to authenticate.
+	* @param key - 32-byte Poly1305 one-time key.
+	* @returns 16-byte authentication tag.
+	* @example
+	* Authenticates one message with a one-shot Poly1305 call and a fresh key.
+	*
+	* ```ts
+	* import { poly1305 } from '@noble/ciphers/_poly1305.js';
+	* import { randomBytes } from '@noble/ciphers/utils.js';
+	* const key = randomBytes(32);
+	* poly1305(new Uint8Array(), key);
+	* ```
+	*/
+	var poly1305 = /* @__PURE__ */ wrapMacConstructor(32, (key) => new Poly1305(key));
+	//#endregion
+	//#region node_modules/@noble/ciphers/chacha.js
+	/**
+	* ChaCha stream cipher, released
+	* in 2008. Developed after Salsa20, ChaCha aims to increase diffusion per round.
+	* It was standardized in
+	* {@link https://www.rfc-editor.org/rfc/rfc8439 | RFC 8439} and
+	* is now used in TLS 1.3.
+	*
+	* {@link https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-xchacha | XChaCha20}
+	* extended-nonce variant is also provided. Similar to XSalsa, it's safe to use with
+	* randomly-generated nonces.
+	*
+	* Check out
+	* {@link http://cr.yp.to/chacha/chacha-20080128.pdf | PDF},
+	* {@link https://en.wikipedia.org/wiki/Salsa20 | wiki}, and
+	* {@link https://cr.yp.to/chacha.html | website}.
+	*
+	* @module
+	*/
+	/** RFC 8439 §2.3 block core for `state = constants | key | counter | nonce`. */
+	function chachaCore(s, k, n, out, cnt, rounds = 20) {
+		let y00 = s[0], y01 = s[1], y02 = s[2], y03 = s[3], y04 = k[0], y05 = k[1], y06 = k[2], y07 = k[3], y08 = k[4], y09 = k[5], y10 = k[6], y11 = k[7], y12 = cnt, y13 = n[0], y14 = n[1], y15 = n[2];
+		let x00 = y00, x01 = y01, x02 = y02, x03 = y03, x04 = y04, x05 = y05, x06 = y06, x07 = y07, x08 = y08, x09 = y09, x10 = y10, x11 = y11, x12 = y12, x13 = y13, x14 = y14, x15 = y15;
+		for (let r = 0; r < rounds; r += 2) {
+			x00 = x00 + x04 | 0;
+			x12 = rotl(x12 ^ x00, 16);
+			x08 = x08 + x12 | 0;
+			x04 = rotl(x04 ^ x08, 12);
+			x00 = x00 + x04 | 0;
+			x12 = rotl(x12 ^ x00, 8);
+			x08 = x08 + x12 | 0;
+			x04 = rotl(x04 ^ x08, 7);
+			x01 = x01 + x05 | 0;
+			x13 = rotl(x13 ^ x01, 16);
+			x09 = x09 + x13 | 0;
+			x05 = rotl(x05 ^ x09, 12);
+			x01 = x01 + x05 | 0;
+			x13 = rotl(x13 ^ x01, 8);
+			x09 = x09 + x13 | 0;
+			x05 = rotl(x05 ^ x09, 7);
+			x02 = x02 + x06 | 0;
+			x14 = rotl(x14 ^ x02, 16);
+			x10 = x10 + x14 | 0;
+			x06 = rotl(x06 ^ x10, 12);
+			x02 = x02 + x06 | 0;
+			x14 = rotl(x14 ^ x02, 8);
+			x10 = x10 + x14 | 0;
+			x06 = rotl(x06 ^ x10, 7);
+			x03 = x03 + x07 | 0;
+			x15 = rotl(x15 ^ x03, 16);
+			x11 = x11 + x15 | 0;
+			x07 = rotl(x07 ^ x11, 12);
+			x03 = x03 + x07 | 0;
+			x15 = rotl(x15 ^ x03, 8);
+			x11 = x11 + x15 | 0;
+			x07 = rotl(x07 ^ x11, 7);
+			x00 = x00 + x05 | 0;
+			x15 = rotl(x15 ^ x00, 16);
+			x10 = x10 + x15 | 0;
+			x05 = rotl(x05 ^ x10, 12);
+			x00 = x00 + x05 | 0;
+			x15 = rotl(x15 ^ x00, 8);
+			x10 = x10 + x15 | 0;
+			x05 = rotl(x05 ^ x10, 7);
+			x01 = x01 + x06 | 0;
+			x12 = rotl(x12 ^ x01, 16);
+			x11 = x11 + x12 | 0;
+			x06 = rotl(x06 ^ x11, 12);
+			x01 = x01 + x06 | 0;
+			x12 = rotl(x12 ^ x01, 8);
+			x11 = x11 + x12 | 0;
+			x06 = rotl(x06 ^ x11, 7);
+			x02 = x02 + x07 | 0;
+			x13 = rotl(x13 ^ x02, 16);
+			x08 = x08 + x13 | 0;
+			x07 = rotl(x07 ^ x08, 12);
+			x02 = x02 + x07 | 0;
+			x13 = rotl(x13 ^ x02, 8);
+			x08 = x08 + x13 | 0;
+			x07 = rotl(x07 ^ x08, 7);
+			x03 = x03 + x04 | 0;
+			x14 = rotl(x14 ^ x03, 16);
+			x09 = x09 + x14 | 0;
+			x04 = rotl(x04 ^ x09, 12);
+			x03 = x03 + x04 | 0;
+			x14 = rotl(x14 ^ x03, 8);
+			x09 = x09 + x14 | 0;
+			x04 = rotl(x04 ^ x09, 7);
+		}
+		let oi = 0;
+		out[oi++] = y00 + x00 | 0;
+		out[oi++] = y01 + x01 | 0;
+		out[oi++] = y02 + x02 | 0;
+		out[oi++] = y03 + x03 | 0;
+		out[oi++] = y04 + x04 | 0;
+		out[oi++] = y05 + x05 | 0;
+		out[oi++] = y06 + x06 | 0;
+		out[oi++] = y07 + x07 | 0;
+		out[oi++] = y08 + x08 | 0;
+		out[oi++] = y09 + x09 | 0;
+		out[oi++] = y10 + x10 | 0;
+		out[oi++] = y11 + x11 | 0;
+		out[oi++] = y12 + x12 | 0;
+		out[oi++] = y13 + x13 | 0;
+		out[oi++] = y14 + x14 | 0;
+		out[oi++] = y15 + x15 | 0;
+	}
+	/**
+	* ChaCha stream cipher. Conforms to RFC 8439 (IETF, TLS). 12-byte nonce, 4-byte counter.
+	* With smaller nonce, it's not safe to make it random (CSPRNG), due to collision chance.
+	* @param key - 32-byte key.
+	* @param nonce - 12-byte nonce.
+	* @param data - Input bytes to xor with the keystream.
+	* @param output - Optional destination buffer.
+	* @param counter - Initial block counter.
+	* @returns Encrypted or decrypted bytes.
+	* @example
+	* Encrypts bytes with the RFC 8439 ChaCha20 stream cipher and a fresh key/nonce.
+	*
+	* ```ts
+	* import { chacha20 } from '@noble/ciphers/chacha.js';
+	* import { randomBytes } from '@noble/ciphers/utils.js';
+	* const key = randomBytes(32);
+	* const nonce = randomBytes(12);
+	* chacha20(key, nonce, new Uint8Array(4));
+	* ```
+	*/
+	var chacha20 = /* @__PURE__ */ createCipher(chachaCore, {
+		counterRight: false,
+		counterLength: 4,
+		allowShortKeys: false
+	});
+	var ZEROS16 = /* @__PURE__ */ new Uint8Array(16);
+	var updatePadded = (h, msg) => {
+		h.update(msg);
+		const leftover = msg.length % 16;
+		if (leftover) h.update(ZEROS16.subarray(leftover));
+	};
+	var ZEROS32 = /* @__PURE__ */ new Uint8Array(32);
+	function computeTag(fn, key, nonce, ciphertext, AAD) {
+		if (AAD !== void 0) abytes(AAD, void 0, "AAD");
+		const authKey = fn(key, nonce, ZEROS32);
+		const lengths = u64Lengths(ciphertext.length, AAD ? AAD.length : 0, true);
+		const h = poly1305.create(authKey);
+		if (AAD) updatePadded(h, AAD);
+		updatePadded(h, ciphertext);
+		h.update(lengths);
+		const res = h.digest();
+		clean(authKey, lengths);
+		return res;
+	}
+	/**
+	* AEAD algorithm from RFC 8439.
+	* Salsa20 and chacha (RFC 8439) use poly1305 differently.
+	* We could have composed them, but it's hard because of authKey:
+	* In salsa20, authKey changes position in salsa stream.
+	* In chacha, authKey can't be computed inside computeTag, it modifies the counter.
+	*/
+	var _poly1305_aead = (xorStream) => (key, nonce, AAD) => {
+		const tagLength = 16;
+		return {
+			encrypt(plaintext, output) {
+				const plength = plaintext.length;
+				output = getOutput(plength + tagLength, output, false);
+				output.set(plaintext);
+				const oPlain = output.subarray(0, -16);
+				xorStream(key, nonce, oPlain, oPlain, 1);
+				const tag = computeTag(xorStream, key, nonce, oPlain, AAD);
+				output.set(tag, plength);
+				clean(tag);
+				return output;
+			},
+			decrypt(ciphertext, output) {
+				output = getOutput(ciphertext.length - tagLength, output, false);
+				const data = ciphertext.subarray(0, -16);
+				const passedTag = ciphertext.subarray(-16);
+				const tag = computeTag(xorStream, key, nonce, data, AAD);
+				if (!equalBytes(passedTag, tag)) {
+					clean(tag);
+					throw new Error("invalid tag");
+				}
+				output.set(ciphertext.subarray(0, -16));
+				xorStream(key, nonce, output, output, 1);
+				clean(tag);
+				return output;
+			}
+		};
+	};
+	/**
+	* ChaCha20-Poly1305 from RFC 8439.
+	*
+	* Unsafe to use random nonces under the same key, due to collision chance.
+	* Prefer XChaCha instead.
+	* @param key - 32-byte key.
+	* @param nonce - 12-byte nonce.
+	* @param AAD - Additional authenticated data.
+	* @returns AEAD cipher instance.
+	* @example
+	* Encrypts and authenticates plaintext with a fresh key and nonce.
+	*
+	* ```ts
+	* import { chacha20poly1305 } from '@noble/ciphers/chacha.js';
+	* import { randomBytes } from '@noble/ciphers/utils.js';
+	* const key = randomBytes(32);
+	* const nonce = randomBytes(12);
+	* const cipher = chacha20poly1305(key, nonce);
+	* cipher.encrypt(new Uint8Array([1, 2, 3]));
+	* ```
+	*/
+	var chacha20poly1305 = /* @__PURE__ */ wrapCipher({
+		blockSize: 64,
+		nonceLength: 12,
+		tagLength: 16
+	}, /* @__PURE__ */ _poly1305_aead(chacha20));
+	//#endregion
+	//#region node_modules/@noble/hashes/hkdf.js
+	/**
+	* HKDF (RFC 5869): extract + expand in one step.
+	* See {@link https://soatok.blog/2021/11/17/understanding-hkdf/}.
+	* @module
+	*/
+	/**
+	* HKDF-extract from spec. Less important part. `HKDF-Extract(IKM, salt) -> PRK`
+	* Arguments position differs from spec (IKM is first one, since it is not optional)
+	* Local validation only checks `hash`; `ikm` / `salt` byte validation is delegated to `hmac()`.
+	* @param hash - hash function that would be used (e.g. sha256)
+	* @param ikm - input keying material, the initial key
+	* @param salt - optional salt value (a non-secret random value)
+	* @returns Pseudorandom key derived from input keying material.
+	* @example
+	* Run the HKDF extract step.
+	* ```ts
+	* import { extract } from '@noble/hashes/hkdf.js';
+	* import { sha256 } from '@noble/hashes/sha2.js';
+	* extract(sha256, new Uint8Array([1, 2, 3]), new Uint8Array([4, 5, 6]));
+	* ```
+	*/
+	function extract(hash, ikm, salt) {
+		ahash(hash);
+		if (salt === void 0) salt = new Uint8Array(hash.outputLen);
+		return hmac(hash, salt, ikm);
+	}
+	var HKDF_COUNTER = /* @__PURE__ */ Uint8Array.of(0);
+	var EMPTY_BUFFER = /* @__PURE__ */ Uint8Array.of();
+	/**
+	* HKDF-expand from the spec. The most important part. `HKDF-Expand(PRK, info, L) -> OKM`
+	* @param hash - hash function that would be used (e.g. sha256)
+	* @param prk - a pseudorandom key of at least HashLen octets
+	*   (usually, the output from the extract step)
+	* @param info - optional context and application specific information (can be a zero-length string)
+	* @param length - length of output keying material in bytes.
+	*   RFC 5869 §2.3 allows `0..255*HashLen`, so `0` returns an empty OKM.
+	* @returns Output keying material with the requested length.
+	* @throws If the requested output length exceeds the HKDF limit
+	*   for the selected hash. {@link Error}
+	* @example
+	* Run the HKDF expand step.
+	* ```ts
+	* import { expand } from '@noble/hashes/hkdf.js';
+	* import { sha256 } from '@noble/hashes/sha2.js';
+	* expand(sha256, new Uint8Array(32), new Uint8Array([1, 2, 3]), 16);
+	* ```
+	*/
+	function expand(hash, prk, info, length = 32) {
+		ahash(hash);
+		anumber$2(length, "length");
+		abytes$2(prk, void 0, "prk");
+		const olen = hash.outputLen;
+		if (prk.length < olen) throw new Error("\"prk\" must be at least HashLen octets");
+		if (length > 255 * olen) throw new Error("Length must be <= 255*HashLen");
+		const blocks = Math.ceil(length / olen);
+		if (info === void 0) info = EMPTY_BUFFER;
+		else abytes$2(info, void 0, "info");
+		const okm = new Uint8Array(blocks * olen);
+		const HMAC = hmac.create(hash, prk);
+		const HMACTmp = HMAC._cloneInto();
+		const T = new Uint8Array(HMAC.outputLen);
+		for (let counter = 0; counter < blocks; counter++) {
+			HKDF_COUNTER[0] = counter + 1;
+			HMACTmp.update(counter === 0 ? EMPTY_BUFFER : T).update(info).update(HKDF_COUNTER).digestInto(T);
+			okm.set(T, olen * counter);
+			HMAC._cloneInto(HMACTmp);
+		}
+		HMAC.destroy();
+		HMACTmp.destroy();
+		clean$1(T, HKDF_COUNTER);
+		return okm.slice(0, length);
+	}
+	//#endregion
+	//#region node_modules/@chainsafe/libp2p-noise/dist/src/crypto/index.browser.js
+	var defaultCrypto = {
+		hashSHA256(data) {
+			return sha256$1(data.subarray());
+		},
+		getHKDF(ck, ikm) {
+			const okm = expand(sha256$1, extract(sha256$1, ikm, ck), void 0, 96);
+			return [
+				okm.subarray(0, 32),
+				okm.subarray(32, 64),
+				okm.subarray(64, 96)
+			];
+		},
+		generateX25519KeyPair() {
+			const secretKey = x25519.utils.randomSecretKey();
+			return {
+				publicKey: x25519.getPublicKey(secretKey),
+				privateKey: secretKey
+			};
+		},
+		generateX25519KeyPairFromSeed(seed) {
+			return {
+				publicKey: x25519.getPublicKey(seed),
+				privateKey: seed
+			};
+		},
+		generateX25519SharedKey(privateKey, publicKey) {
+			return x25519.getSharedSecret(privateKey.subarray(), publicKey.subarray());
+		},
+		chaCha20Poly1305Encrypt(plaintext, nonce, ad, k) {
+			return chacha20poly1305(k, nonce, ad).encrypt(plaintext.subarray());
+		},
+		chaCha20Poly1305Decrypt(ciphertext, nonce, ad, k, dst) {
+			return chacha20poly1305(k, nonce, ad).decrypt(ciphertext.subarray(), dst);
+		}
+	};
+	//#endregion
+	//#region node_modules/@chainsafe/libp2p-noise/dist/src/crypto.js
+	function wrapCrypto(crypto) {
+		return {
+			generateKeypair: crypto.generateX25519KeyPair,
+			dh: (keypair, publicKey) => crypto.generateX25519SharedKey(keypair.privateKey, publicKey).subarray(0, 32),
+			encrypt: crypto.chaCha20Poly1305Encrypt,
+			decrypt: crypto.chaCha20Poly1305Decrypt,
+			hash: crypto.hashSHA256,
+			hkdf: crypto.getHKDF
+		};
+	}
+	//#endregion
+	//#region node_modules/@chainsafe/libp2p-noise/dist/src/encoder.js
+	var uint16BEEncode = (value) => {
+		const target = allocUnsafe$1(2);
+		target[0] = value >> 8;
+		target[1] = value;
+		return target;
+	};
+	uint16BEEncode.bytes = 2;
+	var uint16BEDecode = (data) => {
+		if (data.length < 2) throw RangeError("Could not decode int16BE");
+		if (data instanceof Uint8Array) {
+			let value = 0;
+			value += data[0] << 8;
+			value += data[1];
+			return value;
+		}
+		return data.getUint16(0);
+	};
+	uint16BEDecode.bytes = 2;
+	//#endregion
+	//#region node_modules/@chainsafe/libp2p-noise/dist/src/metrics.js
+	function registerMetrics(metrics) {
+		return {
+			xxHandshakeSuccesses: metrics.registerCounter("libp2p_noise_xxhandshake_successes_total", { help: "Total count of noise xxHandshakes successes_" }),
+			xxHandshakeErrors: metrics.registerCounter("libp2p_noise_xxhandshake_error_total", { help: "Total count of noise xxHandshakes errors" }),
+			encryptedPackets: metrics.registerCounter("libp2p_noise_encrypted_packets_total", { help: "Total count of noise encrypted packets successfully" }),
+			decryptedPackets: metrics.registerCounter("libp2p_noise_decrypted_packets_total", { help: "Total count of noise decrypted packets" }),
+			decryptErrors: metrics.registerCounter("libp2p_noise_decrypt_errors_total", { help: "Total count of noise decrypt errors" })
+		};
+	}
+	//#endregion
+	//#region node_modules/@chainsafe/libp2p-noise/dist/src/logger.js
+	function logLocalStaticKeys(s, keyLogger) {
+		if (!keyLogger.enabled || !DUMP_SESSION_KEYS) return;
+		if (s) {
+			keyLogger(`LOCAL_STATIC_PUBLIC_KEY ${toString$2(s.publicKey, "hex")}`);
+			keyLogger(`LOCAL_STATIC_PRIVATE_KEY ${toString$2(s.privateKey, "hex")}`);
+		} else keyLogger("Missing local static keys.");
+	}
+	function logLocalEphemeralKeys(e, keyLogger) {
+		if (!keyLogger.enabled || !DUMP_SESSION_KEYS) return;
+		if (e) {
+			keyLogger(`LOCAL_PUBLIC_EPHEMERAL_KEY ${toString$2(e.publicKey, "hex")}`);
+			keyLogger(`LOCAL_PRIVATE_EPHEMERAL_KEY ${toString$2(e.privateKey, "hex")}`);
+		} else keyLogger("Missing local ephemeral keys.");
+	}
+	function logRemoteStaticKey(rs, keyLogger) {
+		if (!keyLogger.enabled || !DUMP_SESSION_KEYS) return;
+		if (rs) keyLogger(`REMOTE_STATIC_PUBLIC_KEY ${toString$2(rs.subarray(), "hex")}`);
+		else keyLogger("Missing remote static public key.");
+	}
+	function logRemoteEphemeralKey(re, keyLogger) {
+		if (!keyLogger.enabled || !DUMP_SESSION_KEYS) return;
+		if (re) keyLogger(`REMOTE_EPHEMERAL_PUBLIC_KEY ${toString$2(re.subarray(), "hex")}`);
+		else keyLogger("Missing remote ephemeral keys.");
+	}
+	function logCipherState(cs1, cs2, keyLogger) {
+		if (!keyLogger.enabled || !DUMP_SESSION_KEYS) return;
+		keyLogger(`CIPHER_STATE_1 ${cs1.n.getUint64()} ${cs1.k && toString$2(cs1.k, "hex")}`);
+		keyLogger(`CIPHER_STATE_2 ${cs2.n.getUint64()} ${cs2.k && toString$2(cs2.k, "hex")}`);
+	}
+	//#endregion
+	//#region node_modules/@chainsafe/libp2p-noise/dist/src/errors.js
+	var InvalidCryptoExchangeError = class InvalidCryptoExchangeError extends Error {
+		code;
+		constructor(message = "Invalid crypto exchange") {
+			super(message);
+			this.code = InvalidCryptoExchangeError.code;
+		}
+		static code = "ERR_INVALID_CRYPTO_EXCHANGE";
+	};
+	var ERR_MAX_NONCE = "Cipherstate has reached maximum n, a new handshake must be performed";
+	/**
+	* The nonce is an uint that's increased over time.
+	* Maintaining different representations help improve performance.
+	*/
+	var Nonce = class {
+		n;
+		bytes;
+		view;
+		constructor(n = 0) {
+			this.n = n;
+			this.bytes = alloc$2(12);
+			this.view = new DataView(this.bytes.buffer, this.bytes.byteOffset, this.bytes.byteLength);
+			this.view.setUint32(4, n, true);
+		}
+		increment() {
+			this.n++;
+			this.view.setUint32(4, this.n, true);
+		}
+		getBytes() {
+			return this.bytes;
+		}
+		getUint64() {
+			return this.n;
+		}
+		assertValue() {
+			if (this.n > 4294967295) throw new Error(ERR_MAX_NONCE);
+		}
+	};
+	//#endregion
+	//#region node_modules/@chainsafe/libp2p-noise/dist/src/protocol.js
+	var ZEROLEN = alloc$2(0);
+	var CipherState = class {
+		k;
+		n;
+		crypto;
+		constructor(crypto, k = void 0, n = 0) {
+			this.crypto = crypto;
+			this.k = k;
+			this.n = new Nonce(n);
+		}
+		hasKey() {
+			return Boolean(this.k);
+		}
+		encryptWithAd(ad, plaintext) {
+			if (!this.hasKey()) return plaintext;
+			this.n.assertValue();
+			const e = this.crypto.encrypt(plaintext, this.n.getBytes(), ad, this.k);
+			this.n.increment();
+			return e;
+		}
+		decryptWithAd(ad, ciphertext, dst) {
+			if (!this.hasKey()) return ciphertext;
+			this.n.assertValue();
+			const plaintext = this.crypto.decrypt(ciphertext, this.n.getBytes(), ad, this.k, dst);
+			this.n.increment();
+			return plaintext;
+		}
+	};
+	var SymmetricState = class {
+		cs;
+		ck;
+		h;
+		crypto;
+		constructor(crypto, protocolName) {
+			this.crypto = crypto;
+			const protocolNameBytes = fromString$2(protocolName, "utf-8");
+			this.h = hashProtocolName(crypto, protocolNameBytes);
+			this.ck = this.h;
+			this.cs = new CipherState(crypto);
+		}
+		mixKey(ikm) {
+			const [ck, tempK] = this.crypto.hkdf(this.ck, ikm);
+			this.ck = ck;
+			this.cs = new CipherState(this.crypto, tempK);
+		}
+		mixHash(data) {
+			this.h = this.crypto.hash(new Uint8ArrayList(this.h, data));
+		}
+		encryptAndHash(plaintext) {
+			const ciphertext = this.cs.encryptWithAd(this.h, plaintext);
+			this.mixHash(ciphertext);
+			return ciphertext;
+		}
+		decryptAndHash(ciphertext) {
+			const plaintext = this.cs.decryptWithAd(this.h, ciphertext);
+			this.mixHash(ciphertext);
+			return plaintext;
+		}
+		split() {
+			const [tempK1, tempK2] = this.crypto.hkdf(this.ck, ZEROLEN);
+			return [new CipherState(this.crypto, tempK1), new CipherState(this.crypto, tempK2)];
+		}
+	};
+	var AbstractHandshakeState = class {
+		ss;
+		s;
+		e;
+		rs;
+		re;
+		initiator;
+		crypto;
+		constructor(init) {
+			const { crypto, protocolName, prologue, initiator, s, e, rs, re } = init;
+			this.crypto = crypto;
+			this.ss = new SymmetricState(crypto, protocolName);
+			this.ss.mixHash(prologue);
+			this.initiator = initiator;
+			this.s = s;
+			this.e = e;
+			this.rs = rs;
+			this.re = re;
+		}
+		writeE() {
+			if (this.e) throw new Error("ephemeral keypair is already set");
+			const e = this.crypto.generateKeypair();
+			this.ss.mixHash(e.publicKey);
+			this.e = e;
+			return e.publicKey;
+		}
+		writeS() {
+			if (!this.s) throw new Error("static keypair is not set");
+			return this.ss.encryptAndHash(this.s.publicKey);
+		}
+		writeEE() {
+			if (!this.e) throw new Error("ephemeral keypair is not set");
+			if (!this.re) throw new Error("remote ephemeral public key is not set");
+			this.ss.mixKey(this.crypto.dh(this.e, this.re));
+		}
+		writeES() {
+			if (this.initiator) {
+				if (!this.e) throw new Error("ephemeral keypair is not set");
+				if (!this.rs) throw new Error("remote static public key is not set");
+				this.ss.mixKey(this.crypto.dh(this.e, this.rs));
+			} else {
+				if (!this.s) throw new Error("static keypair is not set");
+				if (!this.re) throw new Error("remote ephemeral public key is not set");
+				this.ss.mixKey(this.crypto.dh(this.s, this.re));
+			}
+		}
+		writeSE() {
+			if (this.initiator) {
+				if (!this.s) throw new Error("static keypair is not set");
+				if (!this.re) throw new Error("remote ephemeral public key is not set");
+				this.ss.mixKey(this.crypto.dh(this.s, this.re));
+			} else {
+				if (!this.e) throw new Error("ephemeral keypair is not set");
+				if (!this.rs) throw new Error("remote static public key is not set");
+				this.ss.mixKey(this.crypto.dh(this.e, this.rs));
+			}
+		}
+		readE(message, offset = 0) {
+			if (this.re) throw new Error("remote ephemeral public key is already set");
+			if (message.byteLength < offset + 32) throw new Error("message is not long enough");
+			this.re = message.sublist(offset, offset + 32);
+			this.ss.mixHash(this.re);
+		}
+		readS(message, offset = 0) {
+			if (this.rs) throw new Error("remote static public key is already set");
+			const cipherLength = 32 + (this.ss.cs.hasKey() ? 16 : 0);
+			if (message.byteLength < offset + cipherLength) throw new Error("message is not long enough");
+			const temp = message.sublist(offset, offset + cipherLength);
+			this.rs = this.ss.decryptAndHash(temp);
+			return cipherLength;
+		}
+		readEE() {
+			this.writeEE();
+		}
+		readES() {
+			this.writeES();
+		}
+		readSE() {
+			this.writeSE();
+		}
+	};
+	/**
+	* A IHandshakeState that's optimized for the XX pattern
+	*/
+	var XXHandshakeState = class extends AbstractHandshakeState {
+		writeMessageA(payload) {
+			return new Uint8ArrayList(this.writeE(), this.ss.encryptAndHash(payload));
+		}
+		writeMessageB(payload) {
+			const e = this.writeE();
+			this.writeEE();
+			const encS = this.writeS();
+			this.writeES();
+			return new Uint8ArrayList(e, encS, this.ss.encryptAndHash(payload));
+		}
+		writeMessageC(payload) {
+			const encS = this.writeS();
+			this.writeSE();
+			return new Uint8ArrayList(encS, this.ss.encryptAndHash(payload));
+		}
+		readMessageA(message) {
+			try {
+				this.readE(message);
+				return this.ss.decryptAndHash(message.sublist(32));
+			} catch (e) {
+				throw new InvalidCryptoExchangeError(`handshake stage 0 validation fail: ${e.message}`);
+			}
+		}
+		readMessageB(message) {
+			try {
+				this.readE(message);
+				this.readEE();
+				const consumed = this.readS(message, 32);
+				this.readES();
+				return this.ss.decryptAndHash(message.sublist(32 + consumed));
+			} catch (e) {
+				throw new InvalidCryptoExchangeError(`handshake stage 1 validation fail: ${e.message}`);
+			}
+		}
+		readMessageC(message) {
+			try {
+				const consumed = this.readS(message);
+				this.readSE();
+				return this.ss.decryptAndHash(message.sublist(consumed));
+			} catch (e) {
+				throw new InvalidCryptoExchangeError(`handshake stage 2 validation fail: ${e.message}`);
+			}
+		}
+	};
+	function hashProtocolName(crypto, protocolName) {
+		if (protocolName.length <= 32) {
+			const h = alloc$2(32);
+			h.set(protocolName);
+			return h;
+		} else return crypto.hash(protocolName);
+	}
+	//#endregion
+	//#region node_modules/@chainsafe/libp2p-noise/node_modules/protons-runtime/dist/src/utils/float.js
+	var f32 = new Float32Array([-0]);
+	var f8b = new Uint8Array(f32.buffer);
+	/**
+	* Writes a 32 bit float to a buffer using little endian byte order
+	*/
+	function writeFloatLE(val, buf, pos) {
+		f32[0] = val;
+		buf[pos] = f8b[0];
+		buf[pos + 1] = f8b[1];
+		buf[pos + 2] = f8b[2];
+		buf[pos + 3] = f8b[3];
+	}
+	/**
+	* Reads a 32 bit float from a buffer using little endian byte order
+	*/
+	function readFloatLE(buf, pos) {
+		f8b[0] = buf[pos];
+		f8b[1] = buf[pos + 1];
+		f8b[2] = buf[pos + 2];
+		f8b[3] = buf[pos + 3];
+		return f32[0];
+	}
+	var f64 = new Float64Array([-0]);
+	var d8b = new Uint8Array(f64.buffer);
+	/**
+	* Writes a 64 bit double to a buffer using little endian byte order
+	*/
+	function writeDoubleLE(val, buf, pos) {
+		f64[0] = val;
+		buf[pos] = d8b[0];
+		buf[pos + 1] = d8b[1];
+		buf[pos + 2] = d8b[2];
+		buf[pos + 3] = d8b[3];
+		buf[pos + 4] = d8b[4];
+		buf[pos + 5] = d8b[5];
+		buf[pos + 6] = d8b[6];
+		buf[pos + 7] = d8b[7];
+	}
+	/**
+	* Reads a 64 bit double from a buffer using little endian byte order
+	*/
+	function readDoubleLE(buf, pos) {
+		d8b[0] = buf[pos];
+		d8b[1] = buf[pos + 1];
+		d8b[2] = buf[pos + 2];
+		d8b[3] = buf[pos + 3];
+		d8b[4] = buf[pos + 4];
+		d8b[5] = buf[pos + 5];
+		d8b[6] = buf[pos + 6];
+		d8b[7] = buf[pos + 7];
+		return f64[0];
+	}
+	//#endregion
+	//#region node_modules/@chainsafe/libp2p-noise/node_modules/protons-runtime/dist/src/utils/longbits.js
+	var MAX_SAFE_NUMBER_INTEGER = BigInt(Number.MAX_SAFE_INTEGER);
+	var MIN_SAFE_NUMBER_INTEGER = BigInt(Number.MIN_SAFE_INTEGER);
+	/**
+	* Constructs new long bits.
+	*
+	* @classdesc Helper class for working with the low and high bits of a 64 bit value.
+	* @memberof util
+	* @function Object() { [native code] }
+	* @param {number} lo - Low 32 bits, unsigned
+	* @param {number} hi - High 32 bits, unsigned
+	*/
+	var LongBits = class LongBits {
+		lo;
+		hi;
+		constructor(lo, hi) {
+			/**
+			* Low bits
+			*/
+			this.lo = lo | 0;
+			/**
+			* High bits
+			*/
+			this.hi = hi | 0;
+		}
+		/**
+		* Converts this long bits to a possibly unsafe JavaScript number
+		*/
+		toNumber(unsigned = false) {
+			if (!unsigned && this.hi >>> 31 > 0) {
+				const lo = ~this.lo + 1 >>> 0;
+				let hi = ~this.hi >>> 0;
+				if (lo === 0) hi = hi + 1 >>> 0;
+				return -(lo + hi * 4294967296);
+			}
+			return this.lo + this.hi * 4294967296;
+		}
+		/**
+		* Converts this long bits to a bigint
+		*/
+		toBigInt(unsigned = false) {
+			if (unsigned) return BigInt(this.lo >>> 0) + (BigInt(this.hi >>> 0) << 32n);
+			if (this.hi >>> 31 !== 0) {
+				const lo = ~this.lo + 1 >>> 0;
+				let hi = ~this.hi >>> 0;
+				if (lo === 0) hi = hi + 1 >>> 0;
+				return -(BigInt(lo) + (BigInt(hi) << 32n));
+			}
+			return BigInt(this.lo >>> 0) + (BigInt(this.hi >>> 0) << 32n);
+		}
+		/**
+		* Converts this long bits to a string
+		*/
+		toString(unsigned = false) {
+			return this.toBigInt(unsigned).toString();
+		}
+		/**
+		* Zig-zag encodes this long bits
+		*/
+		zzEncode() {
+			const mask = this.hi >> 31;
+			this.hi = ((this.hi << 1 | this.lo >>> 31) ^ mask) >>> 0;
+			this.lo = (this.lo << 1 ^ mask) >>> 0;
+			return this;
+		}
+		/**
+		* Zig-zag decodes this long bits
+		*/
+		zzDecode() {
+			const mask = -(this.lo & 1);
+			this.lo = ((this.lo >>> 1 | this.hi << 31) ^ mask) >>> 0;
+			this.hi = (this.hi >>> 1 ^ mask) >>> 0;
+			return this;
+		}
+		/**
+		* Calculates the length of this longbits when encoded as a varint.
+		*/
+		length() {
+			const part0 = this.lo;
+			const part1 = (this.lo >>> 28 | this.hi << 4) >>> 0;
+			const part2 = this.hi >>> 24;
+			return part2 === 0 ? part1 === 0 ? part0 < 16384 ? part0 < 128 ? 1 : 2 : part0 < 2097152 ? 3 : 4 : part1 < 16384 ? part1 < 128 ? 5 : 6 : part1 < 2097152 ? 7 : 8 : part2 < 128 ? 9 : 10;
+		}
+		/**
+		* Constructs new long bits from the specified number
+		*/
+		static fromBigInt(value) {
+			if (value === 0n) return zero;
+			if (value < MAX_SAFE_NUMBER_INTEGER && value > MIN_SAFE_NUMBER_INTEGER) return this.fromNumber(Number(value));
+			const negative = value < 0n;
+			if (negative) value = -value;
+			let hi = value >> 32n;
+			let lo = value - (hi << 32n);
+			if (negative) {
+				hi = ~hi | 0n;
+				lo = ~lo | 0n;
+				if (++lo > TWO_32) {
+					lo = 0n;
+					if (++hi > TWO_32) hi = 0n;
+				}
+			}
+			return new LongBits(Number(lo), Number(hi));
+		}
+		/**
+		* Constructs new long bits from the specified number
+		*/
+		static fromNumber(value) {
+			if (value === 0) return zero;
+			const sign = value < 0;
+			if (sign) value = -value;
+			let lo = value >>> 0;
+			let hi = (value - lo) / 4294967296 >>> 0;
+			if (sign) {
+				hi = ~hi >>> 0;
+				lo = ~lo >>> 0;
+				if (++lo > 4294967295) {
+					lo = 0;
+					if (++hi > 4294967295) hi = 0;
+				}
+			}
+			return new LongBits(lo, hi);
+		}
+		/**
+		* Constructs new long bits from a number, long or string
+		*/
+		static from(value) {
+			if (typeof value === "number") return LongBits.fromNumber(value);
+			if (typeof value === "bigint") return LongBits.fromBigInt(value);
+			if (typeof value === "string") return LongBits.fromBigInt(BigInt(value));
+			return value.low != null || value.high != null ? new LongBits(value.low >>> 0, value.high >>> 0) : zero;
+		}
+	};
+	var zero = new LongBits(0, 0);
+	zero.toBigInt = function() {
+		return 0n;
+	};
+	zero.zzEncode = zero.zzDecode = function() {
+		return this;
+	};
+	zero.length = function() {
+		return 1;
+	};
+	var TWO_32 = 4294967296n;
+	//#endregion
+	//#region node_modules/@chainsafe/libp2p-noise/node_modules/protons-runtime/dist/src/utils/utf8.js
+	/**
+	* Calculates the UTF8 byte length of a string
+	*/
+	function length(string) {
+		let len = 0;
+		let c = 0;
+		for (let i = 0; i < string.length; ++i) {
+			c = string.charCodeAt(i);
+			if (c < 128) len += 1;
+			else if (c < 2048) len += 2;
+			else if ((c & 64512) === 55296 && (string.charCodeAt(i + 1) & 64512) === 56320) {
+				++i;
+				len += 4;
+			} else len += 3;
+		}
+		return len;
+	}
+	/**
+	* Reads UTF8 bytes as a string
+	*/
+	function read(buffer, start, end) {
+		if (end - start < 1) return "";
+		let parts;
+		const chunk = [];
+		let i = 0;
+		let t;
+		while (start < end) {
+			t = buffer[start++];
+			if (t < 128) chunk[i++] = t;
+			else if (t > 191 && t < 224) chunk[i++] = (t & 31) << 6 | buffer[start++] & 63;
+			else if (t > 239 && t < 365) {
+				t = ((t & 7) << 18 | (buffer[start++] & 63) << 12 | (buffer[start++] & 63) << 6 | buffer[start++] & 63) - 65536;
+				chunk[i++] = 55296 + (t >> 10);
+				chunk[i++] = 56320 + (t & 1023);
+			} else chunk[i++] = (t & 15) << 12 | (buffer[start++] & 63) << 6 | buffer[start++] & 63;
+			if (i > 8191) {
+				(parts ?? (parts = [])).push(String.fromCharCode.apply(String, chunk));
+				i = 0;
+			}
+		}
+		if (parts != null) {
+			if (i > 0) parts.push(String.fromCharCode.apply(String, chunk.slice(0, i)));
+			return parts.join("");
+		}
+		return String.fromCharCode.apply(String, chunk.slice(0, i));
+	}
+	/**
+	* Writes a string as UTF8 bytes
+	*/
+	function write(string, buffer, offset) {
+		const start = offset;
+		let c1;
+		let c2;
+		for (let i = 0; i < string.length; ++i) {
+			c1 = string.charCodeAt(i);
+			if (c1 < 128) buffer[offset++] = c1;
+			else if (c1 < 2048) {
+				buffer[offset++] = c1 >> 6 | 192;
+				buffer[offset++] = c1 & 63 | 128;
+			} else if ((c1 & 64512) === 55296 && ((c2 = string.charCodeAt(i + 1)) & 64512) === 56320) {
+				c1 = 65536 + ((c1 & 1023) << 10) + (c2 & 1023);
+				++i;
+				buffer[offset++] = c1 >> 18 | 240;
+				buffer[offset++] = c1 >> 12 & 63 | 128;
+				buffer[offset++] = c1 >> 6 & 63 | 128;
+				buffer[offset++] = c1 & 63 | 128;
+			} else {
+				buffer[offset++] = c1 >> 12 | 224;
+				buffer[offset++] = c1 >> 6 & 63 | 128;
+				buffer[offset++] = c1 & 63 | 128;
+			}
+		}
+		return offset - start;
+	}
+	//#endregion
+	//#region node_modules/@chainsafe/libp2p-noise/node_modules/protons-runtime/dist/src/utils/reader.js
+	/* istanbul ignore next */
+	function indexOutOfRange(reader, writeLength) {
+		return RangeError(`index out of range: ${reader.pos} + ${writeLength ?? 1} > ${reader.len}`);
+	}
+	function readFixed32End(buf, end) {
+		return (buf[end - 4] | buf[end - 3] << 8 | buf[end - 2] << 16 | buf[end - 1] << 24) >>> 0;
+	}
+	/**
+	* Constructs a new reader instance using the specified buffer.
+	*/
+	var Uint8ArrayReader = class {
+		buf;
+		pos;
+		len;
+		_slice = Uint8Array.prototype.subarray;
+		constructor(buffer) {
+			/**
+			* Read buffer
+			*/
+			this.buf = buffer;
+			/**
+			* Read buffer position
+			*/
+			this.pos = 0;
+			/**
+			* Read buffer length
+			*/
+			this.len = buffer.length;
+		}
+		/**
+		* Reads a varint as an unsigned 32 bit value
+		*/
+		uint32() {
+			let value = 4294967295;
+			value = (this.buf[this.pos] & 127) >>> 0;
+			if (this.buf[this.pos++] < 128) return value;
+			value = (value | (this.buf[this.pos] & 127) << 7) >>> 0;
+			if (this.buf[this.pos++] < 128) return value;
+			value = (value | (this.buf[this.pos] & 127) << 14) >>> 0;
+			if (this.buf[this.pos++] < 128) return value;
+			value = (value | (this.buf[this.pos] & 127) << 21) >>> 0;
+			if (this.buf[this.pos++] < 128) return value;
+			value = (value | (this.buf[this.pos] & 15) << 28) >>> 0;
+			if (this.buf[this.pos++] < 128) return value;
+			if ((this.pos += 5) > this.len) {
+				this.pos = this.len;
+				throw indexOutOfRange(this, 10);
+			}
+			return value;
+		}
+		/**
+		* Reads a varint as a signed 32 bit value
+		*/
+		int32() {
+			return this.uint32() | 0;
+		}
+		/**
+		* Reads a zig-zag encoded varint as a signed 32 bit value
+		*/
+		sint32() {
+			const value = this.uint32();
+			return value >>> 1 ^ -(value & 1) | 0;
+		}
+		/**
+		* Reads a varint as a boolean
+		*/
+		bool() {
+			return this.uint32() !== 0;
+		}
+		/**
+		* Reads fixed 32 bits as an unsigned 32 bit integer
+		*/
+		fixed32() {
+			if (this.pos + 4 > this.len) throw indexOutOfRange(this, 4);
+			return readFixed32End(this.buf, this.pos += 4);
+		}
+		/**
+		* Reads fixed 32 bits as a signed 32 bit integer
+		*/
+		sfixed32() {
+			if (this.pos + 4 > this.len) throw indexOutOfRange(this, 4);
+			return readFixed32End(this.buf, this.pos += 4) | 0;
+		}
+		/**
+		* Reads a float (32 bit) as a number
+		*/
+		float() {
+			if (this.pos + 4 > this.len) throw indexOutOfRange(this, 4);
+			const value = readFloatLE(this.buf, this.pos);
+			this.pos += 4;
+			return value;
+		}
+		/**
+		* Reads a double (64 bit float) as a number
+		*/
+		double() {
+			/* istanbul ignore if */
+			if (this.pos + 8 > this.len) throw indexOutOfRange(this, 4);
+			const value = readDoubleLE(this.buf, this.pos);
+			this.pos += 8;
+			return value;
+		}
+		/**
+		* Reads a sequence of bytes preceded by its length as a varint
+		*/
+		bytes() {
+			const length = this.uint32();
+			const start = this.pos;
+			const end = this.pos + length;
+			/* istanbul ignore if */
+			if (end > this.len) throw indexOutOfRange(this, length);
+			this.pos += length;
+			return start === end ? new Uint8Array(0) : this.buf.subarray(start, end);
+		}
+		/**
+		* Reads a string preceded by its byte length as a varint
+		*/
+		string() {
+			const bytes = this.bytes();
+			return read(bytes, 0, bytes.length);
+		}
+		/**
+		* Skips the specified number of bytes if specified, otherwise skips a varint
+		*/
+		skip(length) {
+			if (typeof length === "number") {
+				/* istanbul ignore if */
+				if (this.pos + length > this.len) throw indexOutOfRange(this, length);
+				this.pos += length;
+			} else do
+				/* istanbul ignore if */
+				if (this.pos >= this.len) throw indexOutOfRange(this);
+			while ((this.buf[this.pos++] & 128) !== 0);
+			return this;
+		}
+		/**
+		* Skips the next element of the specified wire type
+		*/
+		skipType(wireType) {
+			switch (wireType) {
+				case 0:
+					this.skip();
+					break;
+				case 1:
+					this.skip(8);
+					break;
+				case 2:
+					this.skip(this.uint32());
+					break;
+				case 3:
+					while ((wireType = this.uint32() & 7) !== 4) this.skipType(wireType);
+					break;
+				case 5:
+					this.skip(4);
+					break;
+				/* istanbul ignore next */
+				default: throw Error(`invalid wire type ${wireType} at offset ${this.pos}`);
+			}
+			return this;
+		}
+		readLongVarint() {
+			const bits = new LongBits(0, 0);
+			let i = 0;
+			if (this.len - this.pos > 4) {
+				for (; i < 4; ++i) {
+					bits.lo = (bits.lo | (this.buf[this.pos] & 127) << i * 7) >>> 0;
+					if (this.buf[this.pos++] < 128) return bits;
+				}
+				bits.lo = (bits.lo | (this.buf[this.pos] & 127) << 28) >>> 0;
+				bits.hi = (bits.hi | (this.buf[this.pos] & 127) >> 4) >>> 0;
+				if (this.buf[this.pos++] < 128) return bits;
+				i = 0;
+			} else {
+				for (; i < 3; ++i) {
+					/* istanbul ignore if */
+					if (this.pos >= this.len) throw indexOutOfRange(this);
+					bits.lo = (bits.lo | (this.buf[this.pos] & 127) << i * 7) >>> 0;
+					if (this.buf[this.pos++] < 128) return bits;
+				}
+				bits.lo = (bits.lo | (this.buf[this.pos++] & 127) << i * 7) >>> 0;
+				return bits;
+			}
+			if (this.len - this.pos > 4) for (; i < 5; ++i) {
+				bits.hi = (bits.hi | (this.buf[this.pos] & 127) << i * 7 + 3) >>> 0;
+				if (this.buf[this.pos++] < 128) return bits;
+			}
+			else for (; i < 5; ++i) {
+				if (this.pos >= this.len) throw indexOutOfRange(this);
+				bits.hi = (bits.hi | (this.buf[this.pos] & 127) << i * 7 + 3) >>> 0;
+				if (this.buf[this.pos++] < 128) return bits;
+			}
+			throw Error("invalid varint encoding");
+		}
+		readFixed64() {
+			if (this.pos + 8 > this.len) throw indexOutOfRange(this, 8);
+			return new LongBits(readFixed32End(this.buf, this.pos += 4), readFixed32End(this.buf, this.pos += 4));
+		}
+		/**
+		* Reads a varint as a signed 64 bit value
+		*/
+		int64() {
+			return this.readLongVarint().toBigInt();
+		}
+		/**
+		* Reads a varint as a signed 64 bit value returned as a possibly unsafe
+		* JavaScript number
+		*/
+		int64Number() {
+			return this.readLongVarint().toNumber();
+		}
+		/**
+		* Reads a varint as a signed 64 bit value returned as a string
+		*/
+		int64String() {
+			return this.readLongVarint().toString();
+		}
+		/**
+		* Reads a varint as an unsigned 64 bit value
+		*/
+		uint64() {
+			return this.readLongVarint().toBigInt(true);
+		}
+		/**
+		* Reads a varint as an unsigned 64 bit value returned as a possibly unsafe
+		* JavaScript number
+		*/
+		uint64Number() {
+			const value = decodeUint8Array$1(this.buf, this.pos);
+			this.pos += encodingLength$2(value);
+			return value;
+		}
+		/**
+		* Reads a varint as an unsigned 64 bit value returned as a string
+		*/
+		uint64String() {
+			return this.readLongVarint().toString(true);
+		}
+		/**
+		* Reads a zig-zag encoded varint as a signed 64 bit value
+		*/
+		sint64() {
+			return this.readLongVarint().zzDecode().toBigInt();
+		}
+		/**
+		* Reads a zig-zag encoded varint as a signed 64 bit value returned as a
+		* possibly unsafe JavaScript number
+		*/
+		sint64Number() {
+			return this.readLongVarint().zzDecode().toNumber();
+		}
+		/**
+		* Reads a zig-zag encoded varint as a signed 64 bit value returned as a
+		* string
+		*/
+		sint64String() {
+			return this.readLongVarint().zzDecode().toString();
+		}
+		/**
+		* Reads fixed 64 bits
+		*/
+		fixed64() {
+			return this.readFixed64().toBigInt();
+		}
+		/**
+		* Reads fixed 64 bits returned as a possibly unsafe JavaScript number
+		*/
+		fixed64Number() {
+			return this.readFixed64().toNumber();
+		}
+		/**
+		* Reads fixed 64 bits returned as a string
+		*/
+		fixed64String() {
+			return this.readFixed64().toString();
+		}
+		/**
+		* Reads zig-zag encoded fixed 64 bits
+		*/
+		sfixed64() {
+			return this.readFixed64().toBigInt();
+		}
+		/**
+		* Reads zig-zag encoded fixed 64 bits returned as a possibly unsafe
+		* JavaScript number
+		*/
+		sfixed64Number() {
+			return this.readFixed64().toNumber();
+		}
+		/**
+		* Reads zig-zag encoded fixed 64 bits returned as a string
+		*/
+		sfixed64String() {
+			return this.readFixed64().toString();
+		}
+	};
+	function createReader(buf) {
+		return new Uint8ArrayReader(buf instanceof Uint8Array ? buf : buf.subarray());
+	}
+	//#endregion
+	//#region node_modules/@chainsafe/libp2p-noise/node_modules/protons-runtime/dist/src/decode.js
+	function decodeMessage(buf, codec, opts) {
+		const reader = createReader(buf);
+		return codec.decode(reader, void 0, opts);
+	}
+	//#endregion
+	//#region node_modules/@chainsafe/libp2p-noise/node_modules/protons-runtime/dist/src/utils/pool.js
+	/**
+	* A general purpose buffer pool
+	*/
+	function pool(size) {
+		const SIZE = size ?? 8192;
+		const MAX = SIZE >>> 1;
+		let slab;
+		let offset = SIZE;
+		return function poolAlloc(size) {
+			if (size < 1 || size > MAX) return allocUnsafe$1(size);
+			if (offset + size > SIZE) {
+				slab = allocUnsafe$1(SIZE);
+				offset = 0;
+			}
+			const buf = slab.subarray(offset, offset += size);
+			if ((offset & 7) !== 0) offset = (offset | 7) + 1;
+			return buf;
+		};
+	}
+	//#endregion
+	//#region node_modules/@chainsafe/libp2p-noise/node_modules/protons-runtime/dist/src/utils/writer.js
+	/**
+	* Constructs a new writer operation instance.
+	*
+	* @classdesc Scheduled writer operation
+	*/
+	var Op = class {
+		/**
+		* Function to call
+		*/
+		fn;
+		/**
+		* Value byte length
+		*/
+		len;
+		/**
+		* Next operation
+		*/
+		next;
+		/**
+		* Value to write
+		*/
+		val;
+		constructor(fn, len, val) {
+			this.fn = fn;
+			this.len = len;
+			this.next = void 0;
+			this.val = val;
+		}
+	};
+	/* istanbul ignore next */
+	function noop() {}
+	/**
+	* Constructs a new writer state instance
+	*/
+	var State = class {
+		/**
+		* Current head
+		*/
+		head;
+		/**
+		* Current tail
+		*/
+		tail;
+		/**
+		* Current buffer length
+		*/
+		len;
+		/**
+		* Next state
+		*/
+		next;
+		constructor(writer) {
+			this.head = writer.head;
+			this.tail = writer.tail;
+			this.len = writer.len;
+			this.next = writer.states;
+		}
+	};
+	var bufferPool = pool();
+	/**
+	* Allocates a buffer of the specified size
+	*/
+	function alloc(size) {
+		if (globalThis.Buffer != null) return allocUnsafe$1(size);
+		return bufferPool(size);
+	}
+	/**
+	* When a value is written, the writer calculates its byte length and puts it into a linked
+	* list of operations to perform when finish() is called. This both allows us to allocate
+	* buffers of the exact required size and reduces the amount of work we have to do compared
+	* to first calculating over objects and then encoding over objects. In our case, the encoding
+	* part is just a linked list walk calling operations with already prepared values.
+	*/
+	var Uint8ArrayWriter = class {
+		/**
+		* Current length
+		*/
+		len;
+		/**
+		* Operations head
+		*/
+		head;
+		/**
+		* Operations tail
+		*/
+		tail;
+		/**
+		* Linked forked states
+		*/
+		states;
+		constructor() {
+			this.len = 0;
+			this.head = new Op(noop, 0, 0);
+			this.tail = this.head;
+			this.states = null;
+		}
+		/**
+		* Pushes a new operation to the queue
+		*/
+		_push(fn, len, val) {
+			this.tail = this.tail.next = new Op(fn, len, val);
+			this.len += len;
+			return this;
+		}
+		/**
+		* Writes an unsigned 32 bit value as a varint
+		*/
+		uint32(value) {
+			this.len += (this.tail = this.tail.next = new VarintOp((value = value >>> 0) < 128 ? 1 : value < 16384 ? 2 : value < 2097152 ? 3 : value < 268435456 ? 4 : 5, value)).len;
+			return this;
+		}
+		/**
+		* Writes a signed 32 bit value as a varint`
+		*/
+		int32(value) {
+			return value < 0 ? this._push(writeVarint64, 10, LongBits.fromNumber(value)) : this.uint32(value);
+		}
+		/**
+		* Writes a 32 bit value as a varint, zig-zag encoded
+		*/
+		sint32(value) {
+			return this.uint32((value << 1 ^ value >> 31) >>> 0);
+		}
+		/**
+		* Writes an unsigned 64 bit value as a varint
+		*/
+		uint64(value) {
+			const bits = LongBits.fromBigInt(value);
+			return this._push(writeVarint64, bits.length(), bits);
+		}
+		/**
+		* Writes an unsigned 64 bit value as a varint
+		*/
+		uint64Number(value) {
+			return this._push(encodeUint8Array$1, encodingLength$2(value), value);
+		}
+		/**
+		* Writes an unsigned 64 bit value as a varint
+		*/
+		uint64String(value) {
+			return this.uint64(BigInt(value));
+		}
+		/**
+		* Writes a signed 64 bit value as a varint
+		*/
+		int64(value) {
+			return this.uint64(value);
+		}
+		/**
+		* Writes a signed 64 bit value as a varint
+		*/
+		int64Number(value) {
+			return this.uint64Number(value);
+		}
+		/**
+		* Writes a signed 64 bit value as a varint
+		*/
+		int64String(value) {
+			return this.uint64String(value);
+		}
+		/**
+		* Writes a signed 64 bit value as a varint, zig-zag encoded
+		*/
+		sint64(value) {
+			const bits = LongBits.fromBigInt(value).zzEncode();
+			return this._push(writeVarint64, bits.length(), bits);
+		}
+		/**
+		* Writes a signed 64 bit value as a varint, zig-zag encoded
+		*/
+		sint64Number(value) {
+			const bits = LongBits.fromNumber(value).zzEncode();
+			return this._push(writeVarint64, bits.length(), bits);
+		}
+		/**
+		* Writes a signed 64 bit value as a varint, zig-zag encoded
+		*/
+		sint64String(value) {
+			return this.sint64(BigInt(value));
+		}
+		/**
+		* Writes a boolish value as a varint
+		*/
+		bool(value) {
+			return this._push(writeByte, 1, value ? 1 : 0);
+		}
+		/**
+		* Writes an unsigned 32 bit value as fixed 32 bits
+		*/
+		fixed32(value) {
+			return this._push(writeFixed32, 4, value >>> 0);
+		}
+		/**
+		* Writes a signed 32 bit value as fixed 32 bits
+		*/
+		sfixed32(value) {
+			return this.fixed32(value);
+		}
+		/**
+		* Writes an unsigned 64 bit value as fixed 64 bits
+		*/
+		fixed64(value) {
+			const bits = LongBits.fromBigInt(value);
+			return this._push(writeFixed32, 4, bits.lo)._push(writeFixed32, 4, bits.hi);
+		}
+		/**
+		* Writes an unsigned 64 bit value as fixed 64 bits
+		*/
+		fixed64Number(value) {
+			const bits = LongBits.fromNumber(value);
+			return this._push(writeFixed32, 4, bits.lo)._push(writeFixed32, 4, bits.hi);
+		}
+		/**
+		* Writes an unsigned 64 bit value as fixed 64 bits
+		*/
+		fixed64String(value) {
+			return this.fixed64(BigInt(value));
+		}
+		/**
+		* Writes a signed 64 bit value as fixed 64 bits
+		*/
+		sfixed64(value) {
+			return this.fixed64(value);
+		}
+		/**
+		* Writes a signed 64 bit value as fixed 64 bits
+		*/
+		sfixed64Number(value) {
+			return this.fixed64Number(value);
+		}
+		/**
+		* Writes a signed 64 bit value as fixed 64 bits
+		*/
+		sfixed64String(value) {
+			return this.fixed64String(value);
+		}
+		/**
+		* Writes a float (32 bit)
+		*/
+		float(value) {
+			return this._push(writeFloatLE, 4, value);
+		}
+		/**
+		* Writes a double (64 bit float).
+		*
+		* @function
+		* @param {number} value - Value to write
+		* @returns {Writer} `this`
+		*/
+		double(value) {
+			return this._push(writeDoubleLE, 8, value);
+		}
+		/**
+		* Writes a sequence of bytes
+		*/
+		bytes(value) {
+			const len = value.length >>> 0;
+			if (len === 0) return this._push(writeByte, 1, 0);
+			return this.uint32(len)._push(writeBytes, len, value);
+		}
+		/**
+		* Writes a string
+		*/
+		string(value) {
+			const len = length(value);
+			return len !== 0 ? this.uint32(len)._push(write, len, value) : this._push(writeByte, 1, 0);
+		}
+		/**
+		* Forks this writer's state by pushing it to a stack.
+		* Calling {@link Writer#reset|reset} or {@link Writer#ldelim|ldelim} resets the writer to the previous state.
+		*/
+		fork() {
+			this.states = new State(this);
+			this.head = this.tail = new Op(noop, 0, 0);
+			this.len = 0;
+			return this;
+		}
+		/**
+		* Resets this instance to the last state
+		*/
+		reset() {
+			if (this.states != null) {
+				this.head = this.states.head;
+				this.tail = this.states.tail;
+				this.len = this.states.len;
+				this.states = this.states.next;
+			} else {
+				this.head = this.tail = new Op(noop, 0, 0);
+				this.len = 0;
+			}
+			return this;
+		}
+		/**
+		* Resets to the last state and appends the fork state's current write length as a varint followed by its operations.
+		*/
+		ldelim() {
+			const head = this.head;
+			const tail = this.tail;
+			const len = this.len;
+			this.reset().uint32(len);
+			if (len !== 0) {
+				this.tail.next = head.next;
+				this.tail = tail;
+				this.len += len;
+			}
+			return this;
+		}
+		/**
+		* Finishes the write operation
+		*/
+		finish() {
+			let head = this.head.next;
+			const buf = alloc(this.len);
+			let pos = 0;
+			while (head != null) {
+				head.fn(head.val, buf, pos);
+				pos += head.len;
+				head = head.next;
+			}
+			return buf;
+		}
+	};
+	function writeByte(val, buf, pos) {
+		buf[pos] = val & 255;
+	}
+	function writeVarint32(val, buf, pos) {
+		while (val > 127) {
+			buf[pos++] = val & 127 | 128;
+			val >>>= 7;
+		}
+		buf[pos] = val;
+	}
+	/**
+	* Constructs a new varint writer operation instance.
+	*
+	* @classdesc Scheduled varint writer operation
+	*/
+	var VarintOp = class extends Op {
+		next;
+		constructor(len, val) {
+			super(writeVarint32, len, val);
+			this.next = void 0;
+		}
+	};
+	function writeVarint64(val, buf, pos) {
+		while (val.hi !== 0) {
+			buf[pos++] = val.lo & 127 | 128;
+			val.lo = (val.lo >>> 7 | val.hi << 25) >>> 0;
+			val.hi >>>= 7;
+		}
+		while (val.lo > 127) {
+			buf[pos++] = val.lo & 127 | 128;
+			val.lo = val.lo >>> 7;
+		}
+		buf[pos++] = val.lo;
+	}
+	function writeFixed32(val, buf, pos) {
+		buf[pos] = val & 255;
+		buf[pos + 1] = val >>> 8 & 255;
+		buf[pos + 2] = val >>> 16 & 255;
+		buf[pos + 3] = val >>> 24;
+	}
+	function writeBytes(val, buf, pos) {
+		buf.set(val, pos);
+	}
+	if (globalThis.Buffer != null) {
+		Uint8ArrayWriter.prototype.bytes = function(value) {
+			const len = value.length >>> 0;
+			this.uint32(len);
+			if (len > 0) this._push(writeBytesBuffer, len, value);
+			return this;
+		};
+		Uint8ArrayWriter.prototype.string = function(value) {
+			const len = globalThis.Buffer.byteLength(value);
+			this.uint32(len);
+			if (len > 0) this._push(writeStringBuffer, len, value);
+			return this;
+		};
+	}
+	function writeBytesBuffer(val, buf, pos) {
+		buf.set(val, pos);
+	}
+	function writeStringBuffer(val, buf, pos) {
+		if (val.length < 40) write(val, buf, pos);
+		else if (buf.utf8Write != null) buf.utf8Write(val, pos);
+		else buf.set(fromString$2(val), pos);
+	}
+	/**
+	* Creates a new writer
+	*/
+	function createWriter() {
+		return new Uint8ArrayWriter();
+	}
+	//#endregion
+	//#region node_modules/@chainsafe/libp2p-noise/node_modules/protons-runtime/dist/src/encode.js
+	function encodeMessage(message, codec) {
+		const w = createWriter();
+		codec.encode(message, w, { lengthDelimited: false });
+		return w.finish();
+	}
+	//#endregion
+	//#region node_modules/@chainsafe/libp2p-noise/node_modules/protons-runtime/dist/src/codec.js
+	var CODEC_TYPES;
+	(function(CODEC_TYPES) {
+		CODEC_TYPES[CODEC_TYPES["VARINT"] = 0] = "VARINT";
+		CODEC_TYPES[CODEC_TYPES["BIT64"] = 1] = "BIT64";
+		CODEC_TYPES[CODEC_TYPES["LENGTH_DELIMITED"] = 2] = "LENGTH_DELIMITED";
+		CODEC_TYPES[CODEC_TYPES["START_GROUP"] = 3] = "START_GROUP";
+		CODEC_TYPES[CODEC_TYPES["END_GROUP"] = 4] = "END_GROUP";
+		CODEC_TYPES[CODEC_TYPES["BIT32"] = 5] = "BIT32";
+	})(CODEC_TYPES || (CODEC_TYPES = {}));
+	function createCodec(name, type, encode, decode) {
+		return {
+			name,
+			type,
+			encode,
+			decode
+		};
+	}
+	//#endregion
+	//#region node_modules/@chainsafe/libp2p-noise/node_modules/protons-runtime/dist/src/codecs/message.js
+	function message(encode, decode) {
+		return createCodec("message", CODEC_TYPES.LENGTH_DELIMITED, encode, decode);
+	}
+	//#endregion
+	//#region node_modules/@chainsafe/libp2p-noise/node_modules/protons-runtime/dist/src/index.js
+	/**
+	* Thrown when a repeated field has too many elements
+	*/
+	var MaxLengthError = class extends Error {
+		/**
+		* This will be removed in a future release
+		*
+		* @deprecated use the `.name` property instead
+		*/
+		code = "ERR_MAX_LENGTH";
+		name = "MaxLengthError";
+	};
+	//#endregion
+	//#region node_modules/@chainsafe/libp2p-noise/dist/src/proto/payload.js
+	var NoiseExtensions;
+	(function(NoiseExtensions) {
+		let _codec;
+		NoiseExtensions.codec = () => {
+			if (_codec == null) _codec = message((obj, w, opts = {}) => {
+				if (opts.lengthDelimited !== false) w.fork();
+				if (obj.webtransportCerthashes != null) for (const value of obj.webtransportCerthashes) {
+					w.uint32(10);
+					w.bytes(value);
+				}
+				if (obj.streamMuxers != null) for (const value of obj.streamMuxers) {
+					w.uint32(18);
+					w.string(value);
+				}
+				if (opts.lengthDelimited !== false) w.ldelim();
+			}, (reader, length, opts = {}) => {
+				const obj = {
+					webtransportCerthashes: [],
+					streamMuxers: []
+				};
+				const end = length == null ? reader.len : reader.pos + length;
+				while (reader.pos < end) {
+					const tag = reader.uint32();
+					switch (tag >>> 3) {
+						case 1:
+							if (opts.limits?.webtransportCerthashes != null && obj.webtransportCerthashes.length === opts.limits.webtransportCerthashes) throw new MaxLengthError("Decode error - map field \"webtransportCerthashes\" had too many elements");
+							obj.webtransportCerthashes.push(reader.bytes());
+							break;
+						case 2:
+							if (opts.limits?.streamMuxers != null && obj.streamMuxers.length === opts.limits.streamMuxers) throw new MaxLengthError("Decode error - map field \"streamMuxers\" had too many elements");
+							obj.streamMuxers.push(reader.string());
+							break;
+						default:
+							reader.skipType(tag & 7);
+							break;
+					}
+				}
+				return obj;
+			});
+			return _codec;
+		};
+		NoiseExtensions.encode = (obj) => {
+			return encodeMessage(obj, NoiseExtensions.codec());
+		};
+		NoiseExtensions.decode = (buf, opts) => {
+			return decodeMessage(buf, NoiseExtensions.codec(), opts);
+		};
+	})(NoiseExtensions || (NoiseExtensions = {}));
+	var NoiseHandshakePayload;
+	(function(NoiseHandshakePayload) {
+		let _codec;
+		NoiseHandshakePayload.codec = () => {
+			if (_codec == null) _codec = message((obj, w, opts = {}) => {
+				if (opts.lengthDelimited !== false) w.fork();
+				if (obj.identityKey != null && obj.identityKey.byteLength > 0) {
+					w.uint32(10);
+					w.bytes(obj.identityKey);
+				}
+				if (obj.identitySig != null && obj.identitySig.byteLength > 0) {
+					w.uint32(18);
+					w.bytes(obj.identitySig);
+				}
+				if (obj.extensions != null) {
+					w.uint32(34);
+					NoiseExtensions.codec().encode(obj.extensions, w);
+				}
+				if (opts.lengthDelimited !== false) w.ldelim();
+			}, (reader, length, opts = {}) => {
+				const obj = {
+					identityKey: alloc$2(0),
+					identitySig: alloc$2(0)
+				};
+				const end = length == null ? reader.len : reader.pos + length;
+				while (reader.pos < end) {
+					const tag = reader.uint32();
+					switch (tag >>> 3) {
+						case 1:
+							obj.identityKey = reader.bytes();
+							break;
+						case 2:
+							obj.identitySig = reader.bytes();
+							break;
+						case 4:
+							obj.extensions = NoiseExtensions.codec().decode(reader, reader.uint32(), { limits: opts.limits?.extensions });
+							break;
+						default:
+							reader.skipType(tag & 7);
+							break;
+					}
+				}
+				return obj;
+			});
+			return _codec;
+		};
+		NoiseHandshakePayload.encode = (obj) => {
+			return encodeMessage(obj, NoiseHandshakePayload.codec());
+		};
+		NoiseHandshakePayload.decode = (buf, opts) => {
+			return decodeMessage(buf, NoiseHandshakePayload.codec(), opts);
+		};
+	})(NoiseHandshakePayload || (NoiseHandshakePayload = {}));
+	//#endregion
+	//#region node_modules/@chainsafe/libp2p-noise/dist/src/utils.js
+	async function createHandshakePayload(privateKey, staticPublicKey, extensions) {
+		const identitySig = await privateKey.sign(getSignaturePayload(staticPublicKey));
+		return NoiseHandshakePayload.encode({
+			identityKey: publicKeyToProtobuf(privateKey.publicKey),
+			identitySig,
+			extensions
+		});
+	}
+	async function decodeHandshakePayload(payloadBytes, remoteStaticKey, remoteIdentityKey) {
+		try {
+			const payload = NoiseHandshakePayload.decode(payloadBytes);
+			const publicKey = publicKeyFromProtobuf(payload.identityKey);
+			if (remoteIdentityKey?.equals(publicKey) === false) throw new Error(`Payload identity key ${publicKey} does not match expected remote identity key ${remoteIdentityKey}`);
+			if (!remoteStaticKey) throw new Error("Remote static does not exist");
+			const signaturePayload = getSignaturePayload(remoteStaticKey);
+			if (!await publicKey.verify(signaturePayload, payload.identitySig)) throw new Error("Invalid payload signature");
+			return payload;
+		} catch (e) {
+			throw new UnexpectedPeerError(e.message);
+		}
+	}
+	function getSignaturePayload(publicKey) {
+		const prefix = fromString$2("noise-libp2p-static-key:");
+		if (publicKey instanceof Uint8Array) return concat$1([prefix, publicKey], prefix.length + publicKey.length);
+		publicKey.prepend(prefix);
+		return publicKey;
+	}
+	var EncryptedMessageStream = class extends AbstractMessageStream {
+		stream;
+		handshake;
+		metrics;
+		decoder;
+		constructor(stream, handshake, metrics) {
+			super({
+				log: stream.log,
+				inactivityTimeout: stream.inactivityTimeout,
+				maxReadBufferLength: stream.maxReadBufferLength,
+				direction: stream.direction
+			});
+			this.stream = stream;
+			this.handshake = handshake;
+			this.metrics = metrics;
+			this.decoder = new LengthPrefixedDecoder({
+				lengthDecoder: uint16BEDecode,
+				maxBufferSize: 16 * 1024 * 1024,
+				encodingLength: () => 2
+			});
+			const noiseOnMessageDecrypt = (evt) => {
+				try {
+					for (const buf of this.decoder.decode(evt.data)) this.onData(this.decrypt(buf));
+				} catch (err) {
+					this.abort(err);
+				}
+			};
+			this.stream.addEventListener("message", noiseOnMessageDecrypt);
+			const noiseOnClose = (evt) => {
+				if (evt.error != null) if (evt.local === true) this.abort(evt.error);
+				else this.onRemoteReset();
+				else this.onTransportClosed();
+			};
+			this.stream.addEventListener("close", noiseOnClose);
+			const noiseOnDrain = () => {
+				this.safeDispatchEvent("drain");
+			};
+			this.stream.addEventListener("drain", noiseOnDrain);
+			const noiseOnRemoteCloseWrite = () => {
+				this.onRemoteCloseWrite();
+			};
+			this.stream.addEventListener("remoteCloseWrite", noiseOnRemoteCloseWrite);
+		}
+		encrypt(chunk) {
+			const output = new Uint8ArrayList();
+			for (let i = 0; i < chunk.byteLength; i += NOISE_MSG_MAX_LENGTH_BYTES_WITHOUT_TAG) {
+				let end = i + NOISE_MSG_MAX_LENGTH_BYTES_WITHOUT_TAG;
+				if (end > chunk.byteLength) end = chunk.byteLength;
+				let data;
+				if (chunk instanceof Uint8Array) data = this.handshake.encrypt(chunk.subarray(i, end));
+				else data = this.handshake.encrypt(chunk.sublist(i, end));
+				this.metrics?.encryptedPackets.increment();
+				output.append(uint16BEEncode(data.byteLength));
+				output.append(data);
+			}
+			return output;
+		}
+		decrypt(chunk) {
+			const output = new Uint8ArrayList();
+			for (let i = 0; i < chunk.byteLength; i += NOISE_MSG_MAX_LENGTH_BYTES) {
+				let end = i + NOISE_MSG_MAX_LENGTH_BYTES;
+				if (end > chunk.byteLength) end = chunk.byteLength;
+				if (end - 16 < i) throw new Error("Invalid chunk");
+				let encrypted;
+				if (chunk instanceof Uint8Array) encrypted = chunk.subarray(i, end);
+				else encrypted = chunk.sublist(i, end);
+				const dst = chunk.subarray(i, end - 16);
+				try {
+					const plaintext = this.handshake.decrypt(encrypted, dst);
+					this.metrics?.decryptedPackets.increment();
+					output.append(plaintext);
+				} catch (e) {
+					this.metrics?.decryptErrors.increment();
+					throw e;
+				}
+			}
+			return output;
+		}
+		close(options) {
+			return this.stream.close(options);
+		}
+		sendPause() {
+			this.stream.pause();
+		}
+		sendResume() {
+			this.stream.resume();
+		}
+		sendReset(err) {
+			this.stream.abort(err);
+		}
+		sendData(data) {
+			return {
+				sentBytes: data.byteLength,
+				canSendMore: this.stream.send(this.encrypt(data))
+			};
+		}
+	};
+	function toMessageStream(connection, handshake, metrics) {
+		return new EncryptedMessageStream(connection, handshake, metrics);
+	}
+	//#endregion
+	//#region node_modules/@chainsafe/libp2p-noise/dist/src/performHandshake.js
+	async function performHandshakeInitiator(init, options) {
+		const { log, connection, crypto, privateKey, prologue, s, remoteIdentityKey, extensions } = init;
+		const payload = await createHandshakePayload(privateKey, s.publicKey, extensions);
+		const xx = new XXHandshakeState({
+			crypto,
+			protocolName: "Noise_XX_25519_ChaChaPoly_SHA256",
+			initiator: true,
+			prologue,
+			s
+		});
+		logLocalStaticKeys(xx.s, log);
+		log.trace("Stage 0 - Initiator starting to send first message.");
+		await connection.write(xx.writeMessageA(ZEROLEN), options);
+		log.trace("Stage 0 - Initiator finished sending first message.");
+		logLocalEphemeralKeys(xx.e, log);
+		log.trace("Stage 1 - Initiator waiting to receive first message from responder...");
+		const plaintext = xx.readMessageB(await connection.read(options));
+		log.trace("Stage 1 - Initiator received the message.");
+		logRemoteEphemeralKey(xx.re, log);
+		logRemoteStaticKey(xx.rs, log);
+		log.trace("Initiator going to check remote's signature...");
+		const receivedPayload = await decodeHandshakePayload(plaintext, xx.rs, remoteIdentityKey);
+		log.trace("All good with the signature!");
+		log.trace("Stage 2 - Initiator sending third handshake message.");
+		await connection.write(xx.writeMessageC(payload), options);
+		log.trace("Stage 2 - Initiator sent message with signed payload.");
+		const [cs1, cs2] = xx.ss.split();
+		logCipherState(cs1, cs2, log);
+		return {
+			payload: receivedPayload,
+			encrypt: (plaintext) => cs1.encryptWithAd(ZEROLEN, plaintext),
+			decrypt: (ciphertext, dst) => cs2.decryptWithAd(ZEROLEN, ciphertext, dst)
+		};
+	}
+	async function performHandshakeResponder(init, options) {
+		const { log, connection, crypto, privateKey, prologue, s, remoteIdentityKey, extensions } = init;
+		const payload = await createHandshakePayload(privateKey, s.publicKey, extensions);
+		const xx = new XXHandshakeState({
+			crypto,
+			protocolName: "Noise_XX_25519_ChaChaPoly_SHA256",
+			initiator: false,
+			prologue,
+			s
+		});
+		logLocalStaticKeys(xx.s, log);
+		log.trace("Stage 0 - Responder waiting to receive first message.");
+		xx.readMessageA(await connection.read(options));
+		log.trace("Stage 0 - Responder received first message.");
+		logRemoteEphemeralKey(xx.re, log);
+		log.trace("Stage 1 - Responder sending out first message with signed payload and static key.");
+		await connection.write(xx.writeMessageB(payload), options);
+		log.trace("Stage 1 - Responder sent the second handshake message with signed payload.");
+		logLocalEphemeralKeys(xx.e, log);
+		log.trace("Stage 2 - Responder waiting for third handshake message...");
+		const plaintext = xx.readMessageC(await connection.read(options));
+		log.trace("Stage 2 - Responder received the message, finished handshake.");
+		const receivedPayload = await decodeHandshakePayload(plaintext, xx.rs, remoteIdentityKey);
+		const [cs1, cs2] = xx.ss.split();
+		logCipherState(cs1, cs2, log);
+		return {
+			payload: receivedPayload,
+			encrypt: (plaintext) => cs2.encryptWithAd(ZEROLEN, plaintext),
+			decrypt: (ciphertext, dst) => cs1.decryptWithAd(ZEROLEN, ciphertext, dst)
+		};
+	}
+	//#endregion
+	//#region node_modules/@chainsafe/libp2p-noise/dist/src/noise.js
+	var Noise = class {
+		protocol = "/noise";
+		crypto;
+		prologue;
+		staticKey;
+		extensions;
+		metrics;
+		components;
+		log;
+		constructor(components, init = {}) {
+			const { staticNoiseKey, extensions, crypto, prologueBytes } = init;
+			const { metrics } = components;
+			this.components = components;
+			this.log = components.logger.forComponent("libp2p:noise");
+			const _crypto = crypto ?? defaultCrypto;
+			this.crypto = wrapCrypto(_crypto);
+			this.extensions = {
+				webtransportCerthashes: [],
+				...extensions
+			};
+			this.metrics = metrics ? registerMetrics(metrics) : void 0;
+			if (staticNoiseKey) this.staticKey = _crypto.generateX25519KeyPairFromSeed(staticNoiseKey);
+			else this.staticKey = _crypto.generateX25519KeyPair();
+			this.prologue = prologueBytes ?? alloc$2(0);
+		}
+		[Symbol.toStringTag] = "@chainsafe/libp2p-noise";
+		[serviceCapabilities] = ["@libp2p/connection-encryption", "@chainsafe/libp2p-noise"];
+		/**
+		* Encrypt outgoing data to the remote party (handshake as initiator)
+		*
+		* @param connection - streaming iterable duplex that will be encrypted
+		* @param options
+		* @param options.remotePeer - PeerId of the remote peer. Used to validate the integrity of the remote peer
+		* @param options.signal - Used to abort the operation
+		*/
+		async secureOutbound(connection, options) {
+			const log = connection.log?.newScope("noise") ?? this.log;
+			const wrappedConnection = lpStream(connection, {
+				lengthEncoder: uint16BEEncode,
+				lengthDecoder: uint16BEDecode,
+				maxDataLength: NOISE_MSG_MAX_LENGTH_BYTES
+			});
+			const handshake = await this.performHandshakeInitiator(wrappedConnection, this.components.privateKey, log, options?.remotePeer?.publicKey, options);
+			const publicKey = publicKeyFromProtobuf(handshake.payload.identityKey);
+			return {
+				connection: toMessageStream(wrappedConnection.unwrap(), handshake, this.metrics),
+				remoteExtensions: handshake.payload.extensions,
+				remotePeer: peerIdFromPublicKey(publicKey),
+				streamMuxer: options?.skipStreamMuxerNegotiation === true ? void 0 : this.getStreamMuxer(handshake.payload.extensions?.streamMuxers)
+			};
+		}
+		getStreamMuxer(protocols) {
+			if (protocols == null || protocols.length === 0) return;
+			const streamMuxers = this.components.upgrader.getStreamMuxers();
+			if (streamMuxers != null) for (const protocol of protocols) {
+				const streamMuxer = streamMuxers.get(protocol);
+				if (streamMuxer != null) return streamMuxer;
+			}
+			if (protocols.length) throw new InvalidCryptoExchangeError$1("Early muxer negotiation was requested but the initiator and responder had no common muxers");
+		}
+		/**
+		* Decrypt incoming data (handshake as responder).
+		*
+		* @param connection - streaming iterable duplex that will be encrypted
+		* @param options
+		* @param options.remotePeer - PeerId of the remote peer. Used to validate the integrity of the remote peer
+		* @param options.signal - Used to abort the operation
+		*/
+		async secureInbound(connection, options) {
+			const log = connection.log?.newScope("noise") ?? this.log;
+			const wrappedConnection = lpStream(connection, {
+				lengthEncoder: uint16BEEncode,
+				lengthDecoder: uint16BEDecode,
+				maxDataLength: NOISE_MSG_MAX_LENGTH_BYTES
+			});
+			const handshake = await this.performHandshakeResponder(wrappedConnection, this.components.privateKey, log, options?.remotePeer?.publicKey, options);
+			const publicKey = publicKeyFromProtobuf(handshake.payload.identityKey);
+			return {
+				connection: toMessageStream(wrappedConnection.unwrap(), handshake, this.metrics),
+				remoteExtensions: handshake.payload.extensions,
+				remotePeer: peerIdFromPublicKey(publicKey),
+				streamMuxer: options?.skipStreamMuxerNegotiation === true ? void 0 : this.getStreamMuxer(handshake.payload.extensions?.streamMuxers)
+			};
+		}
+		/**
+		* Perform XX handshake as initiator.
+		*/
+		async performHandshakeInitiator(connection, privateKey, log, remoteIdentityKey, options) {
+			let result;
+			const streamMuxers = options?.skipStreamMuxerNegotiation === true ? [] : [...this.components.upgrader.getStreamMuxers().keys()];
+			try {
+				result = await performHandshakeInitiator({
+					connection,
+					privateKey,
+					remoteIdentityKey,
+					log: log.newScope("xxhandshake"),
+					crypto: this.crypto,
+					prologue: this.prologue,
+					s: this.staticKey,
+					extensions: {
+						streamMuxers,
+						webtransportCerthashes: [],
+						...this.extensions
+					}
+				}, options);
+				this.metrics?.xxHandshakeSuccesses.increment();
+			} catch (e) {
+				this.metrics?.xxHandshakeErrors.increment();
+				throw e;
+			}
+			return result;
+		}
+		/**
+		* Perform XX handshake as responder.
+		*/
+		async performHandshakeResponder(connection, privateKey, log, remoteIdentityKey, options) {
+			let result;
+			const streamMuxers = options?.skipStreamMuxerNegotiation === true ? [] : [...this.components.upgrader.getStreamMuxers().keys()];
+			try {
+				result = await performHandshakeResponder({
+					connection,
+					privateKey,
+					remoteIdentityKey,
+					log: log.newScope("xxhandshake"),
+					crypto: this.crypto,
+					prologue: this.prologue,
+					s: this.staticKey,
+					extensions: {
+						streamMuxers,
+						webtransportCerthashes: [],
+						...this.extensions
+					}
+				}, options);
+				this.metrics?.xxHandshakeSuccesses.increment();
+			} catch (e) {
+				this.metrics?.xxHandshakeErrors.increment();
+				throw e;
+			}
+			return result;
+		}
+	};
+	//#endregion
+	//#region node_modules/@chainsafe/libp2p-noise/dist/src/index.js
+	/**
+	* @packageDocumentation
+	*
+	* This repository contains TypeScript implementation of noise protocol, an encryption protocol used in libp2p.
+	*
+	* ## Usage
+	*
+	* Install with `yarn add @chainsafe/libp2p-noise` or `npm i @chainsafe/libp2p-noise`.
+	*
+	* Example of using default noise configuration and passing it to the libp2p config:
+	*
+	* ```ts
+	* import {createLibp2p} from "libp2p"
+	* import {noise} from "@chainsafe/libp2p-noise"
+	*
+	* //custom noise configuration, pass it instead of `noise()`
+	* //x25519 private key
+	* const n = noise({ staticNoiseKey });
+	*
+	* const libp2p = await createLibp2p({
+	*   connectionEncrypters: [noise()],
+	*   //... other options
+	* })
+	* ```
+	*
+	* See the [NoiseInit](https://github.com/ChainSafe/js-libp2p-noise/blob/master/src/noise.ts#L22-L30) interface for noise configuration options.
+	*
+	* ## API
+	*
+	* This module exposes an implementation of the [ConnectionEncrypter](https://libp2p.github.io/js-libp2p/interfaces/_libp2p_interface.ConnectionEncrypter.html) interface.
+	*
+	* ## Bring your own crypto
+	*
+	* You can provide a custom crypto implementation (instead of the default, based on [@noble](https://paulmillr.com/noble/)) by adding a `crypto` field to the init argument passed to the `Noise` factory.
+	*
+	* The implementation must conform to the `ICryptoInterface`, defined in <https://github.com/ChainSafe/js-libp2p-noise/blob/master/src/crypto.ts>
+	*/
+	function noise(init = {}) {
+		return (components) => new Noise(components, init);
 	}
 	//#endregion
 	//#region node_modules/@libp2p/webrtc/dist/src/index.js
@@ -37083,7 +40362,7 @@
 		(function(SubOpts) {
 			let _codec;
 			SubOpts.codec = () => {
-				if (_codec == null) _codec = message((obj, w, opts = {}) => {
+				if (_codec == null) _codec = message$1((obj, w, opts = {}) => {
 					if (opts.lengthDelimited !== false) w.fork();
 					if (obj.subscribe != null) {
 						w.uint32(8);
@@ -37138,11 +40417,11 @@
 				return _codec;
 			};
 			function encode(obj) {
-				return encodeMessage(obj, SubOpts.codec());
+				return encodeMessage$1(obj, SubOpts.codec());
 			}
 			SubOpts.encode = encode;
 			function decode(buf, opts) {
-				return decodeMessage(buf, SubOpts.codec(), opts);
+				return decodeMessage$1(buf, SubOpts.codec(), opts);
 			}
 			SubOpts.decode = decode;
 			function stream(buf, opts) {
@@ -37153,7 +40432,7 @@
 		(function(Message) {
 			let _codec;
 			Message.codec = () => {
-				if (_codec == null) _codec = message((obj, w, opts = {}) => {
+				if (_codec == null) _codec = message$1((obj, w, opts = {}) => {
 					if (opts.lengthDelimited !== false) w.fork();
 					if (obj.from != null) {
 						w.uint32(10);
@@ -37260,11 +40539,11 @@
 				return _codec;
 			};
 			function encode(obj) {
-				return encodeMessage(obj, Message.codec());
+				return encodeMessage$1(obj, Message.codec());
 			}
 			Message.encode = encode;
 			function decode(buf, opts) {
-				return decodeMessage(buf, Message.codec(), opts);
+				return decodeMessage$1(buf, Message.codec(), opts);
 			}
 			Message.decode = decode;
 			function stream(buf, opts) {
@@ -37275,7 +40554,7 @@
 		(function(ControlMessage) {
 			let _codec;
 			ControlMessage.codec = () => {
-				if (_codec == null) _codec = message((obj, w, opts = {}) => {
+				if (_codec == null) _codec = message$1((obj, w, opts = {}) => {
 					if (opts.lengthDelimited !== false) w.fork();
 					if (obj.ihave != null && obj.ihave.length > 0) for (const value of obj.ihave) {
 						w.uint32(10);
@@ -37311,23 +40590,23 @@
 						const tag = reader.uint32();
 						switch (tag >>> 3) {
 							case 1:
-								if (opts.limits?.ihave != null && obj.ihave.length === opts.limits.ihave) throw new MaxLengthError("Decode error - repeated field \"ihave\" had too many elements");
+								if (opts.limits?.ihave != null && obj.ihave.length === opts.limits.ihave) throw new MaxLengthError$1("Decode error - repeated field \"ihave\" had too many elements");
 								obj.ihave.push(RPC.ControlIHave.codec().decode(reader, reader.uint32(), { limits: opts.limits?.ihave$ }));
 								break;
 							case 2:
-								if (opts.limits?.iwant != null && obj.iwant.length === opts.limits.iwant) throw new MaxLengthError("Decode error - repeated field \"iwant\" had too many elements");
+								if (opts.limits?.iwant != null && obj.iwant.length === opts.limits.iwant) throw new MaxLengthError$1("Decode error - repeated field \"iwant\" had too many elements");
 								obj.iwant.push(RPC.ControlIWant.codec().decode(reader, reader.uint32(), { limits: opts.limits?.iwant$ }));
 								break;
 							case 3:
-								if (opts.limits?.graft != null && obj.graft.length === opts.limits.graft) throw new MaxLengthError("Decode error - repeated field \"graft\" had too many elements");
+								if (opts.limits?.graft != null && obj.graft.length === opts.limits.graft) throw new MaxLengthError$1("Decode error - repeated field \"graft\" had too many elements");
 								obj.graft.push(RPC.ControlGraft.codec().decode(reader, reader.uint32(), { limits: opts.limits?.graft$ }));
 								break;
 							case 4:
-								if (opts.limits?.prune != null && obj.prune.length === opts.limits.prune) throw new MaxLengthError("Decode error - repeated field \"prune\" had too many elements");
+								if (opts.limits?.prune != null && obj.prune.length === opts.limits.prune) throw new MaxLengthError$1("Decode error - repeated field \"prune\" had too many elements");
 								obj.prune.push(RPC.ControlPrune.codec().decode(reader, reader.uint32(), { limits: opts.limits?.prune$ }));
 								break;
 							case 5:
-								if (opts.limits?.idontwant != null && obj.idontwant.length === opts.limits.idontwant) throw new MaxLengthError("Decode error - repeated field \"idontwant\" had too many elements");
+								if (opts.limits?.idontwant != null && obj.idontwant.length === opts.limits.idontwant) throw new MaxLengthError$1("Decode error - repeated field \"idontwant\" had too many elements");
 								obj.idontwant.push(RPC.ControlIDontWant.codec().decode(reader, reader.uint32(), { limits: opts.limits?.idontwant$ }));
 								break;
 							default:
@@ -37349,7 +40628,7 @@
 						const tag = reader.uint32();
 						switch (tag >>> 3) {
 							case 1:
-								if (opts.limits?.ihave != null && obj.ihave === opts.limits.ihave) throw new MaxLengthError("Streaming decode error - repeated field \"ihave\" had too many elements");
+								if (opts.limits?.ihave != null && obj.ihave === opts.limits.ihave) throw new MaxLengthError$1("Streaming decode error - repeated field \"ihave\" had too many elements");
 								for (const evt of RPC.ControlIHave.codec().stream(reader, reader.uint32(), `${prefix}.ihave[]`, { limits: opts.limits?.ihave$ })) yield {
 									...evt,
 									index: obj.ihave
@@ -37357,7 +40636,7 @@
 								obj.ihave++;
 								break;
 							case 2:
-								if (opts.limits?.iwant != null && obj.iwant === opts.limits.iwant) throw new MaxLengthError("Streaming decode error - repeated field \"iwant\" had too many elements");
+								if (opts.limits?.iwant != null && obj.iwant === opts.limits.iwant) throw new MaxLengthError$1("Streaming decode error - repeated field \"iwant\" had too many elements");
 								for (const evt of RPC.ControlIWant.codec().stream(reader, reader.uint32(), `${prefix}.iwant[]`, { limits: opts.limits?.iwant$ })) yield {
 									...evt,
 									index: obj.iwant
@@ -37365,7 +40644,7 @@
 								obj.iwant++;
 								break;
 							case 3:
-								if (opts.limits?.graft != null && obj.graft === opts.limits.graft) throw new MaxLengthError("Streaming decode error - repeated field \"graft\" had too many elements");
+								if (opts.limits?.graft != null && obj.graft === opts.limits.graft) throw new MaxLengthError$1("Streaming decode error - repeated field \"graft\" had too many elements");
 								for (const evt of RPC.ControlGraft.codec().stream(reader, reader.uint32(), `${prefix}.graft[]`, { limits: opts.limits?.graft$ })) yield {
 									...evt,
 									index: obj.graft
@@ -37373,7 +40652,7 @@
 								obj.graft++;
 								break;
 							case 4:
-								if (opts.limits?.prune != null && obj.prune === opts.limits.prune) throw new MaxLengthError("Streaming decode error - repeated field \"prune\" had too many elements");
+								if (opts.limits?.prune != null && obj.prune === opts.limits.prune) throw new MaxLengthError$1("Streaming decode error - repeated field \"prune\" had too many elements");
 								for (const evt of RPC.ControlPrune.codec().stream(reader, reader.uint32(), `${prefix}.prune[]`, { limits: opts.limits?.prune$ })) yield {
 									...evt,
 									index: obj.prune
@@ -37381,7 +40660,7 @@
 								obj.prune++;
 								break;
 							case 5:
-								if (opts.limits?.idontwant != null && obj.idontwant === opts.limits.idontwant) throw new MaxLengthError("Streaming decode error - repeated field \"idontwant\" had too many elements");
+								if (opts.limits?.idontwant != null && obj.idontwant === opts.limits.idontwant) throw new MaxLengthError$1("Streaming decode error - repeated field \"idontwant\" had too many elements");
 								for (const evt of RPC.ControlIDontWant.codec().stream(reader, reader.uint32(), `${prefix}.idontwant[]`, { limits: opts.limits?.idontwant$ })) yield {
 									...evt,
 									index: obj.idontwant
@@ -37397,11 +40676,11 @@
 				return _codec;
 			};
 			function encode(obj) {
-				return encodeMessage(obj, ControlMessage.codec());
+				return encodeMessage$1(obj, ControlMessage.codec());
 			}
 			ControlMessage.encode = encode;
 			function decode(buf, opts) {
-				return decodeMessage(buf, ControlMessage.codec(), opts);
+				return decodeMessage$1(buf, ControlMessage.codec(), opts);
 			}
 			ControlMessage.decode = decode;
 			function stream(buf, opts) {
@@ -37412,7 +40691,7 @@
 		(function(ControlIHave) {
 			let _codec;
 			ControlIHave.codec = () => {
-				if (_codec == null) _codec = message((obj, w, opts = {}) => {
+				if (_codec == null) _codec = message$1((obj, w, opts = {}) => {
 					if (opts.lengthDelimited !== false) w.fork();
 					if (obj.topicID != null) {
 						w.uint32(10);
@@ -37433,7 +40712,7 @@
 								obj.topicID = reader.string();
 								break;
 							case 2:
-								if (opts.limits?.messageIDs != null && obj.messageIDs.length === opts.limits.messageIDs) throw new MaxLengthError("Decode error - repeated field \"messageIDs\" had too many elements");
+								if (opts.limits?.messageIDs != null && obj.messageIDs.length === opts.limits.messageIDs) throw new MaxLengthError$1("Decode error - repeated field \"messageIDs\" had too many elements");
 								obj.messageIDs.push(reader.bytes());
 								break;
 							default:
@@ -37455,7 +40734,7 @@
 								};
 								break;
 							case 2:
-								if (opts.limits?.messageIDs != null && obj.messageIDs === opts.limits.messageIDs) throw new MaxLengthError("Streaming decode error - repeated field \"messageIDs\" had too many elements");
+								if (opts.limits?.messageIDs != null && obj.messageIDs === opts.limits.messageIDs) throw new MaxLengthError$1("Streaming decode error - repeated field \"messageIDs\" had too many elements");
 								yield {
 									field: `${prefix}.messageIDs[]`,
 									index: obj.messageIDs,
@@ -37472,11 +40751,11 @@
 				return _codec;
 			};
 			function encode(obj) {
-				return encodeMessage(obj, ControlIHave.codec());
+				return encodeMessage$1(obj, ControlIHave.codec());
 			}
 			ControlIHave.encode = encode;
 			function decode(buf, opts) {
-				return decodeMessage(buf, ControlIHave.codec(), opts);
+				return decodeMessage$1(buf, ControlIHave.codec(), opts);
 			}
 			ControlIHave.decode = decode;
 			function stream(buf, opts) {
@@ -37487,7 +40766,7 @@
 		(function(ControlIWant) {
 			let _codec;
 			ControlIWant.codec = () => {
-				if (_codec == null) _codec = message((obj, w, opts = {}) => {
+				if (_codec == null) _codec = message$1((obj, w, opts = {}) => {
 					if (opts.lengthDelimited !== false) w.fork();
 					if (obj.messageIDs != null && obj.messageIDs.length > 0) for (const value of obj.messageIDs) {
 						w.uint32(10);
@@ -37501,7 +40780,7 @@
 						const tag = reader.uint32();
 						switch (tag >>> 3) {
 							case 1:
-								if (opts.limits?.messageIDs != null && obj.messageIDs.length === opts.limits.messageIDs) throw new MaxLengthError("Decode error - repeated field \"messageIDs\" had too many elements");
+								if (opts.limits?.messageIDs != null && obj.messageIDs.length === opts.limits.messageIDs) throw new MaxLengthError$1("Decode error - repeated field \"messageIDs\" had too many elements");
 								obj.messageIDs.push(reader.bytes());
 								break;
 							default:
@@ -37517,7 +40796,7 @@
 						const tag = reader.uint32();
 						switch (tag >>> 3) {
 							case 1:
-								if (opts.limits?.messageIDs != null && obj.messageIDs === opts.limits.messageIDs) throw new MaxLengthError("Streaming decode error - repeated field \"messageIDs\" had too many elements");
+								if (opts.limits?.messageIDs != null && obj.messageIDs === opts.limits.messageIDs) throw new MaxLengthError$1("Streaming decode error - repeated field \"messageIDs\" had too many elements");
 								yield {
 									field: `${prefix}.messageIDs[]`,
 									index: obj.messageIDs,
@@ -37534,11 +40813,11 @@
 				return _codec;
 			};
 			function encode(obj) {
-				return encodeMessage(obj, ControlIWant.codec());
+				return encodeMessage$1(obj, ControlIWant.codec());
 			}
 			ControlIWant.encode = encode;
 			function decode(buf, opts) {
-				return decodeMessage(buf, ControlIWant.codec(), opts);
+				return decodeMessage$1(buf, ControlIWant.codec(), opts);
 			}
 			ControlIWant.decode = decode;
 			function stream(buf, opts) {
@@ -37549,7 +40828,7 @@
 		(function(ControlGraft) {
 			let _codec;
 			ControlGraft.codec = () => {
-				if (_codec == null) _codec = message((obj, w, opts = {}) => {
+				if (_codec == null) _codec = message$1((obj, w, opts = {}) => {
 					if (opts.lengthDelimited !== false) w.fork();
 					if (obj.topicID != null) {
 						w.uint32(10);
@@ -37591,11 +40870,11 @@
 				return _codec;
 			};
 			function encode(obj) {
-				return encodeMessage(obj, ControlGraft.codec());
+				return encodeMessage$1(obj, ControlGraft.codec());
 			}
 			ControlGraft.encode = encode;
 			function decode(buf, opts) {
-				return decodeMessage(buf, ControlGraft.codec(), opts);
+				return decodeMessage$1(buf, ControlGraft.codec(), opts);
 			}
 			ControlGraft.decode = decode;
 			function stream(buf, opts) {
@@ -37606,7 +40885,7 @@
 		(function(ControlPrune) {
 			let _codec;
 			ControlPrune.codec = () => {
-				if (_codec == null) _codec = message((obj, w, opts = {}) => {
+				if (_codec == null) _codec = message$1((obj, w, opts = {}) => {
 					if (opts.lengthDelimited !== false) w.fork();
 					if (obj.topicID != null) {
 						w.uint32(10);
@@ -37631,7 +40910,7 @@
 								obj.topicID = reader.string();
 								break;
 							case 2:
-								if (opts.limits?.peers != null && obj.peers.length === opts.limits.peers) throw new MaxLengthError("Decode error - repeated field \"peers\" had too many elements");
+								if (opts.limits?.peers != null && obj.peers.length === opts.limits.peers) throw new MaxLengthError$1("Decode error - repeated field \"peers\" had too many elements");
 								obj.peers.push(RPC.PeerInfo.codec().decode(reader, reader.uint32(), { limits: opts.limits?.peers$ }));
 								break;
 							case 3:
@@ -37656,7 +40935,7 @@
 								};
 								break;
 							case 2:
-								if (opts.limits?.peers != null && obj.peers === opts.limits.peers) throw new MaxLengthError("Streaming decode error - repeated field \"peers\" had too many elements");
+								if (opts.limits?.peers != null && obj.peers === opts.limits.peers) throw new MaxLengthError$1("Streaming decode error - repeated field \"peers\" had too many elements");
 								for (const evt of RPC.PeerInfo.codec().stream(reader, reader.uint32(), `${prefix}.peers[]`, { limits: opts.limits?.peers$ })) yield {
 									...evt,
 									index: obj.peers
@@ -37678,11 +40957,11 @@
 				return _codec;
 			};
 			function encode(obj) {
-				return encodeMessage(obj, ControlPrune.codec());
+				return encodeMessage$1(obj, ControlPrune.codec());
 			}
 			ControlPrune.encode = encode;
 			function decode(buf, opts) {
-				return decodeMessage(buf, ControlPrune.codec(), opts);
+				return decodeMessage$1(buf, ControlPrune.codec(), opts);
 			}
 			ControlPrune.decode = decode;
 			function stream(buf, opts) {
@@ -37693,7 +40972,7 @@
 		(function(PeerInfo) {
 			let _codec;
 			PeerInfo.codec = () => {
-				if (_codec == null) _codec = message((obj, w, opts = {}) => {
+				if (_codec == null) _codec = message$1((obj, w, opts = {}) => {
 					if (opts.lengthDelimited !== false) w.fork();
 					if (obj.peerID != null) {
 						w.uint32(10);
@@ -37748,11 +41027,11 @@
 				return _codec;
 			};
 			function encode(obj) {
-				return encodeMessage(obj, PeerInfo.codec());
+				return encodeMessage$1(obj, PeerInfo.codec());
 			}
 			PeerInfo.encode = encode;
 			function decode(buf, opts) {
-				return decodeMessage(buf, PeerInfo.codec(), opts);
+				return decodeMessage$1(buf, PeerInfo.codec(), opts);
 			}
 			PeerInfo.decode = decode;
 			function stream(buf, opts) {
@@ -37763,7 +41042,7 @@
 		(function(ControlIDontWant) {
 			let _codec;
 			ControlIDontWant.codec = () => {
-				if (_codec == null) _codec = message((obj, w, opts = {}) => {
+				if (_codec == null) _codec = message$1((obj, w, opts = {}) => {
 					if (opts.lengthDelimited !== false) w.fork();
 					if (obj.messageIDs != null && obj.messageIDs.length > 0) for (const value of obj.messageIDs) {
 						w.uint32(10);
@@ -37777,7 +41056,7 @@
 						const tag = reader.uint32();
 						switch (tag >>> 3) {
 							case 1:
-								if (opts.limits?.messageIDs != null && obj.messageIDs.length === opts.limits.messageIDs) throw new MaxLengthError("Decode error - repeated field \"messageIDs\" had too many elements");
+								if (opts.limits?.messageIDs != null && obj.messageIDs.length === opts.limits.messageIDs) throw new MaxLengthError$1("Decode error - repeated field \"messageIDs\" had too many elements");
 								obj.messageIDs.push(reader.bytes());
 								break;
 							default:
@@ -37793,7 +41072,7 @@
 						const tag = reader.uint32();
 						switch (tag >>> 3) {
 							case 1:
-								if (opts.limits?.messageIDs != null && obj.messageIDs === opts.limits.messageIDs) throw new MaxLengthError("Streaming decode error - repeated field \"messageIDs\" had too many elements");
+								if (opts.limits?.messageIDs != null && obj.messageIDs === opts.limits.messageIDs) throw new MaxLengthError$1("Streaming decode error - repeated field \"messageIDs\" had too many elements");
 								yield {
 									field: `${prefix}.messageIDs[]`,
 									index: obj.messageIDs,
@@ -37810,11 +41089,11 @@
 				return _codec;
 			};
 			function encode(obj) {
-				return encodeMessage(obj, ControlIDontWant.codec());
+				return encodeMessage$1(obj, ControlIDontWant.codec());
 			}
 			ControlIDontWant.encode = encode;
 			function decode(buf, opts) {
-				return decodeMessage(buf, ControlIDontWant.codec(), opts);
+				return decodeMessage$1(buf, ControlIDontWant.codec(), opts);
 			}
 			ControlIDontWant.decode = decode;
 			function stream(buf, opts) {
@@ -37824,7 +41103,7 @@
 		})(RPC.ControlIDontWant || (RPC.ControlIDontWant = {}));
 		let _codec;
 		RPC.codec = () => {
-			if (_codec == null) _codec = message((obj, w, opts = {}) => {
+			if (_codec == null) _codec = message$1((obj, w, opts = {}) => {
 				if (opts.lengthDelimited !== false) w.fork();
 				if (obj.subscriptions != null && obj.subscriptions.length > 0) for (const value of obj.subscriptions) {
 					w.uint32(10);
@@ -37849,11 +41128,11 @@
 					const tag = reader.uint32();
 					switch (tag >>> 3) {
 						case 1:
-							if (opts.limits?.subscriptions != null && obj.subscriptions.length === opts.limits.subscriptions) throw new MaxLengthError("Decode error - repeated field \"subscriptions\" had too many elements");
+							if (opts.limits?.subscriptions != null && obj.subscriptions.length === opts.limits.subscriptions) throw new MaxLengthError$1("Decode error - repeated field \"subscriptions\" had too many elements");
 							obj.subscriptions.push(RPC.SubOpts.codec().decode(reader, reader.uint32(), { limits: opts.limits?.subscriptions$ }));
 							break;
 						case 2:
-							if (opts.limits?.messages != null && obj.messages.length === opts.limits.messages) throw new MaxLengthError("Decode error - repeated field \"messages\" had too many elements");
+							if (opts.limits?.messages != null && obj.messages.length === opts.limits.messages) throw new MaxLengthError$1("Decode error - repeated field \"messages\" had too many elements");
 							obj.messages.push(RPC.Message.codec().decode(reader, reader.uint32(), { limits: opts.limits?.messages$ }));
 							break;
 						case 3:
@@ -37875,7 +41154,7 @@
 					const tag = reader.uint32();
 					switch (tag >>> 3) {
 						case 1:
-							if (opts.limits?.subscriptions != null && obj.subscriptions === opts.limits.subscriptions) throw new MaxLengthError("Streaming decode error - repeated field \"subscriptions\" had too many elements");
+							if (opts.limits?.subscriptions != null && obj.subscriptions === opts.limits.subscriptions) throw new MaxLengthError$1("Streaming decode error - repeated field \"subscriptions\" had too many elements");
 							for (const evt of RPC.SubOpts.codec().stream(reader, reader.uint32(), `${prefix}.subscriptions[]`, { limits: opts.limits?.subscriptions$ })) yield {
 								...evt,
 								index: obj.subscriptions
@@ -37883,7 +41162,7 @@
 							obj.subscriptions++;
 							break;
 						case 2:
-							if (opts.limits?.messages != null && obj.messages === opts.limits.messages) throw new MaxLengthError("Streaming decode error - repeated field \"messages\" had too many elements");
+							if (opts.limits?.messages != null && obj.messages === opts.limits.messages) throw new MaxLengthError$1("Streaming decode error - repeated field \"messages\" had too many elements");
 							for (const evt of RPC.Message.codec().stream(reader, reader.uint32(), `${prefix}.messages[]`, { limits: opts.limits?.messages$ })) yield {
 								...evt,
 								index: obj.messages
@@ -37902,11 +41181,11 @@
 			return _codec;
 		};
 		function encode(obj) {
-			return encodeMessage(obj, RPC.codec());
+			return encodeMessage$1(obj, RPC.codec());
 		}
 		RPC.encode = encode;
 		function decode(buf, opts) {
-			return decodeMessage(buf, RPC.codec(), opts);
+			return decodeMessage$1(buf, RPC.codec(), opts);
 		}
 		RPC.decode = decode;
 		function stream(buf, opts) {
@@ -42524,7 +45803,7 @@
 	(function(Identify) {
 		let _codec;
 		Identify.codec = () => {
-			if (_codec == null) _codec = message((obj, w, opts = {}) => {
+			if (_codec == null) _codec = message$1((obj, w, opts = {}) => {
 				if (opts.lengthDelimited !== false) w.fork();
 				if (obj.protocolVersion != null) {
 					w.uint32(42);
@@ -42574,14 +45853,14 @@
 							obj.publicKey = reader.bytes();
 							break;
 						case 2:
-							if (opts.limits?.listenAddrs != null && obj.listenAddrs.length === opts.limits.listenAddrs) throw new MaxLengthError("Decode error - repeated field \"listenAddrs\" had too many elements");
+							if (opts.limits?.listenAddrs != null && obj.listenAddrs.length === opts.limits.listenAddrs) throw new MaxLengthError$1("Decode error - repeated field \"listenAddrs\" had too many elements");
 							obj.listenAddrs.push(reader.bytes());
 							break;
 						case 4:
 							obj.observedAddr = reader.bytes();
 							break;
 						case 3:
-							if (opts.limits?.protocols != null && obj.protocols.length === opts.limits.protocols) throw new MaxLengthError("Decode error - repeated field \"protocols\" had too many elements");
+							if (opts.limits?.protocols != null && obj.protocols.length === opts.limits.protocols) throw new MaxLengthError$1("Decode error - repeated field \"protocols\" had too many elements");
 							obj.protocols.push(reader.string());
 							break;
 						case 8:
@@ -42621,7 +45900,7 @@
 							};
 							break;
 						case 2:
-							if (opts.limits?.listenAddrs != null && obj.listenAddrs === opts.limits.listenAddrs) throw new MaxLengthError("Streaming decode error - repeated field \"listenAddrs\" had too many elements");
+							if (opts.limits?.listenAddrs != null && obj.listenAddrs === opts.limits.listenAddrs) throw new MaxLengthError$1("Streaming decode error - repeated field \"listenAddrs\" had too many elements");
 							yield {
 								field: `${prefix}.listenAddrs[]`,
 								index: obj.listenAddrs,
@@ -42636,7 +45915,7 @@
 							};
 							break;
 						case 3:
-							if (opts.limits?.protocols != null && obj.protocols === opts.limits.protocols) throw new MaxLengthError("Streaming decode error - repeated field \"protocols\" had too many elements");
+							if (opts.limits?.protocols != null && obj.protocols === opts.limits.protocols) throw new MaxLengthError$1("Streaming decode error - repeated field \"protocols\" had too many elements");
 							yield {
 								field: `${prefix}.protocols[]`,
 								index: obj.protocols,
@@ -42659,11 +45938,11 @@
 			return _codec;
 		};
 		function encode(obj) {
-			return encodeMessage(obj, Identify.codec());
+			return encodeMessage$1(obj, Identify.codec());
 		}
 		Identify.encode = encode;
 		function decode(buf, opts) {
-			return decodeMessage(buf, Identify.codec(), opts);
+			return decodeMessage$1(buf, Identify.codec(), opts);
 		}
 		Identify.decode = decode;
 		function stream(buf, opts) {
@@ -43017,7 +46296,7 @@
 		})(HopMessage.Type || (HopMessage.Type = {}));
 		let _codec;
 		HopMessage.codec = () => {
-			if (_codec == null) _codec = message((obj, w, opts = {}) => {
+			if (_codec == null) _codec = message$1((obj, w, opts = {}) => {
 				if (opts.lengthDelimited !== false) w.fork();
 				if (obj.type != null) {
 					w.uint32(8);
@@ -43102,11 +46381,11 @@
 			return _codec;
 		};
 		function encode(obj) {
-			return encodeMessage(obj, HopMessage.codec());
+			return encodeMessage$1(obj, HopMessage.codec());
 		}
 		HopMessage.encode = encode;
 		function decode(buf, opts) {
-			return decodeMessage(buf, HopMessage.codec(), opts);
+			return decodeMessage$1(buf, HopMessage.codec(), opts);
 		}
 		HopMessage.decode = decode;
 		function stream(buf, opts) {
@@ -43132,7 +46411,7 @@
 		})(StopMessage.Type || (StopMessage.Type = {}));
 		let _codec;
 		StopMessage.codec = () => {
-			if (_codec == null) _codec = message((obj, w, opts = {}) => {
+			if (_codec == null) _codec = message$1((obj, w, opts = {}) => {
 				if (opts.lengthDelimited !== false) w.fork();
 				if (obj.type != null) {
 					w.uint32(8);
@@ -43207,11 +46486,11 @@
 			return _codec;
 		};
 		function encode(obj) {
-			return encodeMessage(obj, StopMessage.codec());
+			return encodeMessage$1(obj, StopMessage.codec());
 		}
 		StopMessage.encode = encode;
 		function decode(buf, opts) {
-			return decodeMessage(buf, StopMessage.codec(), opts);
+			return decodeMessage$1(buf, StopMessage.codec(), opts);
 		}
 		StopMessage.decode = decode;
 		function stream(buf, opts) {
@@ -43223,7 +46502,7 @@
 	(function(Peer) {
 		let _codec;
 		Peer.codec = () => {
-			if (_codec == null) _codec = message((obj, w, opts = {}) => {
+			if (_codec == null) _codec = message$1((obj, w, opts = {}) => {
 				if (opts.lengthDelimited !== false) w.fork();
 				if (obj.id != null && obj.id.byteLength > 0) {
 					w.uint32(10);
@@ -43236,7 +46515,7 @@
 				if (opts.lengthDelimited !== false) w.ldelim();
 			}, (reader, length, opts = {}) => {
 				const obj = {
-					id: alloc$1(0),
+					id: alloc$2(0),
 					addrs: []
 				};
 				const end = length == null ? reader.len : reader.pos + length;
@@ -43247,7 +46526,7 @@
 							obj.id = reader.bytes();
 							break;
 						case 2:
-							if (opts.limits?.addrs != null && obj.addrs.length === opts.limits.addrs) throw new MaxLengthError("Decode error - repeated field \"addrs\" had too many elements");
+							if (opts.limits?.addrs != null && obj.addrs.length === opts.limits.addrs) throw new MaxLengthError$1("Decode error - repeated field \"addrs\" had too many elements");
 							obj.addrs.push(reader.bytes());
 							break;
 						default:
@@ -43269,7 +46548,7 @@
 							};
 							break;
 						case 2:
-							if (opts.limits?.addrs != null && obj.addrs === opts.limits.addrs) throw new MaxLengthError("Streaming decode error - repeated field \"addrs\" had too many elements");
+							if (opts.limits?.addrs != null && obj.addrs === opts.limits.addrs) throw new MaxLengthError$1("Streaming decode error - repeated field \"addrs\" had too many elements");
 							yield {
 								field: `${prefix}.addrs[]`,
 								index: obj.addrs,
@@ -43286,11 +46565,11 @@
 			return _codec;
 		};
 		function encode(obj) {
-			return encodeMessage(obj, Peer.codec());
+			return encodeMessage$1(obj, Peer.codec());
 		}
 		Peer.encode = encode;
 		function decode(buf, opts) {
-			return decodeMessage(buf, Peer.codec(), opts);
+			return decodeMessage$1(buf, Peer.codec(), opts);
 		}
 		Peer.decode = decode;
 		function stream(buf, opts) {
@@ -43302,7 +46581,7 @@
 	(function(Reservation) {
 		let _codec;
 		Reservation.codec = () => {
-			if (_codec == null) _codec = message((obj, w, opts = {}) => {
+			if (_codec == null) _codec = message$1((obj, w, opts = {}) => {
 				if (opts.lengthDelimited !== false) w.fork();
 				if (obj.expire != null && obj.expire !== 0n) {
 					w.uint32(8);
@@ -43330,7 +46609,7 @@
 							obj.expire = reader.uint64();
 							break;
 						case 2:
-							if (opts.limits?.addrs != null && obj.addrs.length === opts.limits.addrs) throw new MaxLengthError("Decode error - repeated field \"addrs\" had too many elements");
+							if (opts.limits?.addrs != null && obj.addrs.length === opts.limits.addrs) throw new MaxLengthError$1("Decode error - repeated field \"addrs\" had too many elements");
 							obj.addrs.push(reader.bytes());
 							break;
 						case 3:
@@ -43355,7 +46634,7 @@
 							};
 							break;
 						case 2:
-							if (opts.limits?.addrs != null && obj.addrs === opts.limits.addrs) throw new MaxLengthError("Streaming decode error - repeated field \"addrs\" had too many elements");
+							if (opts.limits?.addrs != null && obj.addrs === opts.limits.addrs) throw new MaxLengthError$1("Streaming decode error - repeated field \"addrs\" had too many elements");
 							yield {
 								field: `${prefix}.addrs[]`,
 								index: obj.addrs,
@@ -43375,11 +46654,11 @@
 			return _codec;
 		};
 		function encode(obj) {
-			return encodeMessage(obj, Reservation.codec());
+			return encodeMessage$1(obj, Reservation.codec());
 		}
 		Reservation.encode = encode;
 		function decode(buf, opts) {
-			return decodeMessage(buf, Reservation.codec(), opts);
+			return decodeMessage$1(buf, Reservation.codec(), opts);
 		}
 		Reservation.decode = decode;
 		function stream(buf, opts) {
@@ -43391,7 +46670,7 @@
 	(function(Limit) {
 		let _codec;
 		Limit.codec = () => {
-			if (_codec == null) _codec = message((obj, w, opts = {}) => {
+			if (_codec == null) _codec = message$1((obj, w, opts = {}) => {
 				if (opts.lengthDelimited !== false) w.fork();
 				if (obj.duration != null) {
 					w.uint32(8);
@@ -43446,11 +46725,11 @@
 			return _codec;
 		};
 		function encode(obj) {
-			return encodeMessage(obj, Limit.codec());
+			return encodeMessage$1(obj, Limit.codec());
 		}
 		Limit.encode = encode;
 		function decode(buf, opts) {
-			return decodeMessage(buf, Limit.codec(), opts);
+			return decodeMessage$1(buf, Limit.codec(), opts);
 		}
 		Limit.decode = decode;
 		function stream(buf, opts) {
@@ -43491,7 +46770,7 @@
 	(function(ReservationVoucher) {
 		let _codec;
 		ReservationVoucher.codec = () => {
-			if (_codec == null) _codec = message((obj, w, opts = {}) => {
+			if (_codec == null) _codec = message$1((obj, w, opts = {}) => {
 				if (opts.lengthDelimited !== false) w.fork();
 				if (obj.relay != null && obj.relay.byteLength > 0) {
 					w.uint32(10);
@@ -43508,8 +46787,8 @@
 				if (opts.lengthDelimited !== false) w.ldelim();
 			}, (reader, length, opts = {}) => {
 				const obj = {
-					relay: alloc$1(0),
-					peer: alloc$1(0),
+					relay: alloc$2(0),
+					peer: alloc$2(0),
 					expiration: 0n
 				};
 				const end = length == null ? reader.len : reader.pos + length;
@@ -43563,11 +46842,11 @@
 			return _codec;
 		};
 		function encode(obj) {
-			return encodeMessage(obj, ReservationVoucher.codec());
+			return encodeMessage$1(obj, ReservationVoucher.codec());
 		}
 		ReservationVoucher.encode = encode;
 		function decode(buf, opts) {
-			return decodeMessage(buf, ReservationVoucher.codec(), opts);
+			return decodeMessage$1(buf, ReservationVoucher.codec(), opts);
 		}
 		ReservationVoucher.decode = decode;
 		function stream(buf, opts) {
@@ -43579,7 +46858,7 @@
 	(function(Envelope) {
 		let _codec;
 		Envelope.codec = () => {
-			if (_codec == null) _codec = message((obj, w, opts = {}) => {
+			if (_codec == null) _codec = message$1((obj, w, opts = {}) => {
 				if (opts.lengthDelimited !== false) w.fork();
 				if (obj.publicKey != null && obj.publicKey.byteLength > 0) {
 					w.uint32(10);
@@ -43600,9 +46879,9 @@
 				if (opts.lengthDelimited !== false) w.ldelim();
 			}, (reader, length, opts = {}) => {
 				const obj = {
-					publicKey: alloc$1(0),
-					payloadType: alloc$1(0),
-					signature: alloc$1(0)
+					publicKey: alloc$2(0),
+					payloadType: alloc$2(0),
+					signature: alloc$2(0)
 				};
 				const end = length == null ? reader.len : reader.pos + length;
 				while (reader.pos < end) {
@@ -43661,11 +46940,11 @@
 			return _codec;
 		};
 		function encode(obj) {
-			return encodeMessage(obj, Envelope.codec());
+			return encodeMessage$1(obj, Envelope.codec());
 		}
 		Envelope.encode = encode;
 		function decode(buf, opts) {
-			return decodeMessage(buf, Envelope.codec(), opts);
+			return decodeMessage$1(buf, Envelope.codec(), opts);
 		}
 		Envelope.decode = decode;
 		function stream(buf, opts) {
@@ -87162,6 +90441,7 @@
 					webRTC(),
 					circuitRelayTransport()
 				],
+				connectionEncrypters: [noise()],
 				services: {
 					pubsub: gossipsub({
 						emitSelf: false,
