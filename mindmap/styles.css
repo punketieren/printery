@@ -374,7 +374,7 @@ height: 8px;}
 
 #heading-level, #map-level {
     display: inline-block;
-    background: white;
+    background-color: white;
     border: 1px solid #cbd5e1;
     border-radius: 6px;
     padding: 2px 4px;
