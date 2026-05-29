@@ -536,7 +536,7 @@ window.addEventListener('message', (e) => {
 const editorContainer = document.getElementById('editor');
 const wysiwygRadio = document.querySelector('input[value="wysiwyg"]');
 const markdownRadio = document.querySelector('input[value="markdown"]');
-let textarea = null;
+ 
 
 function switchToWysiwyg() {
     window.ProseMirrorBundle.switchToProseMirror();

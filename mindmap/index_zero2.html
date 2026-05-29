@@ -79,50 +79,47 @@
 <div class="global-status" id="global-status">Готов</div>
    	
  <script src="prosemirror.bundle.js"></script>  
-<script src="init-prosemirror.js"></script> 	
+<script src="init-prosemirror-new.js"></script> 	
 <script  src="view.js"></script>
 
 <script>
-document.addEventListener("DOMContentLoaded", () => {
-    const container = document.getElementById('editor');
+//document.addEventListener("DOMContentLoaded", () => {
+//    const container = document.getElementById('editor');
     
     // 1. Штатный запуск (не трогаем)
-    if (window.ProseMirrorBundle && window.ProseMirrorBundle.initMarkdownEditor) {
-        window.ProseMirrorBundle.initMarkdownEditor(container);
-    }
+//    if (window.ProseMirrorBundle && window.ProseMirrorBundle.initMarkdownEditor) {
+//        window.ProseMirrorBundle.initMarkdownEditor(container);
+//    }
+// ИНЖЕНЕРНЫЙ МОНИТОРИНГ СЕТЕВОГО ПРОТОКОЛА
+//    if (window.ProseMirrorBundle) {
+//        const ydoc = window.ProseMirrorBundle.ydoc;
+//        const ytext = window.ProseMirrorBundle.ytext;
 
-    // ==================================================
-    // ИНЖЕНЕРНЫЙ МОНИТОРИНГ СЕТЕВОГО ПРОТОКОЛА
-    // ==================================================
-    if (window.ProseMirrorBundle) {
-        const ydoc = window.ProseMirrorBundle.ydoc;
-        const ytext = window.ProseMirrorBundle.ytext;
-
-        console.log("=== ЗАПУСК МОНИТОРИНГА СВЯЗИ ===");
-        console.log("Ваш локальный Yjs ClientID:", ydoc.clientID);
+//        console.log("=== ЗАПУСК МОНИТОРИНГА СВЯЗИ ===");
+//        console.log("Ваш локальный Yjs ClientID:", ydoc.clientID);
 
         // ТЕСТ А. Мониторинг входящих сетевых дельт (Узнаем, долетают ли байты)
-        ydoc.on('update', (update, origin) => {
-            console.log(`📡 Событие update! Источник правок: [${origin}]. Размер пакета: ${update.byteLength} байт`);
-        });
+//        ydoc.on('update', (update, origin) => {
+//            console.log(`📡 Событие update! Источник правок: [${origin}]. Размер пакета: ${update.byteLength} байт`);
+//        });
 
         // ТЕСТ Б. Ловим системный сигнал 'mapReady' от айфрейма прямо здесь
-        window.addEventListener('message', (e) => {
-            if (e.data && e.data.type === 'mapReady') {
-                console.log("🗺️ Сигнал 'mapReady' успешно долетел из айфрейма в index.html!");
+//        window.addEventListener('message', (e) => {
+//            if (e.data && e.data.type === 'mapReady') {
+//                console.log("🗺️ Сигнал 'mapReady' успешно долетел из айфрейма в index.html!");
                 
                 // Проверяем, можем ли мы протолкнуть данные в карту в ее родном формате
-                const mapFrame = document.getElementById('mapFrame');
-                if (mapFrame && mapFrame.contentWindow) {
-                    mapFrame.contentWindow.postMessage({
-                        type: 'updateMap',
-                        markdown: ytext.toString() || '# Связь налажена'
-                    }, '*');
-                }
-            }
-        });
-    }
-});
+//                const mapFrame = document.getElementById('mapFrame');
+//                if (mapFrame && mapFrame.contentWindow) {
+//                    mapFrame.contentWindow.postMessage({
+//                        type: 'updateMap',
+//                        markdown: ytext.toString() || '# Связь налажена'
+ //                   }, '*');
+//                }
+//            }
+//        });
+//    }
+//});
 </script>
 
 </body>
