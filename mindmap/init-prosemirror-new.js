@@ -1,19 +1,12 @@
-// init-prosemirror.js
-// ProseMirror инициализируется здесь — один раз.
-// Бандл (editor.js) предоставляет: ydoc, ytext, yXmlFragment, provider,
-// ySyncPlugin, yCursorPlugin, yUndoPlugin, createCodeMirror, switchToCodeMirror, switchToProseMirror
-
 (function () {
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);
     } else {
         init();
     }
-
     function init() {
         const B = window.ProseMirrorBundle;
         if (!B) { console.error('prosemirror.bundle.js не загружен'); return; }
-
         const {
             EditorState, EditorView, mySchema,
             keymap, baseKeymap, history, undo, redo,
@@ -23,8 +16,7 @@
             markdownToProseMirror, proseMirrorToMarkdown,
             stripYaml, extractYaml, sendToMapFrame
         } = B;
-
-        // ── 1. СОЗДАЁМ PROSEMIRROR (один раз, с yjs-плагинами) ──────────
+        //  1. СОЗДАЁМ PROSEMIRROR (один раз, с yjs-плагинами) 
         const { ySyncPlugin, yCursorPlugin, yUndoPlugin } = B;
 
         const view = new EditorView(document.getElementById('editor'), {
@@ -42,7 +34,6 @@
             dispatchTransaction(tr) {
                 const newState = view.state.apply(tr);
                 view.updateState(newState);
-
                 // PM → ytext (сохраняем yaml из ytext)
                 if (tr.docChanged) {
                     const body = proseMirrorToMarkdown(newState.doc);
@@ -55,15 +46,12 @@
                         }, 'pm-local');
                     }
                 }
-
                 // Обновляем карту
                 sendToMapFrame(ytext.toString());
             }
         });
-
         window.editorView = view;
-
-        // ── 2. ЗАГРУЗКА ФАЙЛА ПО УМОЛЧАНИЮ ──────────────────────────────
+        //  2. ЗАГРУЗКА ФАЙЛА ПО УМОЛЧАНИЮ 
         async function loadDefaultFile() {
             try {
                 const res = await fetch('/printery/mindmap/to-do.md');
@@ -93,8 +81,7 @@
             }
         }
         loadDefaultFile();
-
-        // ── 3. ОТПРАВКА В КАРТУ ПРИ СТАРТЕ ──────────────────────────────
+        //  3. ОТПРАВКА В КАРТУ ПРИ СТАРТЕ───
         window.addEventListener('message', (e) => {
             if (e.data?.type === 'mapReady') sendToMapFrame(ytext.toString());
             if (e.data?.type === 'levelChanged') {
@@ -103,8 +90,7 @@
             }
         });
         setTimeout(() => sendToMapFrame(ytext.toString()), 500);
-
-        // ── 4. ОБНОВЛЕНИЕ УРОВНЯ ЗАГОЛОВКА ──────────────────────────────
+        //  4. ОБНОВЛЕНИЕ УРОВНЯ ЗАГОЛОВКА ─
         function updateHeadingLevel() {
             const { $from } = view.state.selection;
             const node  = $from.node($from.depth);
@@ -115,8 +101,7 @@
         view.dom.addEventListener('click', updateHeadingLevel);
         view.dom.addEventListener('keyup',  updateHeadingLevel);
         updateHeadingLevel();
-
-        // ── 5. КНОПКИ ФОРМАТИРОВАНИЯ ────────────────────────────────────
+        //  5. КНОПКИ ФОРМАТИРОВАНИЯ─
         const btn = (id, fn) => {
             const el = document.getElementById(id);
             if (el) el.addEventListener('click', () => { fn(); view.focus(); });
@@ -135,7 +120,6 @@
                 if (node) setBlockType(node)(state, dispatch);
             }
         });
-
         cmd('bold',        'toggleMark',  'strong');
         cmd('italic',      'toggleMark',  'em');
         cmd('strike',      'toggleMark',  'strike');
@@ -170,7 +154,6 @@
                 ? setBlockType(state.schema.nodes.paragraph)(state, dispatch)
                 : setBlockType(state.schema.nodes.code_block)(state, dispatch);
         });
-
         // Заголовки вверх/вниз
         btn('heading-up', () => {
             const { state, dispatch } = view;
@@ -183,7 +166,6 @@
             }
             updateHeadingLevel();
         });
-
         btn('heading-down', () => {
             const { state, dispatch } = view;
             const { $from } = state.selection;
@@ -196,11 +178,9 @@
             }
             updateHeadingLevel();
         });
-
         // Undo / Redo
         btn('undo', () => undo(view.state, view.dispatch));
         btn('redo', () => redo(view.state, view.dispatch));
-
         // Ссылка
         btn('link', () => {
             const { state, dispatch } = view;
@@ -211,14 +191,12 @@
             if (!url.startsWith('http')) url = 'https://' + url;
             dispatch(state.tr.addMark(from, to, state.schema.marks.link.create({ href: url })));
         });
-
         // Горизонтальная линия
         btn('hr', () => {
             const { state, dispatch } = view;
             dispatch(state.tr.replaceSelectionWith(state.schema.nodes.horizontal_rule.create()));
         });
-
-        // ── 6. СОХРАНЕНИЕ / ЗАГРУЗКА ФАЙЛА ──────────────────────────────
+        // ── 6. СОХРАНЕНИЕ / ЗАГРУЗКА ФАЙЛА ─
         btn('save-btn', async () => {
             // Сохраняем полный текст из ytext (с yaml)
             const markdown = ytext.toString();
@@ -249,8 +227,7 @@
             };
             input.click();
         });
-
-        // ── 7. BUBBLE MENU ───────────────────────────────────────────────
+        // ── 7. BUBBLE MENU─
         const bubbleMenu = document.getElementById('bubble-menu');
 
         function showBubble(x, y) { bubbleMenu.style.left = x + 'px'; bubbleMenu.style.top = y + 'px'; }
@@ -265,8 +242,7 @@
         });
         window.addEventListener('scroll', hideBubble);
         document.addEventListener('mousedown', (e) => { if (!bubbleMenu.contains(e.target)) hideBubble(); });
-
-        // ── 8. ПЕРЕКЛЮЧЕНИЕ РЕЖИМОВ WYSIWYG ↔ CODEMIRROR ────────────────
+        // ── 8. WYSIWYG ↔ CODEMIRROR 
         const wysiwygRadio  = document.querySelector('input[value="wysiwyg"]');
         const markdownRadio = document.querySelector('input[value="markdown"]');
 
@@ -278,8 +254,7 @@
                 if (markdownRadio.checked) B.switchToCodeMirror();
             });
         }
-
-        // ── 9. ВЫПАДАЮЩИЕ МЕНЮ ──────────────────────────────────────────
+        // 9. ВЫПАДАЮЩИЕ МЕНЮ 
         (function () {
             const dropdowns = document.querySelectorAll('.dropdown');
             dropdowns.forEach(dd => {
@@ -297,16 +272,12 @@
                     document.querySelectorAll('.dropdown-content.show').forEach(c => c.classList.remove('show'));
             });
         })();
-
-        // ── 10. КНОПКА УРОВНЯ КАРТЫ (клик = применить текущий уровень) ──
+        // 10. КНОПКА УРОВНЯ КАРТЫ 
         const mapLevelSpan = document.getElementById('map-level');
         if (mapLevelSpan) {
             mapLevelSpan.addEventListener('click', () => {
                 const level = parseInt(mapLevelSpan.textContent, 10);
                 if (isNaN(level)) return;
                 document.getElementById('mapFrame')?.contentWindow?.collapseLevel?.(level);
-            });
-        }
-
-    } // end init()
+});    } } // end init()
 })();
